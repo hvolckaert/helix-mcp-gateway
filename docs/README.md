@@ -8,6 +8,10 @@ release lifecycle of Helix MCP Gateway. Start with the project
 
 - [`installation.md`](installation.md): wheel installation, per-user setup,
   and local bridge compilation;
+- [`compatibility.md`](compatibility.md): tested platforms, runtimes, and
+  explicit validation limits;
+- [`troubleshooting.md`](troubleshooting.md): safe diagnosis for installation,
+  configuration, connectivity, and client startup;
 - [`configuration-loading.md`](configuration-loading.md): safe YAML and
   `.env` loading;
 - [`operations.md`](operations.md): preflight, startup, shutdown, and recovery.

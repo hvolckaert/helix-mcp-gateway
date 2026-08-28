@@ -5,6 +5,14 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.6.8 - 2026-08-28
+
+- Add a complete release-wheel installation path with checksum verification,
+  credential setup, expected timings, and MCP client startup.
+- Add installation troubleshooting and an evidence-based compatibility
+  matrix.
+- Expand `helix-mcp-setup --help` without changing setup behavior.
+
 ## 0.6.7 - 2026-08-28
 
 - Prevent the opt-in live E2E from issuing an unqualified record query when

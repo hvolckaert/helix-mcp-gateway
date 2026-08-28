@@ -21,11 +21,55 @@ from helix_mcp.observability import public_error_code
 def setup_main(argv: Sequence[str] | None = None) -> int:
     """Initialize a non-destructive per-user installation."""
 
-    parser = argparse.ArgumentParser(prog="helix-mcp-setup")
-    parser.add_argument("--arapi-lib-dir", type=Path)
-    parser.add_argument("--config-dir", type=Path)
-    parser.add_argument("--data-dir", type=Path)
-    parser.add_argument("--state-dir", type=Path)
+    parser = argparse.ArgumentParser(
+        prog="helix-mcp-setup",
+        description=(
+            "Compile the packaged Java bridge and create a non-destructive "
+            "per-user Helix MCP Gateway configuration."
+        ),
+        epilog=(
+            "The command prints sanitized JSON. Existing .env and YAML "
+            "configuration files are never overwritten."
+        ),
+    )
+    parser.add_argument(
+        "--arapi-lib-dir",
+        type=Path,
+        metavar="DIR",
+        help=(
+            "directory containing the authorized arapi, arapiext, and "
+            "arlogger JARs; otherwise use HELIX_ARAPI_LIB_DIR or "
+            "unambiguous discovery"
+        ),
+    )
+    parser.add_argument(
+        "--config-dir",
+        type=Path,
+        metavar="DIR",
+        help=(
+            "directory for generated .env and helix.yaml files; defaults "
+            "to the platform per-user configuration directory"
+        ),
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        metavar="DIR",
+        help=(
+            "directory for the compiled Java bridge JAR; defaults to the "
+            "platform per-user data directory"
+        ),
+    )
+    parser.add_argument(
+        "--state-dir",
+        type=Path,
+        metavar="DIR",
+        help=(
+            "directory for the encryption key, plan database, audit, "
+            "metrics, and operation files; defaults to the platform "
+            "per-user state directory"
+        ),
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",

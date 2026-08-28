@@ -87,9 +87,10 @@ a real environment.
 ## Requirements
 
 - Python 3.12;
-- Java 17 or later;
+- a Java 17 or later JDK with the required compiler modules;
 - an authorized BMC Developer Studio / AR API 21.30.x installation;
-- a configured local Kaazing connection to the permitted Helix environments;
+- a configured local BMC Helix Client Gateway connection to the permitted
+  Helix environments;
 - authorized per-environment credentials.
 
 The exact supported setup and its current limitations are documented in
@@ -97,17 +98,25 @@ The exact supported setup and its current limitations are documented in
 
 ## Quick start
 
-Install a release wheel in a virtual environment, then run the guided setup:
+Install a verified release wheel in a virtual environment, then run guided
+setup and preflight with explicit paths:
 
 ```text
-helix-mcp-setup
-helix-mcp-check --live --environment dev
-helix-mcp
+python3.12 -m venv /path/to/helix-mcp/venv
+/path/to/helix-mcp/venv/bin/python -m pip install /path/to/release.whl
+/path/to/helix-mcp/venv/bin/helix-mcp-setup \
+  --arapi-lib-dir "/authorized/path/to/DeveloperStudio/lib"
+/path/to/helix-mcp/venv/bin/helix-mcp-check \
+  --dotenv /path/returned/by/setup/.env \
+  --live \
+  --environment dev
 ```
 
 The setup command generates local configuration, compiles the Java bridge
 against the user's AR API installation, and creates the encryption key when
-requested. It never overwrites existing credentials or configuration.
+requested. It never overwrites existing credentials or configuration. Register
+the absolute MCP command and `--dotenv` path returned by setup with the client.
+The complete verified workflow is in [Installation](docs/installation.md).
 
 For development from a checkout:
 
@@ -125,6 +134,8 @@ Helix. Live tests are opt-in and must use an explicitly authorized target.
 
 - [Documentation index](docs/README.md)
 - [Installation](docs/installation.md)
+- [Compatibility matrix](docs/compatibility.md)
+- [Troubleshooting](docs/troubleshooting.md)
 - [Configuration](docs/configuration-loading.md)
 - [Operations](docs/operations.md)
 - [MCP tools](docs/mcp-tools.md)

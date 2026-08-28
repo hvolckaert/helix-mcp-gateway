@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from helix_mcp.installation.cli import setup_main
 
 
@@ -52,3 +54,22 @@ def test_setup_failure_exposes_only_a_stable_code(monkeypatch, capsys) -> None:
         "status": "failed",
         "error_code": "SAFE_INSTALL_FAILURE",
     }
+
+
+def test_setup_help_explains_prerequisites_and_destination_paths(
+    capsys,
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        setup_main(["--help"])
+
+    output = capsys.readouterr().out
+    assert exc_info.value.code == 0
+    assert "non-destructive per-user" in output
+    assert "authorized arapi, arapiext" in output
+    assert "arlogger JARs" in output
+    assert "HELIX_ARAPI_LIB_DIR" in output
+    assert "--config-dir DIR" in output
+    assert "--data-dir DIR" in output
+    assert "--state-dir DIR" in output
+    assert "platform per-user" in output
+    assert "never overwritten" in output
