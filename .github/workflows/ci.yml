@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bridge-test:
+    name: Java bridge / JDK 17
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+
+      - name: Run isolated bridge tests
+        run: sh arapi-bridge/test.sh
+
+      - name: Run Python-to-Java contract test
+        env:
+          HELIX_JAVA_BRIDGE_TESTS: "1"
+        run: >-
+          python -m pytest -q -m java_bridge
+          tests/integration/test_arapi_java_bridge.py
+
+      - name: Run reproducible MCP stdio E2E
+        env:
+          HELIX_LOCAL_E2E_TESTS: "1"
+        run: >-
+          python -m pytest -q -s -m local_e2e
+          tests/e2e/test_stdio_local.py
+
+  test:
+    name: Python 3.12 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+
+      - name: Compile Python sources
+        run: python -m compileall -q src tests hatch_build.py
+
+      - name: Check installed dependencies
+        run: python -m pip check
+
+      - name: Check formatting
+        run: python -m ruff format --check src tests hatch_build.py
+
+      - name: Lint Python sources
+        run: python -m ruff check src tests hatch_build.py
+
+      - name: Check static types
+        run: python -m mypy
+
+      - name: Run test suite
+        run: python -m pytest -q
+
+      - name: Build wheel
+        run: python -m pip wheel --no-deps --wheel-dir dist .
+
+      - name: Install built wheel
+        run: >-
+          python -c "import glob, subprocess, sys;
+          subprocess.check_call([sys.executable, '-m', 'pip', 'install',
+          '--force-reinstall', '--no-deps', *glob.glob('dist/*.whl')])"
+
+      - name: Smoke test installation resources
+        run: >-
+          helix-mcp-setup --dry-run
+          --config-dir build/smoke/config
+          --data-dir build/smoke/data
+          --state-dir build/smoke/state

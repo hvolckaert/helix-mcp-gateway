@@ -1,0 +1,98 @@
+# Safe public default. Copy this file to config/helix.local.yaml and review
+# every policy before connecting the gateway to an authorized environment.
+schema_version: 2
+
+server:
+  transport: stdio
+  log_level: INFO
+  metadata_cache_ttl_seconds: 1800
+  health_cache_ttl_seconds: 15
+  write_plan_ttl_seconds: 600
+  max_pending_write_plans: 100
+
+policies:
+  - name: example_dev_read_only
+    allow_all_forms: false
+    allow_all_fields: false
+    allowed_forms:
+      - Example:ReadableForm
+    allowed_fields_by_form:
+      Example:ReadableForm:
+        - Request ID
+        - Status
+    writable_forms: []
+    creatable_fields_by_form: {}
+    updatable_fields_by_form: {}
+    allow_all_sql_objects: false
+    allowed_sql_objects: []
+    allow_form_reads: true
+    allow_sql: false
+    access_mode: read_only
+    require_human_approval: true
+    require_write_reason: true
+    max_rows: 25
+    query_timeout_seconds: 30
+    rate_limit_per_minute: 10
+    write_rate_limit_per_minute: 1
+    sensitive_fields:
+      - Password
+      - Authentication String
+      - Access Token
+      - Refresh Token
+      - API Key
+      - Private Key
+    sensitive_field_markers:
+      - password
+      - passwd
+      - token
+      - secret
+      - api key
+      - private key
+      - credential
+      - authentication string
+
+  - name: locked
+    allow_all_forms: false
+    allow_all_fields: false
+    allowed_forms: []
+    allowed_fields_by_form: {}
+    writable_forms: []
+    creatable_fields_by_form: {}
+    updatable_fields_by_form: {}
+    allow_all_sql_objects: false
+    allowed_sql_objects: []
+    allow_form_reads: false
+    allow_sql: false
+    access_mode: read_only
+    require_human_approval: true
+    require_write_reason: true
+    max_rows: 10
+    query_timeout_seconds: 30
+    rate_limit_per_minute: 5
+    write_rate_limit_per_minute: 1
+    sensitive_fields:
+      - Password
+      - Authentication String
+      - Access Token
+      - Refresh Token
+      - API Key
+      - Private Key
+    sensitive_field_markers:
+      - password
+      - passwd
+      - token
+      - secret
+      - api key
+      - private key
+      - credential
+      - authentication string
+
+policy_by_environment:
+  dev: example_dev_read_only
+  qa: locked
+  prod: locked
+
+arapi:
+  bridge_base_url: http://127.0.0.1:8090
+  request_timeout_seconds: 30
+  pool_size: 5

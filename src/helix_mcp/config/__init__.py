@@ -1,0 +1,83 @@
+"""Non-sensitive configuration loading and validation."""
+
+from helix_mcp.config.composition import (
+    ARAPI_PORT_BY_ENVIRONMENT,
+    HELIX_INSTANCE,
+    ArapiBackendSettings,
+    SingleInstanceCompositionError,
+    SingleInstanceConfig,
+    SingleInstanceConfigError,
+    compose_single_instance_config,
+    load_single_instance_config,
+)
+from helix_mcp.config.loader import (
+    ConfigEncodingError,
+    ConfigLoader,
+    ConfigLoadError,
+    ConfigSizeError,
+    ConfigSourceError,
+    ConfigStructureError,
+    ConfigSyntaxError,
+)
+from helix_mcp.config.models import (
+    AccessMode,
+    ArapiBackendConfig,
+    BackendKind,
+    Environment,
+    HelixConfig,
+    SecretProviderKind,
+    SecretRef,
+    ServerSettings,
+    TargetConfig,
+    TargetKey,
+    TargetPolicyConfig,
+    Transport,
+)
+from helix_mcp.config.runtime import (
+    RuntimeSettings,
+    RuntimeSettingsError,
+    load_runtime_settings,
+    load_secret_environment,
+)
+from helix_mcp.config.validation import (
+    ConfigValidationError,
+    ConfigValidationIssue,
+    validate_config,
+)
+
+__all__ = [
+    "ARAPI_PORT_BY_ENVIRONMENT",
+    "HELIX_INSTANCE",
+    "AccessMode",
+    "ArapiBackendConfig",
+    "ArapiBackendSettings",
+    "BackendKind",
+    "ConfigEncodingError",
+    "ConfigLoadError",
+    "ConfigLoader",
+    "ConfigSizeError",
+    "ConfigSourceError",
+    "ConfigStructureError",
+    "ConfigSyntaxError",
+    "ConfigValidationError",
+    "ConfigValidationIssue",
+    "Environment",
+    "HelixConfig",
+    "RuntimeSettings",
+    "RuntimeSettingsError",
+    "SecretProviderKind",
+    "SecretRef",
+    "ServerSettings",
+    "SingleInstanceCompositionError",
+    "SingleInstanceConfig",
+    "SingleInstanceConfigError",
+    "TargetConfig",
+    "TargetKey",
+    "TargetPolicyConfig",
+    "Transport",
+    "compose_single_instance_config",
+    "load_runtime_settings",
+    "load_secret_environment",
+    "load_single_instance_config",
+    "validate_config",
+]

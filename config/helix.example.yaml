@@ -1,0 +1,36 @@
+schema_version: 2
+
+server:
+  transport: stdio
+  log_level: INFO
+  metadata_cache_ttl_seconds: 1800
+  health_cache_ttl_seconds: 15
+  write_plan_ttl_seconds: 600
+  max_pending_write_plans: 100
+
+policies:
+  - name: dev_read
+    allowed_forms:
+      - Example:ReadableForm
+    allowed_fields_by_form:
+      Example:ReadableForm:
+        - Request ID
+        - Status
+    allow_all_sql_objects: false
+    allow_form_reads: true
+    allow_sql: false
+    access_mode: read_only
+
+  - name: locked
+    allow_all_sql_objects: false
+    allow_form_reads: false
+    allow_sql: false
+    access_mode: read_only
+
+policy_by_environment:
+  dev: dev_read
+  qa: locked
+  prod: locked
+
+arapi:
+  bridge_base_url: http://127.0.0.1:8090

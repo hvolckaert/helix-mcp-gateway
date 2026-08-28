@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install build and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "build>=1.4,<2" ".[test]"
+
+      - name: Validate tag matches package version
+        run: >-
+          python -c "import os, pathlib, tomllib;
+          version=tomllib.loads(pathlib.Path('pyproject.toml').read_text())
+          ['project']['version'];
+          tag=os.environ['GITHUB_REF_NAME'];
+          assert tag == f'v{version}', f'{tag} does not match {version}'"
+
+      - name: Compile Python sources
+        run: python -m compileall -q src tests hatch_build.py
+
+      - name: Check installed dependencies
+        run: python -m pip check
+
+      - name: Check formatting
+        run: python -m ruff format --check src tests hatch_build.py
+
+      - name: Lint Python sources
+        run: python -m ruff check src tests hatch_build.py
+
+      - name: Check static types
+        run: python -m mypy
+
+      - name: Run test suite
+        run: python -m pytest -q
+
+      - name: Run isolated bridge tests
+        run: sh arapi-bridge/test.sh
+
+      - name: Run Python-to-Java contract test
+        env:
+          HELIX_JAVA_BRIDGE_TESTS: "1"
+        run: >-
+          python -m pytest -q -m java_bridge
+          tests/integration/test_arapi_java_bridge.py
+
+      - name: Run reproducible MCP stdio E2E
+        env:
+          HELIX_LOCAL_E2E_TESTS: "1"
+        run: >-
+          python -m pytest -q -s -m local_e2e
+          tests/e2e/test_stdio_local.py
+
+      - name: Build wheel and source distribution
+        run: python -m build
+
+      - name: Install tagged wheel
+        run: >-
+          python -c "import glob, subprocess, sys;
+          wheels=glob.glob('dist/*.whl');
+          assert len(wheels) == 1;
+          subprocess.check_call([sys.executable, '-m', 'pip', 'install',
+          '--force-reinstall', '--no-deps', wheels[0]])"
+
+      - name: Smoke test installation resources
+        run: >-
+          helix-mcp-setup --dry-run
+          --config-dir build/smoke/config
+          --data-dir build/smoke/data
+          --state-dir build/smoke/state
+
+      - name: Generate SHA-256 checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${GITHUB_REF_NAME}" dist/*
+          --verify-tag
+          --generate-notes
+          --title "Helix MCP Gateway ${GITHUB_REF_NAME}"
