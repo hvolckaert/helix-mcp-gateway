@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.6.7 - 2026-08-28
+
 - Prevent the opt-in live E2E from issuing an unqualified record query when
   only an approved entry ID is configured.
 - Require a live record selector and verify that queried and directly read
