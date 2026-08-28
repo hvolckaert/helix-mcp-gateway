@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "helix-mcp-gateway"
-version = "0.6.5"
+version = "0.6.6"
 description = "Policy-controlled MCP access to BMC Helix through the AR API"
 readme = "README.md"
 requires-python = ">=3.12"

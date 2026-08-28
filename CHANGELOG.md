@@ -5,9 +5,16 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.6.6 - 2026-08-28
+
 - Convert public documentation and user-facing metadata to English.
 - Remove environment-specific evidence and internal implementation history
   from the public documentation surface.
+- Replace environment-specific sample configuration and fixtures with
+  fictional examples.
+- Correct MCP metadata for reviewable write planning and execution.
+- Keep strict type checking compatible across supported `types-PyYAML` stub
+  revisions.
 
 ## 0.6.5 - 2026-08-10
 
