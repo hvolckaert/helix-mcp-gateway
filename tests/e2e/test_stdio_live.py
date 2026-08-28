@@ -13,6 +13,8 @@ import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from tests.support.live_validation import live_query_qualification
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LIVE_ENABLED = os.environ.get("HELIX_LIVE_TESTS") == "1"
 
@@ -205,27 +207,29 @@ async def _stdio_read_only_flow() -> None:
                 for item in field_metadata.structuredContent["fields"]
             )
 
-            query_fields = fields
-            id_field = ""
-            if not configured_entry_id:
-                id_metadata = await session.call_tool(
-                    "list_form_fields",
-                    {
-                        "environment": environment,
-                        "form": form,
-                        "offset": 0,
-                        "limit": 1,
-                    },
-                )
-                assert id_metadata.isError is False
-                id_fields = [
-                    item["name"]
-                    for item in id_metadata.structuredContent["fields"]
-                    if item["id"] == 1
-                ]
-                assert len(id_fields) == 1
-                id_field = id_fields[0]
-                query_fields = tuple(dict.fromkeys((*fields, id_field)))
+            id_metadata = await session.call_tool(
+                "list_form_fields",
+                {
+                    "environment": environment,
+                    "form": form,
+                    "offset": 0,
+                    "limit": 1,
+                },
+            )
+            assert id_metadata.isError is False
+            id_fields = [
+                item["name"]
+                for item in id_metadata.structuredContent["fields"]
+                if item["id"] == 1
+            ]
+            assert len(id_fields) == 1
+            id_field = id_fields[0]
+            query_fields = tuple(dict.fromkeys((*fields, id_field)))
+            qualification = live_query_qualification(
+                entry_id=configured_entry_id,
+                qualification=qualification,
+                id_field=id_field,
+            )
 
             query = await session.call_tool(
                 "query_form",
@@ -245,9 +249,11 @@ async def _stdio_read_only_flow() -> None:
             assert len(query.structuredContent["entries"]) == 1
             queried_values = query.structuredContent["entries"][0]["values"]
             assert set(queried_values).issubset(query_fields)
-            entry_id = configured_entry_id or queried_values[id_field]
+            queried_entry_id = queried_values[id_field]
+            entry_id = configured_entry_id or queried_entry_id
             assert isinstance(entry_id, str)
             assert entry_id
+            assert queried_entry_id == entry_id
 
             entry = await session.call_tool(
                 "get_entry",
@@ -269,6 +275,7 @@ async def _stdio_read_only_flow() -> None:
                     "environment": environment,
                     "form": form,
                     "fields": list(fields),
+                    "qualification": qualification,
                     "limit": 100_000,
                 },
             )
@@ -313,6 +320,7 @@ async def _stdio_read_only_flow() -> None:
     assert '"password"' not in captured
     assert form not in captured
     assert entry_id not in captured
+    assert qualification not in captured
     assert all(field not in captured for field in fields)
     if database_object:
         assert database_object not in captured

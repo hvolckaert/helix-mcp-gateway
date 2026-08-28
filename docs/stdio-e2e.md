@@ -37,9 +37,12 @@ The default live flow calls `list_targets`, `health_check`, `list_forms`,
 variables enable database metadata discovery and create/cancel a write plan,
 but the automated live test never invokes an `apply_*` tool.
 
-Use only a form, qualification, and fields explicitly approved for testing.
-Do not publish the values supplied through `HELIX_LIVE_*` variables or the
-returned data.
+Use only a form, record selector, and fields explicitly approved for testing.
+Set `HELIX_LIVE_QUALIFICATION`, `HELIX_LIVE_ENTRY_ID`, or both. With only an
+entry ID, the test derives an exact qualification from the core field ID 1;
+with both selectors, the queried record must match the entry ID. The test
+rejects an unqualified record read. Do not publish the values supplied through
+`HELIX_LIVE_*` variables or the returned data.
 
 Real writes remain manual, use a designated non-production test record, and
 require review and explicit approval of the exact plan. Automated or manual

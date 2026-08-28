@@ -88,5 +88,11 @@ HELIX_LIVE_QUALIFICATION="'Status' = \"Enabled\"" \
 .venv/bin/python -m pytest -q -s -m live tests/e2e/test_stdio_live.py
 ```
 
+Live validation requires an explicitly approved record selector. Set
+`HELIX_LIVE_QUALIFICATION`, `HELIX_LIVE_ENTRY_ID`, or both. When only an entry
+ID is supplied, the test derives an exact qualification from the form's core
+field ID 1. When both are supplied, the queried record must match the entry
+ID. The test refuses to perform an unqualified record read.
+
 Never copy returned identifiers, values, qualifications, endpoints, or account
 details into documentation, screenshots, issues, or CI logs.
