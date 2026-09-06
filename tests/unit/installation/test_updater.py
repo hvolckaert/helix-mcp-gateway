@@ -13,6 +13,7 @@ import pytest
 from helix_mcp.installation.managed import (
     activate_managed_installation,
     load_managed_installation,
+    stable_launcher_path,
     versioned_runtime_paths,
 )
 from helix_mcp.installation.openclaw import EXPOSED_TOOLS
@@ -122,7 +123,7 @@ class OpenClawUpdateRunner(FakeUpdateRunner):
         if command[1:3] == ["mcp", "show"]:
             self.commands.append(command)
             payload = {
-                "command": str(self.workspace / "bin/helix-mcp"),
+                "command": str(stable_launcher_path(self.workspace)),
                 "args": [],
                 "cwd": str(self.workspace),
                 "toolFilter": {"include": ["list_targets"]},
@@ -139,7 +140,9 @@ class OpenClawUpdateRunner(FakeUpdateRunner):
             payload = {
                 "servers": {
                     "helix": {
-                        "launch": f"stdio {self.workspace / 'bin/helix-mcp'}"
+                        "launch": (
+                            f"stdio {stable_launcher_path(self.workspace)}"
+                        )
                     }
                 }
             }
@@ -292,7 +295,20 @@ def test_update_refreshes_reloads_and_probes_openclaw_definition(
     assert result.openclaw_reloaded is True
     assert result.openclaw_probed is True
     assert runner.definition is not None
-    assert runner.definition["command"] == str(workspace / "bin/helix-mcp")
+    launcher = stable_launcher_path(workspace)
+    if os.name == "nt":
+        assert Path(str(runner.definition["command"])).name.casefold() == (
+            "cmd.exe"
+        )
+        assert runner.definition["args"] == [
+            "/d",
+            "/s",
+            "/c",
+            str(launcher),
+        ]
+    else:
+        assert runner.definition["command"] == str(launcher)
+        assert runner.definition["args"] == []
     assert runner.definition["toolFilter"] == {"include": list(EXPOSED_TOOLS)}
 
 

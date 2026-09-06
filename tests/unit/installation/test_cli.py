@@ -10,6 +10,7 @@ import pytest
 
 from helix_mcp.installation import InstallPaths, SetupResult
 from helix_mcp.installation.cli import setup_main
+from helix_mcp.installation.managed import stable_launcher_path
 
 
 def test_setup_dry_run_returns_machine_readable_codex_configuration(
@@ -163,7 +164,7 @@ def test_setup_starts_detached_dashboard_by_default(
         "errors_path": paths.state_dir / "errors",
     }
     assert payload["codex_desktop"]["command"] == str(
-        paths.data_dir / "bin/helix-mcp"
+        stable_launcher_path(paths.data_dir)
     )
     assert payload["codex_desktop"]["args"] == []
     assert payload["client_integration"] == "standalone"
@@ -219,7 +220,7 @@ def test_setup_can_skip_dashboard(tmp_path, monkeypatch, capsys) -> None:
     assert result == 0
     assert payload["dashboard"] is None
     assert payload["codex_desktop"]["command"] == str(
-        paths.data_dir / "bin/helix-mcp"
+        stable_launcher_path(paths.data_dir)
     )
     assert payload["codex_desktop"]["args"] == []
 
@@ -297,4 +298,4 @@ def test_setup_auto_registers_detected_openclaw(
     assert payload["client_integration"] == "openclaw"
     assert captured["openclaw_command"] == openclaw
     assert captured["server_name"] == "helix"
-    assert captured["launcher"] == paths.data_dir / "bin/helix-mcp"
+    assert captured["launcher"] == stable_launcher_path(paths.data_dir)

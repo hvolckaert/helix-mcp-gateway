@@ -10,6 +10,7 @@ from helix_mcp.dashboard_update_worker import (
     run_update,
     write_update_status,
 )
+from helix_mcp.installation.managed import versioned_runtime_paths
 
 
 def test_update_status_round_trip_is_atomic(tmp_path: Path) -> None:
@@ -87,9 +88,8 @@ def test_worker_relaunches_dashboard_from_updated_runtime(
     assert calls["shutdown"] == (8_766, "worker-token")
     launcher = calls["launcher"]
     assert isinstance(launcher, dict)
-    assert launcher["python_executable"] == str(
-        target_runtime / "venv/bin/python"
-    )
+    expected_python, _, _, _ = versioned_runtime_paths(workspace, "0.7.0")
+    assert launcher["python_executable"] == str(expected_python)
     assert calls["open_browser"] is False
     status = load_update_status(workspace)
     assert status is not None

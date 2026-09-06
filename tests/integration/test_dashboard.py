@@ -244,7 +244,8 @@ def test_configure_updates_yaml_and_write_only_credential(
     serialized_result = json.dumps(result)
     assert "dashboard-user" not in serialized_result
     assert "dashboard-password" not in serialized_result
-    assert dotenv_path.stat().st_mode & 0o077 == 0
+    if os.name != "nt":
+        assert dotenv_path.stat().st_mode & 0o077 == 0
 
 
 @pytest.mark.integration
