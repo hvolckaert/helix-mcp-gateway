@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from helix_mcp.config import (
+    AccessMode,
     BackendKind,
     ConfigValidationError,
     Environment,
@@ -94,7 +95,7 @@ def test_unknown_policy_reference_is_rejected() -> None:
         validate_config(data)
 
 
-def test_production_policy_must_be_read_only() -> None:
+def test_production_policy_can_enable_controlled_writes() -> None:
     data = valid_config_data()
     data["targets"][0]["environment"] = "prod"
     data["policies"][0].update(
@@ -112,11 +113,10 @@ def test_production_policy_must_be_read_only() -> None:
         }
     )
 
-    with pytest.raises(
-        ConfigValidationError,
-        match="must use access_mode read_only",
-    ):
-        validate_config(data)
+    config = validate_config(data)
+
+    assert config.policies[0].access_mode is AccessMode.READ_WRITE
+    assert config.policies[0].require_human_approval is True
 
 
 def test_writes_require_an_exact_field_allowlist() -> None:
@@ -151,6 +151,26 @@ def test_read_write_access_requires_human_approval() -> None:
     with pytest.raises(
         ConfigValidationError,
         match="human approval is required when writes are enabled",
+    ):
+        validate_config(data)
+
+
+def test_read_write_access_requires_a_write_reason() -> None:
+    data = valid_config_data()
+    data["policies"][0].update(
+        {
+            "writable_forms": ["Example:ComputerSystem"],
+            "creatable_fields_by_form": {"Example:ComputerSystem": ["Name"]},
+            "updatable_fields_by_form": {"Example:ComputerSystem": ["Status"]},
+            "access_mode": "read_write",
+            "require_human_approval": True,
+            "require_write_reason": False,
+        }
+    )
+
+    with pytest.raises(
+        ConfigValidationError,
+        match="a write reason is required when writes are enabled",
     ):
         validate_config(data)
 

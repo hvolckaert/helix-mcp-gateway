@@ -14,6 +14,8 @@ release lifecycle of Helix MCP Gateway. Start with the project
   configuration, connectivity, and client startup;
 - [`configuration-loading.md`](configuration-loading.md): safe YAML and
   `.env` loading;
+- [`dashboard.md`](dashboard.md): local browser configuration and its security
+  boundaries;
 - [`operations.md`](operations.md): preflight, startup, shutdown, and recovery.
 
 ## Architecture and contracts

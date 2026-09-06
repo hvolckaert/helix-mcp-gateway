@@ -11,7 +11,7 @@ server:
   max_pending_write_plans: 100
 
 policies:
-  - name: example_dev_read_only
+  - name: dev
     allow_all_forms: false
     allow_all_fields: false
     allowed_forms:
@@ -51,7 +51,7 @@ policies:
       - credential
       - authentication string
 
-  - name: locked
+  - name: qa
     allow_all_forms: false
     allow_all_fields: false
     allowed_forms: []
@@ -61,7 +61,43 @@ policies:
     updatable_fields_by_form: {}
     allow_all_sql_objects: false
     allowed_sql_objects: []
-    allow_form_reads: false
+    allow_form_reads: true
+    allow_sql: false
+    access_mode: read_only
+    require_human_approval: true
+    require_write_reason: true
+    max_rows: 10
+    query_timeout_seconds: 30
+    rate_limit_per_minute: 5
+    write_rate_limit_per_minute: 1
+    sensitive_fields:
+      - Password
+      - Authentication String
+      - Access Token
+      - Refresh Token
+      - API Key
+      - Private Key
+    sensitive_field_markers:
+      - password
+      - passwd
+      - token
+      - secret
+      - api key
+      - private key
+      - credential
+      - authentication string
+
+  - name: prod
+    allow_all_forms: false
+    allow_all_fields: false
+    allowed_forms: []
+    allowed_fields_by_form: {}
+    writable_forms: []
+    creatable_fields_by_form: {}
+    updatable_fields_by_form: {}
+    allow_all_sql_objects: false
+    allowed_sql_objects: []
+    allow_form_reads: true
     allow_sql: false
     access_mode: read_only
     require_human_approval: true
@@ -88,9 +124,9 @@ policies:
       - authentication string
 
 policy_by_environment:
-  dev: example_dev_read_only
-  qa: locked
-  prod: locked
+  dev: dev
+  qa: qa
+  prod: prod
 
 arapi:
   bridge_base_url: http://127.0.0.1:8090

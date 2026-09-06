@@ -25,7 +25,8 @@ boundaries between the agent and Helix:
 - form and field access is constrained by policy;
 - SQL is read-only, allowlisted, bounded, and executed only after review;
 - creates and updates use a mandatory plan/review/apply workflow;
-- PROD policies must remain read-only;
+- every environment starts read-only and may enable controlled writes through
+  its explicit policy;
 - audit, metrics, and public errors exclude arguments and business payloads.
 
 Deletion, attachments, bulk writes, and direct database connections are not
@@ -114,9 +115,21 @@ python3.12 -m venv /path/to/helix-mcp/venv
 
 The setup command generates local configuration, compiles the Java bridge
 against the user's AR API installation, and creates the encryption key when
-requested. It never overwrites existing credentials or configuration. Register
-the absolute MCP command and `--dotenv` path returned by setup with the client.
-The complete verified workflow is in [Installation](docs/installation.md).
+requested. It never overwrites existing credentials or configuration. After a
+successful installation it starts the configuration dashboard as a detached
+local process and opens it in the default browser.
+
+The dashboard remains available on `http://127.0.0.1:8766/` independently of
+the MCP process. It edits the fixed DEV, QA, and PROD access policies, configures
+the loopback AR API bridge, discovers selectable form and field metadata,
+replaces credentials without reading them back, and runs sanitized readiness
+checks. Saving is validated and atomic; restart the MCP client before using the
+new settings. Use `helix-mcp-setup --no-dashboard` only for a headless or
+unattended installation.
+
+Register the absolute MCP command and `--dotenv` path returned by setup with
+the client. The complete verified workflow is in
+[Installation](docs/installation.md).
 
 For development from a checkout:
 
@@ -137,6 +150,7 @@ Helix. Live tests are opt-in and must use an explicitly authorized target.
 - [Compatibility matrix](docs/compatibility.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Configuration](docs/configuration-loading.md)
+- [Local configuration dashboard](docs/dashboard.md)
 - [Operations](docs/operations.md)
 - [MCP tools](docs/mcp-tools.md)
 - [Form reads](docs/form-query-service.md)

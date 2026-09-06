@@ -115,7 +115,7 @@ def test_schema_version_one_is_rejected_after_write_policy_migration() -> None:
         SingleInstanceConfig.model_validate(data)
 
 
-def test_production_policy_cannot_enable_writes() -> None:
+def test_fixed_environment_policy_can_enable_controlled_writes() -> None:
     data = composition_data()
     policy = data["policies"][0]
     policy.update(
@@ -128,8 +128,10 @@ def test_production_policy_cannot_enable_writes() -> None:
         }
     )
 
-    with pytest.raises(ValueError, match="prod policy must use"):
-        SingleInstanceConfig.model_validate(data)
+    config = SingleInstanceConfig.model_validate(data)
+
+    assert config.policies[0].access_mode is AccessMode.READ_WRITE
+    assert config.policies[0].require_human_approval is True
 
 
 def test_repository_public_config_is_safe_by_default() -> None:
@@ -151,9 +153,13 @@ def test_repository_public_config_is_safe_by_default() -> None:
     assert dev.allow_sql is False
     assert dev.max_rows == 25
 
-    assert qa is prod
+    assert qa.name == "qa"
+    assert prod.name == "prod"
+    assert qa.model_dump(exclude={"name"}) == prod.model_dump(
+        exclude={"name"}
+    )
     assert qa.access_mode is AccessMode.READ_ONLY
-    assert qa.allow_form_reads is False
+    assert qa.allow_form_reads is True
     assert qa.allowed_forms == ()
     assert qa.allowed_fields_by_form == {}
     assert qa.writable_forms == ()

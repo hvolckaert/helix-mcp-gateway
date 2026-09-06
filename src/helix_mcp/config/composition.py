@@ -11,7 +11,6 @@ from pydantic import Field, HttpUrl, ValidationError, model_validator
 
 from helix_mcp.config.loader import ConfigLoader
 from helix_mcp.config.models import (
-    AccessMode,
     ArapiBackendConfig,
     Environment,
     FrozenModel,
@@ -84,12 +83,6 @@ class SingleInstanceConfig(FrozenModel):
                 "environment mapping references unknown policies: "
                 + ", ".join(missing)
             )
-        policy_by_name = {policy.name: policy for policy in self.policies}
-        production_policy = policy_by_name[
-            self.policy_by_environment[Environment.PROD]
-        ]
-        if production_policy.access_mode is not AccessMode.READ_ONLY:
-            raise ValueError("prod policy must use access_mode read_only")
         return self
 
 

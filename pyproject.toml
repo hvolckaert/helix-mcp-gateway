@@ -46,6 +46,7 @@ helix-mcp = "helix_mcp.server:main"
 helix-mcp-check = "helix_mcp.operations.cli:entrypoint"
 helix-mcp-setup = "helix_mcp.installation.cli:setup_entrypoint"
 helix-mcp-build-bridge = "helix_mcp.installation.cli:bridge_entrypoint"
+helix-mcp-dashboard = "helix_mcp.dashboard:dashboard_entrypoint"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/helix_mcp"]

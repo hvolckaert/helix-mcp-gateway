@@ -26,9 +26,11 @@ updatable_fields_by_form:
     - Status
 ```
 
-`read_write` requires human approval and non-empty write allowlists.
-`read_only` requires every write allowlist to be empty. Any policy assigned to
-PROD must be `read_only`.
+`read_write` requires human approval, a non-empty write reason, and complete
+non-empty create/update allowlists.
+`read_only` requires every write allowlist to be empty. DEV, QA, and PROD use
+independent policies; all start read-only, and any of them may enable the same
+controlled write workflow explicitly.
 
 Legacy keys such as `create_mode`, `update_mode`, and
 `writable_fields_by_form` are rejected.

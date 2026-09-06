@@ -193,7 +193,7 @@ class TargetPolicyConfig(FrozenModel):
     allow_form_reads: bool = True
     allow_sql: bool = False
     access_mode: AccessMode = AccessMode.READ_ONLY
-    require_human_approval: bool = False
+    require_human_approval: bool = True
     require_write_reason: bool = True
     max_rows: int = Field(default=1_000, ge=1, le=100_000)
     query_timeout_seconds: int = Field(default=30, ge=1, le=300)
@@ -228,6 +228,10 @@ class TargetPolicyConfig(FrozenModel):
         if writes_enabled and not self.require_human_approval:
             raise ValueError(
                 "human approval is required when writes are enabled"
+            )
+        if writes_enabled and not self.require_write_reason:
+            raise ValueError(
+                "a write reason is required when writes are enabled"
             )
         write_mappings = (
             ("creatable_fields_by_form", self.creatable_fields_by_form),
@@ -342,13 +346,4 @@ class HelixConfig(FrozenModel):
                     f"target {target.key} references unknown policy "
                     f"{target.policy_ref!r}"
                 )
-            if (
-                target.environment is Environment.PROD
-                and policy.access_mode is not AccessMode.READ_ONLY
-            ):
-                raise ValueError(
-                    f"production target {target.key} must use "
-                    "access_mode read_only"
-                )
-
         return self

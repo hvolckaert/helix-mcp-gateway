@@ -9,6 +9,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from helix_mcp.dashboard import (
+    DEFAULT_DASHBOARD_PORT,
+    DashboardProcessLauncher,
+)
 from helix_mcp.installation.bridge import build_bridge
 from helix_mcp.installation.setup import (
     default_install_paths,
@@ -75,6 +79,11 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="validate packaged resources and show target paths only",
     )
+    parser.add_argument(
+        "--no-dashboard",
+        action="store_true",
+        help="do not start or open the local configuration dashboard",
+    )
     arguments = parser.parse_args(argv)
     try:
         result = setup_installation(
@@ -84,6 +93,22 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
             state_dir=arguments.state_dir,
             dry_run=arguments.dry_run,
         )
+        dashboard: dict[str, object] | None
+        if arguments.no_dashboard:
+            dashboard = None
+        elif arguments.dry_run:
+            dashboard = {
+                "command": "helix-mcp-dashboard",
+                "args": ["--dotenv", str(result.dotenv_path)],
+                "url": (
+                    f"http://127.0.0.1:{DEFAULT_DASHBOARD_PORT}/"
+                ),
+            }
+        else:
+            dashboard = DashboardProcessLauncher(
+                dotenv_path=result.dotenv_path,
+                errors_path=result.paths.state_dir / "errors",
+            ).start().to_dict()
     except Exception as exc:
         _print_json({"status": "failed", "error_code": public_error_code(exc)})
         return 1
@@ -93,6 +118,7 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
         "command": result.server_command,
         "args": ["--dotenv", str(result.dotenv_path)],
     }
+    payload["dashboard"] = dashboard
     _print_json(payload)
     return 0
 

@@ -1,0 +1,1400 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="helix-dashboard-token" content="__DASHBOARD_TOKEN__">
+  <title>IntelliAgentia · Helix MCP Gateway</title>
+  <style>
+    :root {
+      --navy-950: #031b36;
+      --navy-900: #06264c;
+      --navy-800: #0a3768;
+      --cyan-600: #0099b9;
+      --cyan-500: #08abc8;
+      --cyan-100: #dff7fb;
+      --ink: #10243a;
+      --muted: #60748a;
+      --line: #dbe6ee;
+      --surface: #ffffff;
+      --canvas: #f3f8fb;
+      --success: #127a62;
+      --success-bg: #e5f6f0;
+      --warning: #b2670c;
+      --warning-bg: #fff4d9;
+      --danger: #b8384c;
+      --danger-bg: #fdecef;
+      --shadow: 0 18px 45px rgba(6, 38, 76, .09);
+      font-family: Inter, Aptos, "Segoe UI", system-ui, sans-serif;
+      color: var(--ink);
+      background: var(--canvas);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--canvas); }
+    button, input, select { font: inherit; }
+    button, select, input[type="checkbox"] { cursor: pointer; }
+    button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible {
+      outline: 3px solid rgba(8, 171, 200, .28);
+      outline-offset: 2px;
+    }
+    .shell { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding: 24px 0 56px; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 24px;
+      padding: 18px 22px; color: white; border-radius: 22px;
+      background:
+        radial-gradient(circle at 78% -80%, rgba(24, 200, 222, .35), transparent 45%),
+        linear-gradient(125deg, var(--navy-950), var(--navy-800));
+      box-shadow: var(--shadow); position: relative; overflow: hidden;
+    }
+    .topbar::after {
+      content: ""; position: absolute; right: -85px; bottom: -103px; width: 390px; height: 145px;
+      border: 18px solid rgba(13, 185, 211, .25); border-left-color: transparent;
+      border-bottom-color: transparent; border-radius: 50%; transform: rotate(-7deg); pointer-events: none;
+    }
+    .brand { display: flex; align-items: center; gap: 14px; z-index: 1; }
+    .brand-mark {
+      position: relative; display: grid; place-items: center; width: 52px; height: 52px;
+      flex: 0 0 auto; border-radius: 15px; background: white; color: var(--navy-900);
+      font-size: 1.65rem; font-weight: 800; letter-spacing: -.12em; padding-right: .12em;
+    }
+    .brand-mark::after {
+      content: ""; position: absolute; width: 34px; height: 14px; right: 3px; bottom: 9px;
+      border-top: 5px solid var(--cyan-500); border-radius: 50%; transform: rotate(-13deg);
+    }
+    .brand-name { margin: 0; font-size: 1.28rem; font-weight: 730; letter-spacing: -.025em; }
+    .brand-name span { color: #26c4dc; }
+    .brand-product { margin: 3px 0 0; color: #c8deed; font-size: .9rem; }
+    .version {
+      z-index: 1; padding: 8px 12px; border: 1px solid rgba(255,255,255,.24);
+      border-radius: 999px; color: #dff7fb; font-size: .82rem; background: rgba(255,255,255,.07); }
+    .summary { display: grid; grid-template-columns: 1.3fr repeat(3, minmax(160px, .7fr)); gap: 14px; margin: 18px 0; }
+    .intro, .metric, .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; }
+    .intro { padding: 20px 22px; }
+    .intro h1 { margin: 0 0 5px; font-size: 1.34rem; line-height: 1.25; letter-spacing: -.025em; }
+    .intro p { margin: 0; color: var(--muted); line-height: 1.5; font-size: 1rem; }
+    .metric { padding: 16px 18px; display: flex; flex-direction: column; justify-content: center; }
+    .metric-label { color: var(--muted); font-size: .78rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+    .metric-value { margin-top: 5px; font-size: 1.18rem; font-weight: 780; letter-spacing: -.02em; }
+    .metric-detail { margin-top: 3px; color: var(--muted); font-size: .78rem; }
+    .status-good { color: var(--success); }
+    .status-warn { color: var(--warning); }
+    .status-bad { color: var(--danger); }
+    .workspace-tabs { display: grid; gap: 14px; }
+    .tab-list { display: flex; gap: 7px; padding: 6px; overflow-x: auto; border: 1px solid var(--line); border-radius: 15px; background: #eaf2f6; }
+    .workspace-tab { min-height: 44px; flex: 1 0 150px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; padding: 9px 14px; border: 1px solid transparent; border-radius: 10px; color: #486176; background: transparent; font-weight: 760; }
+    .workspace-tab:hover { color: var(--navy-900); background: rgba(255,255,255,.6); }
+    .workspace-tab[aria-selected="true"] { color: var(--navy-900); border-color: #cddde7; background: white; box-shadow: 0 5px 14px rgba(6,38,76,.08); }
+    .tab-env-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 999px; background: var(--cyan-500); box-shadow: 0 0 0 3px var(--cyan-100); }
+    .workspace-tab[data-tab="qa"] .tab-env-dot { background: #d18a24; box-shadow: 0 0 0 3px #fff0d5; }
+    .workspace-tab[data-tab="prod"] .tab-env-dot { background: #c84b5f; box-shadow: 0 0 0 3px #fde7eb; }
+    .tab-dirty { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 999px; background: var(--warning); opacity: 0; transform: scale(.5); transition: opacity .15s ease, transform .15s ease; }
+    .workspace-tab.dirty .tab-dirty { opacity: 1; transform: scale(1); }
+    .tab-stage { min-width: 0; }
+    .tab-panel[hidden] { display: none !important; }
+    .panel { padding: 21px 22px; box-shadow: 0 9px 28px rgba(5, 24, 45, .035); }
+    .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+    .panel h2 { margin: 0; font-size: 1.06rem; letter-spacing: -.015em; }
+    .panel-copy { margin: 5px 0 0; color: var(--muted); font-size: .89rem; line-height: 1.48; }
+    .advanced-content { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+    .advanced-group + .advanced-group { margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
+    .advanced-content h3 { margin: 0 0 5px; font-size: .96rem; }
+    .advanced-content .fields { margin-top: 15px; }
+    .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .field { display: grid; gap: 7px; }
+    .field.wide { grid-column: 1 / -1; }
+    .field label, .field-label { font-size: .84rem; font-weight: 720; color: #30495f; }
+    .field input, .field select, .field textarea {
+      width: 100%; min-height: 44px; border: 1px solid #c8d8e3; border-radius: 11px;
+      padding: 9px 11px; color: var(--ink); background: white;
+    }
+    .field textarea { min-height: 112px; resize: vertical; font: 500 .78rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .field input:disabled, .field select:disabled, .field textarea:disabled { color: #7b8d9d; background: #f3f6f8; cursor: not-allowed; }
+    .field.control-disabled, .toggle.control-disabled { opacity: .58; }
+    .hint { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.42; }
+    .catalog-picker { display: grid; gap: 10px; padding: 12px; border: 1px solid #cfe0e9; border-radius: 12px; background: #f8fbfc; }
+    .catalog-picker.disabled, .field-mapping.disabled .field-card { opacity: .62; }
+    .picker-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+    .picker-toolbar input { min-height: 40px; }
+    .picker-refresh { min-height: 40px; padding: 7px 11px; border: 1px solid #cfe0e9; border-radius: 9px; color: var(--navy-800); background: white; font-weight: 720; }
+    .picker-refresh:hover { background: var(--cyan-100); }
+    .catalog-selected { display: flex; flex-wrap: wrap; gap: 7px; min-height: 26px; }
+    .catalog-empty { color: var(--muted); font-size: .82rem; line-height: 1.4; }
+    .catalog-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 5px 7px 5px 9px; border-radius: 999px; color: #234258; background: #e6f3f7; font-size: .8rem; font-weight: 680; }
+    .catalog-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chip-remove { width: 22px; height: 22px; flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 0; border-radius: 999px; color: #496175; background: rgba(255,255,255,.8); font-weight: 800; }
+    .chip-remove:hover { color: var(--danger); background: white; }
+    .catalog-results { max-height: 230px; overflow: auto; display: grid; gap: 4px; padding: 5px; border: 1px solid var(--line); border-radius: 10px; background: white; }
+    .catalog-option { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 9px; align-items: center; min-height: 38px; padding: 7px 8px; border-radius: 8px; color: #30495f; font-size: .84rem; }
+    .catalog-option:hover { background: #f0f7f9; }
+    .catalog-option input { width: 16px; height: 16px; margin: 0; accent-color: var(--cyan-600); }
+    .catalog-option small { color: var(--muted); font-size: .72rem; }
+    .catalog-option.protected { color: #7b6470; background: #fff8f9; }
+    .catalog-status { color: var(--muted); font-size: .76rem; line-height: 1.4; }
+    .catalog-status.error { color: var(--danger); }
+    .field-mapping { display: grid; gap: 10px; }
+    .field-mapping > .hint { margin-top: -3px; }
+    .field-card-list { display: grid; gap: 10px; }
+    .field-card { display: grid; gap: 10px; padding: 12px; border: 1px solid #cfe0e9; border-radius: 12px; background: #f8fbfc; }
+    .field-card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .field-card-head strong { overflow-wrap: anywhere; font-size: .85rem; }
+    .field-count { color: var(--muted); font-size: .76rem; white-space: nowrap; }
+    .env-list { display: block; }
+    .env-card { border: 1px solid var(--line); border-radius: 15px; overflow: hidden; background: #fbfdfe; }
+    .env-card.panel { padding: 0; border-radius: 18px; }
+    .env-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 15px; border-bottom: 1px solid var(--line); }
+    .env-title { display: flex; align-items: center; gap: 10px; font-weight: 800; }
+    .env-actions { display: flex; align-items: center; gap: 12px; }
+    .env-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--cyan-500); box-shadow: 0 0 0 4px var(--cyan-100); }
+    .env-card[data-env="qa"] .env-dot { background: #d18a24; box-shadow: 0 0 0 4px #fff0d5; }
+    .env-card[data-env="prod"] .env-dot { background: #c84b5f; box-shadow: 0 0 0 4px #fde7eb; }
+    .env-meta { color: var(--muted); font-size: .78rem; }
+    .env-body { padding: 15px; display: grid; gap: 14px; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 5px 9px;
+      border-radius: 999px; font-size: .75rem; font-weight: 750; background: #edf3f6; color: #496175; }
+    .badge.good { background: var(--success-bg); color: var(--success); }
+    .badge.warn { background: var(--warning-bg); color: var(--warning); }
+    .credential-editor { display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding-top: 2px; }
+    .credential-editor.visible { display: grid; }
+    .credential-control { display: flex; align-items: center; gap: 9px; font-size: .84rem; font-weight: 690; }
+    .policy-editor { border: 1px solid var(--line); border-radius: 13px; background: white; overflow: hidden; }
+    .policy-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px; color: var(--navy-900); }
+    .policy-heading h3 { margin: 0; font-size: .92rem; }
+    .policy-body { display: grid; gap: 18px; padding: 15px; border-top: 1px solid var(--line); }
+    .policy-section { display: grid; gap: 12px; }
+    .policy-section h3 { margin: 0; font-size: .86rem; color: var(--navy-900); }
+    .policy-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    [hidden] { display: none !important; }
+    .permission-card { overflow: hidden; border: 1px solid #cfe0e9; border-radius: 14px; background: #fbfdfe; }
+    .permission-card.form-permissions { box-shadow: inset 3px 0 0 var(--cyan-500); }
+    .permission-card.sql-permissions { box-shadow: inset 3px 0 0 var(--navy-800); }
+    .permission-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 15px 17px; background: #f3f8fa; }
+    .permission-card-head h3 { margin: 0; color: var(--navy-900); font-size: .94rem; }
+    .permission-card-head p { margin: 4px 0 0; color: var(--muted); font-size: .78rem; line-height: 1.45; }
+    .permission-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+    .permission-activation { display: grid; gap: 7px; padding: 14px 17px; border-top: 1px solid var(--line); background: white; }
+    .permission-activation-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .capability-status { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.42; }
+    .capability-status.error { color: var(--danger); }
+    .permission-card-body { display: grid; }
+    .permission-slice { display: grid; gap: 12px; padding: 16px 17px; border-top: 1px solid var(--line); }
+    .permission-slice h4 { margin: 0; color: #30495f; font-size: .84rem; }
+    .permission-slice.write-permissions { border-left: 3px solid #e6a447; background: #fffcf6; }
+    .toggle-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 14px; }
+    .toggle { display: flex; align-items: flex-start; gap: 9px; color: #30495f; font-size: .82rem; font-weight: 650; line-height: 1.35; }
+    .toggle input { width: 17px; height: 17px; flex: 0 0 auto; margin: 1px 0 0; accent-color: var(--cyan-600); }
+    .callout { padding: 13px 14px; border-radius: 13px; background: var(--cyan-100); color: #21576a; font-size: .84rem; line-height: 1.48; }
+    .checks { display: grid; gap: 8px; margin-top: 13px; }
+    .check { display: flex; justify-content: space-between; gap: 16px; padding: 10px 11px; border-radius: 10px; background: #f5f8fa; font-size: .82rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .button { min-height: 42px; border: 0; border-radius: 11px; padding: 10px 15px; font-weight: 750; color: white;
+      background: var(--navy-800); box-shadow: 0 7px 16px rgba(10, 55, 104, .13); }
+    .button:hover { background: var(--navy-900); }
+    .button.secondary { color: var(--navy-800); background: #edf5f8; box-shadow: none; border: 1px solid #cfe0e9; }
+    .button.secondary:hover { background: #e2eff4; }
+    .button.small { min-height: 36px; padding: 7px 11px; font-size: .79rem; }
+    .button:disabled { opacity: .52; cursor: not-allowed; }
+    .savebar { position: sticky; bottom: 14px; margin-top: 18px; padding: 14px 16px; border-radius: 16px;
+      background: rgba(5, 24, 45, .95); color: white; display: flex; align-items: center;
+      justify-content: space-between; gap: 16px; box-shadow: 0 15px 40px rgba(5,24,45,.22); backdrop-filter: blur(10px); }
+    .savebar p { margin: 0; color: #d3e2ec; font-size: .84rem; line-height: 1.4; }
+    .savebar .button { background: var(--cyan-500); color: #032b38; box-shadow: none; white-space: nowrap; }
+    dialog { width: min(570px, calc(100% - 32px)); border: 0; border-radius: 19px; padding: 0; color: var(--ink); box-shadow: 0 28px 80px rgba(5,24,45,.28); }
+    dialog::backdrop { background: rgba(5, 24, 45, .58); backdrop-filter: blur(3px); }
+    .dialog-body { padding: 23px; }
+    .dialog-body h2 { margin: 0 0 7px; font-size: 1.2rem; }
+    .review { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 9px; }
+    .review li { padding: 10px 12px; border-radius: 10px; background: #f2f6f8; font-size: .84rem; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 15px 23px; border-top: 1px solid var(--line); background: #f8fafb; }
+    .toast { position: fixed; right: 22px; bottom: 22px; max-width: min(420px, calc(100% - 44px)); padding: 13px 15px;
+      border-radius: 12px; color: white; background: var(--navy-900); box-shadow: 0 14px 38px rgba(5,24,45,.22);
+      opacity: 0; transform: translateY(10px); pointer-events: none; transition: .2s ease; z-index: 20; font-size: .86rem; }
+    .toast.visible { opacity: 1; transform: translateY(0); }
+    .toast.error { background: var(--danger); }
+    @media (max-width: 1050px) {
+      .summary { grid-template-columns: repeat(3, 1fr); }
+      .intro { grid-column: 1 / -1; }
+      .savebar { position: static; }
+    }
+    @media (max-width: 680px) {
+      .shell { width: min(100% - 24px, 1440px); padding-top: 12px; }
+      .topbar { border-radius: 16px; padding: 15px; }
+      .brand-product { display: none; }
+      .version { display: none; }
+      .summary { grid-template-columns: 1fr; }
+      .intro { grid-column: auto; }
+      .tab-list { padding: 5px; }
+      .workspace-tab { flex-basis: 118px; }
+      .picker-toolbar { grid-template-columns: 1fr; }
+      .fields, .credential-editor, .policy-fields, .toggle-grid { grid-template-columns: 1fr; }
+      .permission-card-head { flex-direction: column; }
+      .permission-badges { justify-content: flex-start; }
+      .panel { padding: 18px 16px; }
+      .env-head { align-items: flex-start; }
+      .env-actions { align-items: flex-end; flex-direction: column; }
+      .savebar { align-items: flex-start; flex-direction: column; }
+      .savebar .button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">iA</div>
+        <div>
+          <p class="brand-name">Intelli<span>Agentia</span></p>
+          <p class="brand-product">Helix MCP Gateway · Environment configuration</p>
+        </div>
+      </div>
+      <div class="version" id="server-version">Loading…</div>
+    </header>
+
+    <section class="summary" aria-label="Configuration summary">
+      <div class="intro">
+        <h1>Configure access</h1>
+        <p>Manage the local bridge, environment credentials and policy assignment. Remote destinations remain controlled by your authorized connectivity layer.</p>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Configuration</span>
+        <span class="metric-value" id="config-status">Loading</span>
+        <span class="metric-detail" id="config-file">—</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Credentials</span>
+        <span class="metric-value" id="credential-count">—</span>
+        <span class="metric-detail">DEV · QA · PROD</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Transport</span>
+        <span class="metric-value" id="transport">—</span>
+        <span class="metric-detail">Changes require restart</span>
+      </div>
+    </section>
+
+    <form id="configuration-form">
+      <div class="workspace-tabs">
+        <div class="tab-list" role="tablist" aria-label="Gateway configuration sections">
+          <button class="workspace-tab" type="button" role="tab" id="tab-dev" aria-controls="tab-panel-dev" aria-selected="true" data-tab="dev" data-label="DEV">
+            <span class="tab-env-dot" aria-hidden="true"></span><span>DEV</span><span class="tab-dirty" aria-hidden="true"></span>
+          </button>
+          <button class="workspace-tab" type="button" role="tab" id="tab-qa" aria-controls="tab-panel-qa" aria-selected="false" tabindex="-1" data-tab="qa" data-label="QA">
+            <span class="tab-env-dot" aria-hidden="true"></span><span>QA</span><span class="tab-dirty" aria-hidden="true"></span>
+          </button>
+          <button class="workspace-tab" type="button" role="tab" id="tab-prod" aria-controls="tab-panel-prod" aria-selected="false" tabindex="-1" data-tab="prod" data-label="PROD">
+            <span class="tab-env-dot" aria-hidden="true"></span><span>PROD</span><span class="tab-dirty" aria-hidden="true"></span>
+          </button>
+          <button class="workspace-tab" type="button" role="tab" id="tab-advanced" aria-controls="tab-panel-advanced" aria-selected="false" tabindex="-1" data-tab="advanced" data-label="Advanced settings">
+            <span>Advanced settings</span><span class="tab-dirty" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <div class="tab-stage">
+          <div class="env-list" id="environments"><div class="panel callout">Loading environment configuration…</div></div>
+
+          <section class="panel tab-panel" id="tab-panel-advanced" role="tabpanel" aria-labelledby="tab-advanced" data-tab-panel="advanced" hidden>
+            <div class="panel-head">
+              <div>
+                <h2>Advanced settings</h2>
+                <p class="panel-copy">Technical gateway, local bridge and diagnostic options. The defaults are suitable for normal installations.</p>
+              </div>
+            </div>
+            <div class="advanced-content">
+              <div class="advanced-group">
+                <h3>Local AR API bridge</h3>
+                <p class="panel-copy">Internal communication between the Python gateway and the local Java AR API process. This is not a remote Helix server address.</p>
+                <div class="fields">
+                  <div class="field wide">
+                    <label for="bridge-url">Bridge URL</label>
+                    <input id="bridge-url" type="url" required placeholder="http://127.0.0.1:8090">
+                    <p class="hint">Only loopback addresses are accepted.</p>
+                  </div>
+                  <div class="field">
+                    <label for="request-timeout">Request timeout (seconds)</label>
+                    <input id="request-timeout" type="number" min="1" max="300" required>
+                  </div>
+                  <div class="field">
+                    <label for="pool-size">Connection pool</label>
+                    <input id="pool-size" type="number" min="1" max="50" required>
+                  </div>
+                </div>
+              </div>
+              <div class="advanced-group">
+                <h3>Gateway runtime</h3>
+                <p class="panel-copy">Bounded operational settings shared by all environments.</p>
+                <div class="fields">
+                  <div class="field wide">
+                    <label for="log-level">Log level</label>
+                    <select id="log-level" required>
+                      <option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="metadata-ttl">Metadata cache (seconds)</label>
+                    <input id="metadata-ttl" type="number" min="0" max="86400" required>
+                  </div>
+                  <div class="field">
+                    <label for="health-ttl">Health cache (seconds)</label>
+                    <input id="health-ttl" type="number" min="0" max="300" required>
+                  </div>
+                  <div class="field">
+                    <label for="plan-ttl">Plan lifetime (seconds)</label>
+                    <input id="plan-ttl" type="number" min="60" max="3600" required>
+                  </div>
+                  <div class="field">
+                    <label for="max-plans">Maximum pending plans</label>
+                    <input id="max-plans" type="number" min="1" max="10000" required>
+                  </div>
+                </div>
+              </div>
+              <div class="advanced-group">
+                <h3>Diagnostics</h3>
+                <p class="panel-copy">Check the saved configuration, local bridge requirements and configured credentials. Unsaved edits and remote connectivity are not tested.</p>
+                <div class="checks" id="checks"></div>
+                <div class="actions">
+                  <button class="button secondary" type="button" id="validate-button">Validate installation</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div class="savebar">
+        <p id="save-note">Changes are validated before saving. Restart your MCP client afterward to apply them. Credentials are write-only and never returned to this page.</p>
+        <button class="button" type="button" id="review-button" disabled>Save changes</button>
+      </div>
+    </form>
+  </main>
+
+  <dialog id="review-dialog">
+    <div class="dialog-body">
+      <h2>Review changes before saving</h2>
+      <p class="panel-copy">The candidate will be validated before both files are replaced. Any failed validation restores the previous content.</p>
+      <ul class="review" id="review-list"></ul>
+    </div>
+    <div class="dialog-actions">
+      <button class="button secondary" type="button" id="cancel-save">Cancel</button>
+      <button class="button" type="button" id="confirm-save">Confirm save</button>
+    </div>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const token = document.querySelector('meta[name="helix-dashboard-token"]').content;
+    const form = document.getElementById('configuration-form');
+    const reviewButton = document.getElementById('review-button');
+    const reviewDialog = document.getElementById('review-dialog');
+    const confirmSave = document.getElementById('confirm-save');
+    const toast = document.getElementById('toast');
+    const tabs = Array.from(document.querySelectorAll('[role="tab"][data-tab]'));
+    const formCatalogCache = new Map();
+    const fieldCatalogCache = new Map();
+    const sqlObjectCatalogCache = new Map();
+    const sqlCapabilityState = new Map();
+    const sqlCapabilityRequests = new Map();
+    const catalogSearchTimers = new WeakMap();
+    let currentState = null;
+    let activeTab = 'dev';
+    let catalogRequestId = 0;
+
+    async function api(path, options = {}) {
+      const headers = {...(options.headers || {})};
+      if (options.method === 'POST') {
+        headers['Content-Type'] = 'application/json';
+        headers['X-Helix-Dashboard-Token'] = token;
+      }
+      const response = await fetch(path, {...options, headers, cache: 'no-store'});
+      let payload = {};
+      try { payload = await response.json(); } catch (_) { payload = {}; }
+      if (!response.ok) throw new Error(payload.error || 'The dashboard request failed.');
+      return payload;
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>'"]/g, character => ({
+        '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;'
+      })[character]);
+    }
+
+    function environmentLabel(value) { return value.toUpperCase(); }
+
+    function activateTab(tabName, focus = false) {
+      if (!tabs.some(tab => tab.dataset.tab === tabName)) return;
+      activeTab = tabName;
+      tabs.forEach(tab => {
+        const selected = tab.dataset.tab === tabName;
+        tab.setAttribute('aria-selected', String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+        if (selected && focus) tab.focus();
+      });
+      document.querySelectorAll('[data-tab-panel]').forEach(panel => {
+        panel.hidden = panel.dataset.tabPanel !== tabName;
+      });
+      if (tabName !== 'advanced') initializeEnvironmentCatalog(tabName);
+    }
+
+    function markTabDirty(tabName) {
+      const tab = tabs.find(candidate => candidate.dataset.tab === tabName);
+      if (!tab) return;
+      tab.classList.add('dirty');
+      tab.setAttribute('aria-label', `${tab.dataset.label} — unsaved changes`);
+      reviewButton.disabled = false;
+    }
+
+    function clearDirtyTabs() {
+      tabs.forEach(tab => {
+        tab.classList.remove('dirty');
+        tab.setAttribute('aria-label', tab.dataset.label);
+      });
+      reviewButton.disabled = true;
+    }
+
+    function policyBadge(policy) {
+      if (policy.access_mode === 'read_write') return '<span class="badge warn">Controlled writes</span>';
+      return '<span class="badge good">Read only</span>';
+    }
+
+    function checked(value) { return value ? 'checked' : ''; }
+
+    function policyToggle(environment, field, label, value) {
+      return `<label class="toggle"><input type="checkbox" data-policy-toggle="${field}" data-policy-env="${environment}" ${checked(value)}><span>${label}</span></label>`;
+    }
+
+    function formPicker(environment, field, label, values) {
+      return `<div class="field wide">
+        <label for="search-${field}-${environment}">${label}</label>
+        <div class="catalog-picker" data-form-picker="${field}" data-policy-env="${environment}">
+          <div class="picker-toolbar">
+            <input id="search-${field}-${environment}" type="search" data-form-search data-catalog-transient placeholder="Search available forms" autocomplete="off">
+            <button class="picker-refresh" type="button" data-form-refresh>Refresh</button>
+          </div>
+          <div class="catalog-selected" data-catalog-selected></div>
+          <div class="catalog-results" data-catalog-results><span class="catalog-empty">Open this environment to load available forms.</span></div>
+          <div class="catalog-status" data-catalog-status>Uses metadata only; no records are queried.</div>
+        </div>
+        <textarea hidden id="${field}-${environment}" data-policy-input="${field}" data-policy-env="${environment}">${escapeHtml((values || []).join('\n'))}</textarea>
+      </div>`;
+    }
+
+    function sqlObjectPicker(environment, values) {
+      return `<div class="field wide">
+        <label for="search-allowed_sql_objects-${environment}">Allowed SQL objects</label>
+        <div class="catalog-picker" data-sql-object-picker data-policy-env="${environment}">
+          <div class="picker-toolbar">
+            <input id="search-allowed_sql_objects-${environment}" type="search" data-sql-object-search data-catalog-transient placeholder="Search schema or object name" autocomplete="off">
+            <button class="picker-refresh" type="button" data-sql-object-refresh>Refresh</button>
+          </div>
+          <div class="catalog-selected" data-sql-object-selected></div>
+          <div class="catalog-results" data-sql-object-results><span class="catalog-empty">Enable SQL reads to load available objects.</span></div>
+          <div class="catalog-status" data-sql-object-status>Uses database metadata only; no table rows are queried.</div>
+        </div>
+        <textarea hidden id="allowed_sql_objects-${environment}" data-policy-input="allowed_sql_objects" data-policy-env="${environment}">${escapeHtml((values || []).join('\n'))}</textarea>
+      </div>`;
+    }
+
+    function fieldMappingPicker(environment, field, label, value, sourceField) {
+      return `<div class="field wide field-mapping" data-field-mapping="${field}" data-source-field="${sourceField}" data-policy-env="${environment}">
+        <span class="field-label">${label}</span>
+        <p class="hint">Choose fields separately for each selected form.</p>
+        <div class="field-card-list" data-field-card-list></div>
+        <textarea hidden id="${field}-${environment}" data-policy-input="${field}" data-policy-env="${environment}">${escapeHtml(JSON.stringify(value || {}, null, 2))}</textarea>
+      </div>`;
+    }
+
+    function sameName(left, right) {
+      return String(left).toLocaleLowerCase() === String(right).toLocaleLowerCase();
+    }
+
+    function uniqueNames(values) {
+      const unique = [];
+      values.forEach(value => {
+        const normalized = String(value).trim();
+        if (normalized && !unique.some(item => sameName(item, normalized))) unique.push(normalized);
+      });
+      return unique.sort((left, right) => left.localeCompare(right, undefined, {sensitivity: 'base'}));
+    }
+
+    function setPolicyLines(environment, field, values) {
+      const input = policyElement(environment, 'input', field);
+      input.value = uniqueNames(values).join('\n');
+      input.dataset.internalUpdate = 'true';
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+      delete input.dataset.internalUpdate;
+      document.querySelectorAll(`[data-form-picker="${field}"][data-policy-env="${environment}"]`).forEach(renderFormPicker);
+      refreshFieldMappingsForSource(environment, field, activeTab === environment);
+    }
+
+    function selectedFormNames(picker) {
+      return policyLines(picker.dataset.policyEnv, picker.dataset.formPicker);
+    }
+
+    function renderFormPicker(picker) {
+      const environment = picker.dataset.policyEnv;
+      const field = picker.dataset.formPicker;
+      const selected = selectedFormNames(picker);
+      const disabled = picker.classList.contains('disabled');
+      const selectedContainer = picker.querySelector('[data-catalog-selected]');
+      selectedContainer.innerHTML = selected.length
+        ? selected.map(name => `<span class="catalog-chip"><span>${escapeHtml(name)}</span><button class="chip-remove" type="button" data-remove-form="${escapeHtml(name)}" aria-label="Remove ${escapeHtml(name)}" ${disabled ? 'disabled' : ''}>×</button></span>`).join('')
+        : '<span class="catalog-empty">No forms selected.</span>';
+      selectedContainer.querySelectorAll('[data-remove-form]').forEach(button => button.addEventListener('click', () => {
+        updateFormSelection(picker, button.dataset.removeForm, false);
+      }));
+
+      const items = picker.catalogItems || [];
+      const results = picker.querySelector('[data-catalog-results]');
+      if (!items.length) {
+        results.innerHTML = `<span class="catalog-empty">${picker.dataset.loaded === 'true' ? 'No matching forms.' : 'Open this environment to load available forms.'}</span>`;
+        return;
+      }
+      results.innerHTML = items.map(item => {
+        const isSelected = selected.some(name => sameName(name, item.name));
+        return `<label class="catalog-option"><input type="checkbox" data-form-choice="${escapeHtml(item.name)}" ${checked(isSelected)} ${disabled ? 'disabled' : ''}><span>${escapeHtml(item.name)}</span></label>`;
+      }).join('');
+      results.querySelectorAll('[data-form-choice]').forEach(input => input.addEventListener('change', () => {
+        updateFormSelection(picker, input.dataset.formChoice, input.checked);
+      }));
+    }
+
+    function updateFormSelection(picker, name, selected) {
+      const environment = picker.dataset.policyEnv;
+      const field = picker.dataset.formPicker;
+      let values = selectedFormNames(picker);
+      const existing = values.findIndex(value => sameName(value, name));
+      if (selected && existing < 0) values.push(name);
+      if (!selected && existing >= 0) values.splice(existing, 1);
+      if (selected && field === 'writable_forms' && !policyElement(environment, 'toggle', 'allow_all_forms').checked) {
+        const allowed = policyLines(environment, 'allowed_forms');
+        if (!allowed.some(value => sameName(value, name))) setPolicyLines(environment, 'allowed_forms', [...allowed, name]);
+      }
+      setPolicyLines(environment, field, values);
+    }
+
+    function clearCatalogCache(cache, prefix) {
+      Array.from(cache.keys()).forEach(key => {
+        if (key.startsWith(prefix)) cache.delete(key);
+      });
+    }
+
+    async function loadFormCatalog(picker, refresh = false) {
+      const environment = picker.dataset.policyEnv;
+      const search = picker.querySelector('[data-form-search]').value.trim();
+      const requestId = String(++catalogRequestId);
+      picker.dataset.requestId = requestId;
+      const status = picker.querySelector('[data-catalog-status]');
+      status.className = 'catalog-status';
+      status.textContent = 'Loading available forms…';
+      if (refresh) clearCatalogCache(formCatalogCache, `${environment}\u0000`);
+      const key = `${environment}\u0000${search.toLocaleLowerCase()}`;
+      let request = formCatalogCache.get(key);
+      if (!request) {
+        request = api('/api/catalog/forms', {
+          method: 'POST',
+          body: JSON.stringify({environment, name_contains: search || null, limit: 100, refresh})
+        });
+        formCatalogCache.set(key, request);
+      }
+      try {
+        const response = await request;
+        if (picker.dataset.requestId !== requestId) return;
+        picker.catalogItems = response.items;
+        picker.dataset.loaded = 'true';
+        renderFormPicker(picker);
+        status.textContent = response.total > response.items.length
+          ? `Showing ${response.items.length} of ${response.total} forms. Refine the search to narrow the list.`
+          : `${response.total} form${response.total === 1 ? '' : 's'} available.`;
+      } catch (error) {
+        formCatalogCache.delete(key);
+        if (picker.dataset.requestId !== requestId) return;
+        picker.catalogItems = [];
+        picker.dataset.loaded = 'true';
+        renderFormPicker(picker);
+        status.className = 'catalog-status error';
+        status.textContent = `${error.message} Existing configured values are preserved.`;
+      }
+    }
+
+    function renderSqlObjectPicker(picker) {
+      const environment = picker.dataset.policyEnv;
+      const selected = policyLines(environment, 'allowed_sql_objects');
+      const disabled = picker.classList.contains('disabled');
+      const selectedContainer = picker.querySelector('[data-sql-object-selected]');
+      selectedContainer.innerHTML = selected.length
+        ? selected.map(name => `<span class="catalog-chip"><span>${escapeHtml(name)}</span><button class="chip-remove" type="button" data-remove-sql-object="${escapeHtml(name)}" aria-label="Remove ${escapeHtml(name)}" ${disabled ? 'disabled' : ''}>×</button></span>`).join('')
+        : '<span class="catalog-empty">No SQL objects selected.</span>';
+      selectedContainer.querySelectorAll('[data-remove-sql-object]').forEach(button => button.addEventListener('click', () => {
+        setPolicyLines(environment, 'allowed_sql_objects', selected.filter(name => !sameName(name, button.dataset.removeSqlObject)));
+        renderSqlObjectPicker(picker);
+      }));
+
+      const items = picker.catalogItems || [];
+      const results = picker.querySelector('[data-sql-object-results]');
+      if (!items.length) {
+        results.innerHTML = `<span class="catalog-empty">${picker.dataset.loaded === 'true' ? 'No matching SQL objects.' : 'Enable SQL reads to load available objects.'}</span>`;
+        return;
+      }
+      results.innerHTML = items.map(item => {
+        const isSelected = selected.some(name => sameName(name, item.qualified_name) || sameName(name, item.name));
+        const kind = item.kind.replaceAll('_', ' ');
+        return `<label class="catalog-option"><input type="checkbox" data-sql-object-choice="${escapeHtml(item.qualified_name)}" data-sql-object-name="${escapeHtml(item.name)}" ${checked(isSelected)} ${disabled ? 'disabled' : ''}><span>${escapeHtml(item.qualified_name)}</span><small>${escapeHtml(kind)}</small></label>`;
+      }).join('');
+      results.querySelectorAll('[data-sql-object-choice]').forEach(input => input.addEventListener('change', () => {
+        updateSqlObjectSelection(picker, input.dataset.sqlObjectChoice, input.dataset.sqlObjectName, input.checked);
+      }));
+    }
+
+    function updateSqlObjectSelection(picker, qualifiedName, objectName, selected) {
+      const environment = picker.dataset.policyEnv;
+      let values = policyLines(environment, 'allowed_sql_objects');
+      values = values.filter(value => !sameName(value, qualifiedName) && !sameName(value, objectName));
+      if (selected) values.push(qualifiedName);
+      setPolicyLines(environment, 'allowed_sql_objects', values);
+      renderSqlObjectPicker(picker);
+    }
+
+    async function loadSqlObjectCatalog(picker, refresh = false) {
+      const environment = picker.dataset.policyEnv;
+      const search = picker.querySelector('[data-sql-object-search]').value.trim();
+      const requestId = String(++catalogRequestId);
+      picker.dataset.requestId = requestId;
+      const status = picker.querySelector('[data-sql-object-status]');
+      status.className = 'catalog-status';
+      status.textContent = 'Loading available SQL objects…';
+      if (refresh) clearCatalogCache(sqlObjectCatalogCache, `${environment}\u0000`);
+      const key = `${environment}\u0000${search.toLocaleLowerCase()}`;
+      let request = sqlObjectCatalogCache.get(key);
+      if (!request) {
+        request = api('/api/catalog/sql-objects', {
+          method: 'POST',
+          body: JSON.stringify({environment, name_contains: search || null, limit: 100, refresh})
+        });
+        sqlObjectCatalogCache.set(key, request);
+      }
+      try {
+        const response = await request;
+        if (picker.dataset.requestId !== requestId) return;
+        picker.catalogItems = response.items;
+        picker.dataset.loaded = 'true';
+        renderSqlObjectPicker(picker);
+        const truncation = response.truncated ? ' The administrative catalog reached its safety limit.' : '';
+        status.textContent = response.total > response.items.length
+          ? `Showing ${response.items.length} of ${response.total} SQL objects. Refine the search to narrow the list.${truncation}`
+          : `${response.total} SQL object${response.total === 1 ? '' : 's'} available.${truncation}`;
+      } catch (error) {
+        sqlObjectCatalogCache.delete(key);
+        if (picker.dataset.requestId !== requestId) return;
+        picker.catalogItems = [];
+        picker.dataset.loaded = 'true';
+        renderSqlObjectPicker(picker);
+        status.className = 'catalog-status error';
+        status.textContent = `${error.message} Administrative AR API SQL permission may be required. Existing configured values are preserved.`;
+      }
+    }
+
+    function parseMappingForEditor(environment, field) {
+      const input = policyElement(environment, 'input', field);
+      const raw = input.value.trim();
+      if (!raw) return {};
+      const mapping = JSON.parse(raw);
+      if (!mapping || Array.isArray(mapping) || typeof mapping !== 'object') throw new Error('Mapping must be a JSON object.');
+      Object.entries(mapping).forEach(([formName, fields]) => {
+        if (!formName.trim() || !Array.isArray(fields) || fields.some(value => typeof value !== 'string')) {
+          throw new Error('Each form must map to an array of field names.');
+        }
+      });
+      return mapping;
+    }
+
+    function fieldMappingElement(environment, field) {
+      return Array.from(document.querySelectorAll('[data-field-mapping]')).find(element => (
+        element.dataset.policyEnv === environment && element.dataset.fieldMapping === field
+      ));
+    }
+
+    function renderFieldMapping(mappingElement, loadCatalog = false) {
+      const environment = mappingElement.dataset.policyEnv;
+      const field = mappingElement.dataset.fieldMapping;
+      const sourceField = mappingElement.dataset.sourceField;
+      const list = mappingElement.querySelector('[data-field-card-list]');
+      let mapping;
+      try {
+        mapping = parseMappingForEditor(environment, field);
+      } catch (error) {
+        list.innerHTML = `<div class="catalog-status error">${escapeHtml(error.message)} Correct the policy in helix.yaml and reload the dashboard.</div>`;
+        return;
+      }
+      const forms = uniqueNames([...policyLines(environment, sourceField), ...Object.keys(mapping)]);
+      if (!forms.length) {
+        list.innerHTML = '<div class="catalog-empty">Select at least one form to choose its fields.</div>';
+        return;
+      }
+      list.innerHTML = forms.map(formName => `<div class="field-card" data-field-card data-field-form="${escapeHtml(formName)}">
+        <div class="field-card-head"><strong>${escapeHtml(formName)}</strong><span class="field-count" data-field-count></span></div>
+        <div class="picker-toolbar">
+          <input type="search" data-field-search data-catalog-transient placeholder="Search available fields" aria-label="Search fields in ${escapeHtml(formName)}" autocomplete="off">
+          <button class="picker-refresh" type="button" data-field-refresh>Refresh</button>
+        </div>
+        <div class="catalog-selected" data-field-selected></div>
+        <div class="catalog-results" data-field-results><span class="catalog-empty">Loading fields…</span></div>
+        <div class="catalog-status" data-field-status>Uses field metadata only.</div>
+      </div>`).join('');
+      list.querySelectorAll('[data-field-card]').forEach(card => {
+        initializeFieldCard(card, mappingElement);
+        if (loadCatalog && !mappingElement.classList.contains('disabled')) loadFieldCatalog(card, mappingElement);
+      });
+      applyCompositeDisabled(mappingElement, mappingElement.classList.contains('disabled'));
+    }
+
+    function initializeFieldCard(card, mappingElement) {
+      const search = card.querySelector('[data-field-search]');
+      search.addEventListener('input', () => {
+        clearTimeout(catalogSearchTimers.get(search));
+        catalogSearchTimers.set(search, setTimeout(() => loadFieldCatalog(card, mappingElement), 250));
+      });
+      card.querySelector('[data-field-refresh]').addEventListener('click', () => loadFieldCatalog(card, mappingElement, true));
+      renderFieldCard(card, mappingElement);
+    }
+
+    function selectedFields(mappingElement, formName) {
+      try {
+        const mapping = parseMappingForEditor(mappingElement.dataset.policyEnv, mappingElement.dataset.fieldMapping);
+        return uniqueNames(mapping[formName] || []);
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function fieldIsProtected(environment, fieldName) {
+      const folded = fieldName.toLocaleLowerCase();
+      const policy = currentState.configuration.policies[environment];
+      const exact = policy.sensitive_fields.some(value => value.toLocaleLowerCase() === folded);
+      const marker = policy.sensitive_field_markers.some(value => folded.includes(value.toLocaleLowerCase()));
+      return exact || marker;
+    }
+
+    function uniqueFieldItems(items) {
+      const unique = new Map();
+      items.forEach(item => {
+        const key = item.name.toLocaleLowerCase();
+        const current = unique.get(key);
+        if (current) current.ids.push(item.id);
+        else unique.set(key, {...item, ids: [item.id]});
+      });
+      return Array.from(unique.values());
+    }
+
+    function renderFieldCard(card, mappingElement) {
+      const environment = mappingElement.dataset.policyEnv;
+      const formName = card.dataset.fieldForm;
+      const selected = selectedFields(mappingElement, formName);
+      const disabled = mappingElement.classList.contains('disabled');
+      card.querySelector('[data-field-count]').textContent = `${selected.length} selected`;
+      const selectedContainer = card.querySelector('[data-field-selected]');
+      selectedContainer.innerHTML = selected.length
+        ? selected.map(name => `<span class="catalog-chip"><span>${escapeHtml(name)}</span><button class="chip-remove" type="button" data-remove-field="${escapeHtml(name)}" aria-label="Remove ${escapeHtml(name)} from ${escapeHtml(formName)}" ${disabled ? 'disabled' : ''}>×</button></span>`).join('')
+        : '<span class="catalog-empty">No fields selected.</span>';
+      selectedContainer.querySelectorAll('[data-remove-field]').forEach(button => button.addEventListener('click', () => {
+        updateFieldSelection(mappingElement, card, button.dataset.removeField, false);
+      }));
+
+      const items = uniqueFieldItems(card.catalogItems || []);
+      const results = card.querySelector('[data-field-results]');
+      if (!items.length) {
+        results.innerHTML = `<span class="catalog-empty">${card.dataset.loaded === 'true' ? 'No matching fields.' : 'Loading fields…'}</span>`;
+        return;
+      }
+      results.innerHTML = items.map(item => {
+        const isSelected = selected.some(name => sameName(name, item.name));
+        const protectedField = fieldIsProtected(environment, item.name);
+        const metadata = item.ids.length > 1 ? `${item.datatype} · ${item.ids.length} IDs` : `${item.datatype} · ID ${item.id}`;
+        return `<label class="catalog-option${protectedField ? ' protected' : ''}"><input type="checkbox" data-field-choice="${escapeHtml(item.name)}" ${checked(isSelected)} ${protectedField || disabled ? 'disabled' : ''}><span>${escapeHtml(item.name)}</span><small>${escapeHtml(protectedField ? 'Protected' : metadata)}</small></label>`;
+      }).join('');
+      results.querySelectorAll('[data-field-choice]').forEach(input => input.addEventListener('change', () => {
+        updateFieldSelection(mappingElement, card, input.dataset.fieldChoice, input.checked);
+      }));
+    }
+
+    function updateFieldSelection(mappingElement, card, fieldName, selected) {
+      const environment = mappingElement.dataset.policyEnv;
+      const mappingField = mappingElement.dataset.fieldMapping;
+      const formName = card.dataset.fieldForm;
+      let mapping;
+      try {
+        mapping = parseMappingForEditor(environment, mappingField);
+      } catch (error) {
+        showToast(error.message, true);
+        return;
+      }
+      const values = uniqueNames(mapping[formName] || []);
+      const existing = values.findIndex(value => sameName(value, fieldName));
+      if (selected && existing < 0) values.push(fieldName);
+      if (!selected && existing >= 0) values.splice(existing, 1);
+      if (values.length) mapping[formName] = uniqueNames(values);
+      else delete mapping[formName];
+      const input = policyElement(environment, 'input', mappingField);
+      input.value = JSON.stringify(mapping, null, 2);
+      input.dataset.internalUpdate = 'true';
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+      delete input.dataset.internalUpdate;
+      if (values.length) renderFieldCard(card, mappingElement);
+      else renderFieldMapping(mappingElement, false);
+    }
+
+    async function loadFieldCatalog(card, mappingElement, refresh = false) {
+      const environment = mappingElement.dataset.policyEnv;
+      const formName = card.dataset.fieldForm;
+      const search = card.querySelector('[data-field-search]').value.trim();
+      const requestId = String(++catalogRequestId);
+      card.dataset.requestId = requestId;
+      const status = card.querySelector('[data-field-status]');
+      status.className = 'catalog-status';
+      status.textContent = 'Loading available fields…';
+      const prefix = `${environment}\u0000${formName}\u0000`;
+      if (refresh) clearCatalogCache(fieldCatalogCache, prefix);
+      const key = `${prefix}${search.toLocaleLowerCase()}`;
+      let request = fieldCatalogCache.get(key);
+      if (!request) {
+        request = api('/api/catalog/fields', {
+          method: 'POST',
+          body: JSON.stringify({environment, form: formName, name_contains: search || null, limit: 100, refresh})
+        });
+        fieldCatalogCache.set(key, request);
+      }
+      try {
+        const response = await request;
+        if (card.dataset.requestId !== requestId) return;
+        card.catalogItems = response.items;
+        card.dataset.loaded = 'true';
+        renderFieldCard(card, mappingElement);
+        status.textContent = response.total > response.items.length
+          ? `Showing ${response.items.length} of ${response.total} fields. Refine the search to narrow the list.`
+          : `${response.total} field${response.total === 1 ? '' : 's'} available.`;
+      } catch (error) {
+        fieldCatalogCache.delete(key);
+        if (card.dataset.requestId !== requestId) return;
+        card.catalogItems = [];
+        card.dataset.loaded = 'true';
+        renderFieldCard(card, mappingElement);
+        status.className = 'catalog-status error';
+        status.textContent = `${error.message} Existing configured values are preserved.`;
+      }
+    }
+
+    function refreshFieldMappingsForSource(environment, sourceField, loadCatalog = false) {
+      document.querySelectorAll(`[data-field-mapping][data-policy-env="${environment}"][data-source-field="${sourceField}"]`).forEach(element => renderFieldMapping(element, loadCatalog));
+    }
+
+    function initializeCatalogControls(environment) {
+      document.querySelectorAll(`[data-form-picker][data-policy-env="${environment}"]`).forEach(picker => {
+        const search = picker.querySelector('[data-form-search]');
+        search.addEventListener('input', () => {
+          clearTimeout(catalogSearchTimers.get(search));
+          catalogSearchTimers.set(search, setTimeout(() => loadFormCatalog(picker), 250));
+        });
+        picker.querySelector('[data-form-refresh]').addEventListener('click', () => loadFormCatalog(picker, true));
+        const input = policyElement(environment, 'input', picker.dataset.formPicker);
+        input.addEventListener('input', () => {
+          if (input.dataset.internalUpdate) return;
+          renderFormPicker(picker);
+          refreshFieldMappingsForSource(environment, picker.dataset.formPicker, activeTab === environment);
+        });
+        renderFormPicker(picker);
+      });
+      const sqlPicker = document.querySelector(`[data-sql-object-picker][data-policy-env="${environment}"]`);
+      const sqlSearch = sqlPicker.querySelector('[data-sql-object-search]');
+      sqlSearch.addEventListener('input', () => {
+        clearTimeout(catalogSearchTimers.get(sqlSearch));
+        catalogSearchTimers.set(sqlSearch, setTimeout(() => loadSqlObjectCatalog(sqlPicker), 250));
+      });
+      sqlPicker.querySelector('[data-sql-object-refresh]').addEventListener('click', () => loadSqlObjectCatalog(sqlPicker, true));
+      const sqlInput = policyElement(environment, 'input', 'allowed_sql_objects');
+      sqlInput.addEventListener('input', () => {
+        if (!sqlInput.dataset.internalUpdate) renderSqlObjectPicker(sqlPicker);
+      });
+      renderSqlObjectPicker(sqlPicker);
+      document.querySelectorAll(`[data-field-mapping][data-policy-env="${environment}"]`).forEach(mappingElement => {
+        const input = policyElement(environment, 'input', mappingElement.dataset.fieldMapping);
+        input.addEventListener('input', () => {
+          if (!input.dataset.internalUpdate) renderFieldMapping(mappingElement, activeTab === environment);
+        });
+        renderFieldMapping(mappingElement, false);
+      });
+    }
+
+    function initializeEnvironmentCatalog(environment) {
+      document.querySelectorAll(`[data-form-picker][data-policy-env="${environment}"]`).forEach(picker => {
+        if (picker.classList.contains('disabled') || picker.closest('[hidden]')) return;
+        if (picker.dataset.loaded !== 'true') loadFormCatalog(picker);
+      });
+      document.querySelectorAll(`[data-field-mapping][data-policy-env="${environment}"] [data-field-card]`).forEach(card => {
+        if (card.dataset.loaded === 'true') return;
+        const mappingElement = card.closest('[data-field-mapping]');
+        if (!mappingElement.classList.contains('disabled') && !mappingElement.closest('[hidden]')) loadFieldCatalog(card, mappingElement);
+      });
+      const sqlPicker = document.querySelector(`[data-sql-object-picker][data-policy-env="${environment}"]`);
+      if (!sqlPicker.classList.contains('disabled') && !sqlPicker.closest('[hidden]') && sqlPicker.dataset.loaded !== 'true') loadSqlObjectCatalog(sqlPicker);
+    }
+
+    function applyCompositeDisabled(element, disabled) {
+      element.classList.toggle('disabled', disabled);
+      element.querySelectorAll('input, button').forEach(control => {
+        if (!control.matches('[data-policy-input]')) control.disabled = disabled;
+      });
+    }
+
+    function renderEnvironments(environments, policies) {
+      document.getElementById('environments').innerHTML = environments.map(item => {
+        const environment = item.environment;
+        const label = environmentLabel(environment);
+        const policy = policies[environment];
+        const credential = item.credential;
+        const credentialBadge = credential.configured
+          ? `<span class="badge good">Credential configured</span>`
+          : `<span class="badge warn">Credential missing</span>`;
+        const managedCopy = credential.editable
+          ? 'Leave disabled to preserve the existing credential.'
+          : 'This credential is managed by the process environment and cannot be replaced here.';
+        return `<article class="env-card panel tab-panel" id="tab-panel-${environment}" role="tabpanel" aria-labelledby="tab-${environment}" data-env="${environment}" data-tab-panel="${environment}" ${environment === activeTab ? '' : 'hidden'}>
+          <div class="env-head">
+            <div class="env-title"><span class="env-dot"></span>${label}</div>
+            <div class="env-actions">
+              <span class="env-meta">Local listener ${item.gateway_port}</span>
+              <button class="button secondary small" type="button" data-test="${environment}">Test ${label}</button>
+            </div>
+          </div>
+          <div class="env-body">
+            <section class="policy-section">
+              <h3>Credentials</h3>
+              ${credentialBadge}
+              <label class="credential-control">
+                <input type="checkbox" data-replace="${environment}" ${credential.editable ? '' : 'disabled'}>
+                Replace ${label} credential
+              </label>
+              <p class="hint">${managedCopy}</p>
+              <div class="credential-editor" data-credential="${environment}">
+                <div class="field"><label for="username-${environment}">Username</label><input id="username-${environment}" data-username="${environment}" autocomplete="off" disabled></div>
+                <div class="field"><label for="password-${environment}">Password</label><input id="password-${environment}" data-password="${environment}" type="password" autocomplete="new-password" disabled></div>
+                <div class="field wide"><label for="authentication-${environment}">Authentication / domain (optional)</label><input id="authentication-${environment}" data-authentication="${environment}" autocomplete="off" disabled></div>
+              </div>
+            </section>
+            <section class="policy-editor" aria-labelledby="policy-heading-${environment}">
+              <div class="policy-heading"><h3 id="policy-heading-${environment}">${label} access policy</h3>${policyBadge(policy)}</div>
+              <div class="policy-body">
+                <section class="policy-section">
+                  <h3>Access and limits</h3>
+                  <p class="hint">Gateway safeguards, not Helix API limits.</p>
+                  <div class="policy-fields">
+                    <div class="field"><label for="access_mode-${environment}">Write access</label><select id="access_mode-${environment}" data-policy-input="access_mode" data-policy-env="${environment}" aria-describedby="access_mode_hint-${environment}"><option value="read_only" ${policy.access_mode === 'read_only' ? 'selected' : ''}>Writes disabled</option><option value="read_write" ${policy.access_mode === 'read_write' ? 'selected' : ''}>Controlled writes enabled</option></select><p class="hint" id="access_mode_hint-${environment}">Read capabilities are configured independently below.</p></div>
+                    <div class="field"><label for="max_rows-${environment}">Maximum rows per request</label><input id="max_rows-${environment}" data-policy-input="max_rows" data-policy-env="${environment}" type="number" min="1" max="100000" value="${policy.max_rows}" required></div>
+                    <div class="field"><label for="query_timeout_seconds-${environment}">Query timeout (seconds)</label><input id="query_timeout_seconds-${environment}" data-policy-input="query_timeout_seconds" data-policy-env="${environment}" type="number" min="1" max="300" value="${policy.query_timeout_seconds}" required></div>
+                    <div class="field"><label for="rate_limit_per_minute-${environment}">Read requests per minute</label><input id="rate_limit_per_minute-${environment}" data-policy-input="rate_limit_per_minute" data-policy-env="${environment}" type="number" min="1" max="10000" value="${policy.rate_limit_per_minute}" required></div>
+                    <div class="field"><label for="write_rate_limit_per_minute-${environment}">Write requests per minute</label><input id="write_rate_limit_per_minute-${environment}" data-policy-input="write_rate_limit_per_minute" data-policy-env="${environment}" type="number" min="1" max="1000" value="${policy.write_rate_limit_per_minute}" required></div>
+                  </div>
+                </section>
+                <section class="permission-card form-permissions" aria-labelledby="form-permissions-${environment}">
+                  <div class="permission-card-head">
+                    <div><h3 id="form-permissions-${environment}">Form permissions</h3><p>Form reads are always enabled. Define their scope and any controlled write permissions.</p></div>
+                    <div class="permission-badges"><span class="badge" data-form-write-status></span></div>
+                  </div>
+                  <div class="permission-card-body" data-form-permissions-body>
+                    <section class="permission-slice">
+                      <h4>Forms in scope</h4>
+                      <p class="hint">This boundary is shared by form reads and controlled writes.</p>
+                      <div class="toggle-grid">${policyToggle(environment, 'allow_all_forms', 'Allow every form', policy.allow_all_forms)}</div>
+                      <div class="policy-fields">${formPicker(environment, 'allowed_forms', 'Allowed forms', policy.allowed_forms)}</div>
+                    </section>
+                    <section class="permission-slice">
+                      <h4>Readable fields</h4>
+                      <div class="toggle-grid">${policyToggle(environment, 'allow_all_fields', 'Allow every non-sensitive field', policy.allow_all_fields)}</div>
+                      <div class="policy-fields">${fieldMappingPicker(environment, 'allowed_fields_by_form', 'Readable fields by form', policy.allowed_fields_by_form, 'allowed_forms')}</div>
+                    </section>
+                    <section class="permission-slice write-permissions" data-form-write-permissions ${policy.access_mode === 'read_write' ? '' : 'hidden'}>
+                      <h4>Writable forms and fields</h4>
+                      <div class="callout">Controlled writes always require human approval and a reason.</div>
+                      <div class="policy-fields">
+                        ${formPicker(environment, 'writable_forms', 'Writable forms', policy.writable_forms)}
+                        ${fieldMappingPicker(environment, 'creatable_fields_by_form', 'Creatable fields by form', policy.creatable_fields_by_form, 'writable_forms')}
+                        ${fieldMappingPicker(environment, 'updatable_fields_by_form', 'Updatable fields by form', policy.updatable_fields_by_form, 'writable_forms')}
+                      </div>
+                    </section>
+                  </div>
+                </section>
+                <section class="permission-card sql-permissions" aria-labelledby="sql-permissions-${environment}">
+                  <div class="permission-card-head">
+                    <div><h3 id="sql-permissions-${environment}">SQL read permissions</h3><p>Restrict reviewed SQL reads to approved database objects.</p></div>
+                  </div>
+                  <div class="permission-activation">
+                    <div class="permission-activation-row">
+                      ${policyToggle(environment, 'allow_sql', 'Enable reviewed SQL reads', policy.allow_sql)}
+                      <button class="button secondary small" type="button" data-sql-capability-retry="${environment}" hidden>Retry</button>
+                    </div>
+                    <p class="capability-status" data-sql-capability-status role="status">Checking administrator access…</p>
+                  </div>
+                  <div class="permission-card-body" data-sql-permissions-body ${policy.allow_sql ? '' : 'hidden'}>
+                    <section class="permission-slice">
+                      <div class="toggle-grid">${policyToggle(environment, 'allow_all_sql_objects', 'Allow every SQL object', policy.allow_all_sql_objects)}</div>
+                      <div class="policy-fields">${sqlObjectPicker(environment, policy.allowed_sql_objects)}</div>
+                    </section>
+                  </div>
+                </section>
+              </div>
+            </section>
+          </div>
+        </article>`;
+      }).join('');
+
+      environments.forEach(item => {
+        const card = document.querySelector(`[data-env="${item.environment}"]`);
+        card.querySelectorAll('[data-policy-input], [data-policy-toggle]').forEach(input => input.addEventListener('change', () => syncPolicyControls(item.environment)));
+        initializeCatalogControls(item.environment);
+        syncPolicyControls(item.environment);
+      });
+      document.querySelectorAll('[data-replace]').forEach(checkbox => checkbox.addEventListener('change', () => {
+        const env = checkbox.dataset.replace;
+        const editor = document.querySelector(`[data-credential="${env}"]`);
+        editor.classList.toggle('visible', checkbox.checked);
+        editor.querySelectorAll('input').forEach(input => {
+          input.disabled = !checkbox.checked;
+          input.required = checkbox.checked && !input.hasAttribute('data-authentication');
+        });
+        if (checkbox.checked) {
+          sqlCapabilityRequests.set(env, (sqlCapabilityRequests.get(env) || 0) + 1);
+          sqlCapabilityState.set(env, 'credential_pending');
+          syncPolicyControls(env);
+        } else {
+          loadSqlCapability(env, true);
+        }
+      }));
+      document.querySelectorAll('[data-sql-capability-retry]').forEach(button => button.addEventListener('click', () => loadSqlCapability(button.dataset.sqlCapabilityRetry, true)));
+      document.querySelectorAll('[data-test]').forEach(button => button.addEventListener('click', async () => {
+        await runChecks(true, [button.dataset.test], button);
+        await loadSqlCapability(button.dataset.test, true);
+      }));
+      activateTab(activeTab);
+    }
+
+    async function loadSqlCapability(environment, refresh = false) {
+      const requestId = (sqlCapabilityRequests.get(environment) || 0) + 1;
+      sqlCapabilityRequests.set(environment, requestId);
+      sqlCapabilityState.set(environment, 'checking');
+      syncPolicyControls(environment);
+      try {
+        const response = await api('/api/capabilities/sql', {
+          method: 'POST',
+          body: JSON.stringify({environment, refresh})
+        });
+        if (sqlCapabilityRequests.get(environment) !== requestId) return;
+        sqlCapabilityState.set(environment, response.status);
+      } catch (_) {
+        if (sqlCapabilityRequests.get(environment) !== requestId) return;
+        sqlCapabilityState.set(environment, 'unverified');
+      }
+      syncPolicyControls(environment);
+    }
+
+    function syncPolicyControls(environment) {
+      const card = document.querySelector(`[data-env="${environment}"]`);
+      const input = field => card.querySelector(`[data-policy-input="${field}"]`);
+      const toggle = field => card.querySelector(`[data-policy-toggle="${field}"]`);
+      const disableInput = (field, disabled) => {
+        const control = input(field);
+        control.disabled = disabled;
+        const container = control.closest('.field');
+        if (container) container.classList.toggle('control-disabled', disabled);
+      };
+      const disableToggle = (field, disabled) => {
+        const control = toggle(field);
+        control.disabled = disabled;
+        control.closest('.toggle').classList.toggle('control-disabled', disabled);
+      };
+      const setStatus = (selector, enabled, enabledLabel, disabledLabel, tone = 'good') => {
+        const badge = card.querySelector(selector);
+        badge.textContent = enabled ? enabledLabel : disabledLabel;
+        badge.className = enabled ? `badge ${tone}` : 'badge';
+      };
+      const writeEnabled = input('access_mode').value === 'read_write';
+      const capability = sqlCapabilityState.get(environment) || 'checking';
+      const sqlAvailable = capability === 'available';
+      if ((capability === 'administrator_required' || capability === 'credential_pending') && toggle('allow_sql').checked) {
+        toggle('allow_sql').checked = false;
+        markTabDirty(environment);
+      }
+      disableToggle('allow_sql', !sqlAvailable);
+      const sqlEnabled = sqlAvailable && toggle('allow_sql').checked;
+      const allSqlObjects = toggle('allow_all_sql_objects').checked;
+      const allForms = toggle('allow_all_forms').checked;
+      const allFields = toggle('allow_all_fields').checked;
+
+      setStatus('[data-form-write-status]', writeEnabled, 'Writes enabled', 'Writes disabled', 'warn');
+      card.querySelector('[data-form-write-permissions]').hidden = !writeEnabled;
+      card.querySelector('[data-sql-permissions-body]').hidden = !sqlEnabled;
+
+      const capabilityStatus = card.querySelector('[data-sql-capability-status]');
+      const retry = card.querySelector('[data-sql-capability-retry]');
+      capabilityStatus.className = 'capability-status';
+      retry.hidden = capability === 'checking' || capability === 'available' || capability === 'credential_pending';
+      if (capability === 'available') {
+        capabilityStatus.textContent = 'AR System administrator access confirmed.';
+      } else if (capability === 'administrator_required') {
+        capabilityStatus.classList.add('error');
+        capabilityStatus.textContent = 'Unavailable — the configured Helix account does not have AR System administrator permissions.';
+      } else if (capability === 'credential_pending') {
+        capabilityStatus.textContent = 'Save the replacement credential before SQL access can be verified.';
+      } else if (capability === 'unverified') {
+        capabilityStatus.classList.add('error');
+        capabilityStatus.textContent = 'Could not verify administrator access. Check connectivity or credentials and retry.';
+      } else {
+        capabilityStatus.textContent = 'Checking administrator access…';
+      }
+
+      disableInput('write_rate_limit_per_minute', !writeEnabled);
+
+      disableInput('allowed_forms', allForms);
+      applyCompositeDisabled(card.querySelector('[data-form-picker="allowed_forms"]'), allForms);
+      card.querySelector('[data-form-picker="allowed_forms"]').closest('.field').hidden = allForms;
+      disableInput('allowed_fields_by_form', allFields);
+      applyCompositeDisabled(fieldMappingElement(environment, 'allowed_fields_by_form'), allFields);
+      fieldMappingElement(environment, 'allowed_fields_by_form').hidden = allFields;
+
+      disableToggle('allow_all_sql_objects', !sqlEnabled);
+      disableInput('allowed_sql_objects', !sqlEnabled || allSqlObjects);
+      applyCompositeDisabled(card.querySelector('[data-sql-object-picker]'), !sqlEnabled || allSqlObjects);
+      card.querySelector('[data-sql-object-picker]').closest('.field').hidden = allSqlObjects;
+
+      ['writable_forms', 'creatable_fields_by_form', 'updatable_fields_by_form'].forEach(field => disableInput(field, !writeEnabled));
+      applyCompositeDisabled(card.querySelector('[data-form-picker="writable_forms"]'), !writeEnabled);
+      applyCompositeDisabled(fieldMappingElement(environment, 'creatable_fields_by_form'), !writeEnabled);
+      applyCompositeDisabled(fieldMappingElement(environment, 'updatable_fields_by_form'), !writeEnabled);
+      if (activeTab === environment) initializeEnvironmentCatalog(environment);
+    }
+
+    function populate(state) {
+      currentState = state;
+      formCatalogCache.clear();
+      fieldCatalogCache.clear();
+      sqlObjectCatalogCache.clear();
+      const configuration = state.configuration;
+      sqlCapabilityState.clear();
+      configuration.environments.forEach(item => {
+        sqlCapabilityRequests.set(item.environment, (sqlCapabilityRequests.get(item.environment) || 0) + 1);
+      });
+      document.getElementById('server-version').textContent = `Server ${state.server_version}`;
+      document.getElementById('config-status').textContent = 'Valid';
+      document.getElementById('config-status').className = 'metric-value status-good';
+      document.getElementById('config-file').textContent = configuration.server.transport === 'stdio' ? state.files.configuration : `${state.files.configuration} · HTTP`;
+      const credentialCount = configuration.environments.filter(item => item.credential.configured).length;
+      document.getElementById('credential-count').textContent = `${credentialCount} of 3`;
+      document.getElementById('credential-count').className = `metric-value ${credentialCount === 3 ? 'status-good' : 'status-warn'}`;
+      document.getElementById('transport').textContent = configuration.server.transport === 'stdio' ? 'stdio' : 'Local HTTP';
+
+      document.getElementById('log-level').value = configuration.server.log_level;
+      document.getElementById('metadata-ttl').value = configuration.server.metadata_cache_ttl_seconds;
+      document.getElementById('health-ttl').value = configuration.server.health_cache_ttl_seconds;
+      document.getElementById('plan-ttl').value = configuration.server.write_plan_ttl_seconds;
+      document.getElementById('max-plans').value = configuration.server.max_pending_write_plans;
+      document.getElementById('bridge-url').value = configuration.arapi.bridge_base_url;
+      document.getElementById('request-timeout').value = configuration.arapi.request_timeout_seconds;
+      document.getElementById('pool-size').value = configuration.arapi.pool_size;
+      renderEnvironments(configuration.environments, configuration.policies);
+      clearDirtyTabs();
+      configuration.environments.forEach(item => loadSqlCapability(item.environment));
+      if (state.restart_required) {
+        document.getElementById('save-note').textContent = 'Configuration saved. Restart your MCP client to apply the new settings.';
+      }
+    }
+
+    function numberValue(id) { return document.getElementById(id).valueAsNumber; }
+
+    function policyElement(environment, kind, field) {
+      return document.querySelector(`[data-policy-${kind}="${field}"][data-policy-env="${environment}"]`);
+    }
+
+    function policyLines(environment, field) {
+      return policyElement(environment, 'input', field).value.split('\n').map(value => value.trim()).filter(Boolean);
+    }
+
+    function policyMap(environment, field) {
+      const raw = policyElement(environment, 'input', field).value.trim();
+      if (!raw) return {};
+      let mapping;
+      try {
+        mapping = JSON.parse(raw);
+      } catch (_) {
+        throw new Error(`${environmentLabel(environment)} ${field} must be valid JSON.`);
+      }
+      if (!mapping || Array.isArray(mapping) || typeof mapping !== 'object') {
+        throw new Error(`${environmentLabel(environment)} ${field} must be a JSON object.`);
+      }
+      Object.entries(mapping).forEach(([form, fields]) => {
+        if (!form.trim() || !Array.isArray(fields) || fields.some(fieldName => typeof fieldName !== 'string' || !fieldName.trim())) {
+          throw new Error(`${environmentLabel(environment)} ${field} must map form names to non-empty field-name arrays.`);
+        }
+      });
+      return mapping;
+    }
+
+    function policyPayload(environment) {
+      const input = field => policyElement(environment, 'input', field);
+      const toggle = field => policyElement(environment, 'toggle', field);
+      const accessMode = input('access_mode').value;
+      const writeEnabled = accessMode === 'read_write';
+      const allowAllForms = toggle('allow_all_forms').checked;
+      const allowAllFields = toggle('allow_all_fields').checked;
+      const allowSql = toggle('allow_sql').checked;
+      const allowAllSqlObjects = allowSql && toggle('allow_all_sql_objects').checked;
+      return {
+        name: environment,
+        allow_all_forms: allowAllForms,
+        allow_all_fields: allowAllFields,
+        allowed_forms: allowAllForms ? [] : policyLines(environment, 'allowed_forms'),
+        allowed_fields_by_form: allowAllFields ? {} : policyMap(environment, 'allowed_fields_by_form'),
+        writable_forms: writeEnabled ? policyLines(environment, 'writable_forms') : [],
+        creatable_fields_by_form: writeEnabled ? policyMap(environment, 'creatable_fields_by_form') : {},
+        updatable_fields_by_form: writeEnabled ? policyMap(environment, 'updatable_fields_by_form') : {},
+        allow_all_sql_objects: allowAllSqlObjects,
+        allowed_sql_objects: allowAllSqlObjects ? [] : policyLines(environment, 'allowed_sql_objects'),
+        allow_form_reads: true,
+        allow_sql: allowSql,
+        access_mode: accessMode,
+        require_human_approval: true,
+        require_write_reason: true,
+        max_rows: input('max_rows').valueAsNumber,
+        query_timeout_seconds: input('query_timeout_seconds').valueAsNumber,
+        rate_limit_per_minute: input('rate_limit_per_minute').valueAsNumber,
+        write_rate_limit_per_minute: input('write_rate_limit_per_minute').valueAsNumber,
+        sensitive_fields: [...currentState.configuration.policies[environment].sensitive_fields],
+        sensitive_field_markers: [...currentState.configuration.policies[environment].sensitive_field_markers]
+      };
+    }
+
+    function collectPayload() {
+      const credentials = {};
+      document.querySelectorAll('[data-replace]:checked').forEach(checkbox => {
+        const env = checkbox.dataset.replace;
+        credentials[env] = {
+          username: document.querySelector(`[data-username="${env}"]`).value,
+          password: document.querySelector(`[data-password="${env}"]`).value,
+          authentication: document.querySelector(`[data-authentication="${env}"]`).value || null
+        };
+      });
+      const policies = {};
+      ['dev', 'qa', 'prod'].forEach(environment => { policies[environment] = policyPayload(environment); });
+      return {
+        revision: currentState.revision,
+        server: {
+          log_level: document.getElementById('log-level').value,
+          metadata_cache_ttl_seconds: numberValue('metadata-ttl'),
+          health_cache_ttl_seconds: numberValue('health-ttl'),
+          write_plan_ttl_seconds: numberValue('plan-ttl'),
+          max_pending_write_plans: numberValue('max-plans')
+        },
+        arapi: {
+          bridge_base_url: document.getElementById('bridge-url').value,
+          request_timeout_seconds: numberValue('request-timeout'),
+          pool_size: numberValue('pool-size')
+        },
+        policies,
+        credentials
+      };
+    }
+
+    function openReview() {
+      if (!form.checkValidity()) {
+        const invalidControl = form.querySelector(':invalid');
+        const panel = invalidControl ? invalidControl.closest('[data-tab-panel]') : null;
+        if (panel) activateTab(panel.dataset.tabPanel);
+        form.reportValidity();
+        return;
+      }
+      let payload;
+      try {
+        payload = collectPayload();
+      } catch (error) {
+        showToast(error.message, true);
+        return;
+      }
+      const replacements = Object.keys(payload.credentials);
+      const changedTabs = tabs.filter(tab => tab.classList.contains('dirty')).map(tab => tab.dataset.label);
+      const list = document.getElementById('review-list');
+      list.innerHTML = `
+        <li>Sections changed: <strong>${escapeHtml(changedTabs.join(', '))}</strong></li>
+        <li>Bridge: <strong>${escapeHtml(payload.arapi.bridge_base_url)}</strong></li>
+        <li>Write access: DEV <strong>${payload.policies.dev.access_mode === 'read_write' ? 'enabled' : 'disabled'}</strong>, QA <strong>${payload.policies.qa.access_mode === 'read_write' ? 'enabled' : 'disabled'}</strong>, PROD <strong>${payload.policies.prod.access_mode === 'read_write' ? 'enabled' : 'disabled'}</strong></li>
+        <li>Credentials replaced: <strong>${replacements.length ? replacements.map(environmentLabel).join(', ') : 'none'}</strong></li>
+        <li>The running MCP process will not change until it is restarted.</li>`;
+      reviewDialog.showModal();
+    }
+
+    async function save() {
+      confirmSave.disabled = true;
+      try {
+        const state = await api('/api/configuration', {method: 'POST', body: JSON.stringify(collectPayload())});
+        reviewDialog.close();
+        populate(state);
+        showToast('Configuration saved. Restart the MCP client to apply it.');
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        confirmSave.disabled = false;
+      }
+    }
+
+    async function runChecks(live, environments = [], button = document.getElementById('validate-button')) {
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = live ? 'Testing…' : 'Validating…';
+      try {
+        const report = await api('/api/preflight', {method: 'POST', body: JSON.stringify({live, environments})});
+        document.getElementById('checks').innerHTML = report.checks.map(check => `
+          <div class="check"><span>${escapeHtml(check.name)}</span><strong class="${check.status === 'passed' ? 'status-good' : 'status-bad'}">${check.status === 'passed' ? 'Passed' : escapeHtml(check.error_code || 'Failed')}</strong></div>`).join('');
+        showToast(report.status === 'ready' ? 'Installation is ready.' : 'Some checks need attention.', report.status !== 'ready');
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    let toastTimer;
+    function showToast(message, error = false) {
+      clearTimeout(toastTimer);
+      toast.textContent = message;
+      toast.className = `toast visible${error ? ' error' : ''}`;
+      toastTimer = setTimeout(() => { toast.className = 'toast'; }, 4500);
+    }
+
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => activateTab(tab.dataset.tab));
+      tab.addEventListener('keydown', event => {
+        let targetIndex = null;
+        if (event.key === 'ArrowRight') targetIndex = (index + 1) % tabs.length;
+        if (event.key === 'ArrowLeft') targetIndex = (index - 1 + tabs.length) % tabs.length;
+        if (event.key === 'Home') targetIndex = 0;
+        if (event.key === 'End') targetIndex = tabs.length - 1;
+        if (targetIndex === null) return;
+        event.preventDefault();
+        activateTab(tabs[targetIndex].dataset.tab, true);
+      });
+    });
+    const markChangedPanel = event => {
+      if (event.target.closest('[data-catalog-transient]')) return;
+      const panel = event.target.closest('[data-tab-panel]');
+      if (panel) markTabDirty(panel.dataset.tabPanel);
+    };
+    form.addEventListener('input', markChangedPanel);
+    form.addEventListener('change', markChangedPanel);
+    reviewButton.addEventListener('click', openReview);
+    document.getElementById('cancel-save').addEventListener('click', () => reviewDialog.close());
+    confirmSave.addEventListener('click', save);
+    document.getElementById('validate-button').addEventListener('click', () => runChecks(false));
+
+    api('/api/state').then(populate).catch(error => {
+      document.getElementById('config-status').textContent = 'Unavailable';
+      document.getElementById('config-status').className = 'metric-value status-bad';
+      showToast(error.message, true);
+    });
+  </script>
+</body>
+</html>

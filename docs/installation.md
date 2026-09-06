@@ -93,15 +93,20 @@ The command:
 3. installs the bridge JAR atomically;
 4. creates `helix.yaml` and `.env` only when absent;
 5. generates a private random key for encrypted plans;
-6. returns sanitized JSON with destinations and the MCP client command.
+6. starts or reuses the detached local dashboard and opens it in the default
+   browser;
+7. returns sanitized JSON with destinations, the MCP client command, and the
+   dashboard process ID and URL.
 
 `--config-dir`, `--data-dir`, and `--state-dir` override the per-user defaults.
 `--dry-run` validates packaged resources and reports destinations without
-creating directories, compiling, or changing files.
+creating directories, compiling, changing files, or launching the dashboard.
+Use `--no-dashboard` for a headless or unattended installation.
 
-The generated `.env` contains no sample credentials. Supply only the
-environments that the local policy enables, using one compact JSON object per
-line:
+The generated `.env` contains no sample credentials. The user configures the
+required DEV, QA, and PROD credentials through the write-only dashboard fields
+or supplies them through an approved process environment using one compact
+JSON object per line:
 
 ```dotenv
 HELIX_CREDENTIAL_DEV='{"username":"DEV_USER","password":"REPLACE_ME"}'
@@ -116,8 +121,7 @@ secret source for real values.
 
 Review the generated `helix.yaml` before connecting. Its names and policies
 are fictional defaults, not knowledge of the user's systems. Replace targets,
-allowlists, and limits with explicitly authorized values. PROD must remain
-read-only.
+allowlists, and limits with explicitly authorized values.
 
 The plan key contains 32 random bytes, uses mode `0600` on POSIX, and is never
 included in `.env` content, logs, wheels, or the repository. Startup rejects
@@ -192,6 +196,25 @@ first installation when prerequisites are already available; reviewing policy
 and entering approved local values takes longer than the commands. Installing
 the JDK, Client Gateway, Developer Studio, or obtaining access is outside this
 estimate.
+
+## Local dashboard
+
+After setup, the detached dashboard is already available at:
+
+```text
+http://127.0.0.1:8766/
+```
+
+Running setup again safely reuses the dashboard when it belongs to the same
+installation. If the process was stopped, it can be run explicitly in the
+foreground with `helix-mcp-dashboard --dotenv /path/to/.env`.
+
+The dashboard does not configure the external connectivity layer or hot-reload
+a running MCP process. Restart the MCP client after saving, then run the live
+preflight before normal use.
+
+See [`dashboard.md`](dashboard.md) for the editable fields, credential
+handling, and recovery behavior.
 
 ## Upgrades
 

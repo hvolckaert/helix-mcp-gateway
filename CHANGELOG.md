@@ -30,6 +30,15 @@ Semantic Versioning.
 - Correct MCP metadata for reviewable write planning and execution.
 - Keep strict type checking compatible across supported `types-PyYAML` stub
   revisions.
+- Add a loopback-only administrative dashboard for validated configuration,
+  write-only credential replacement, guided per-environment policy editing,
+  and sanitized readiness checks. DEV, QA, and PROD own fixed policies that
+  start read-only and can independently enable controlled writes. Guided setup
+  launches or safely reuses the dashboard as a detached process so
+  configuration does not depend on the MCP process lifecycle.
+- Keep form reads enabled in dashboard-managed policies, place optional SQL
+  activation with its object permissions, and enforce human approval plus a
+  non-empty reason for every controlled write.
 
 ## 0.6.5 - 2026-08-10
 
