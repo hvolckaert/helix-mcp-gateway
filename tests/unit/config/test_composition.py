@@ -155,9 +155,7 @@ def test_repository_public_config_is_safe_by_default() -> None:
 
     assert qa.name == "qa"
     assert prod.name == "prod"
-    assert qa.model_dump(exclude={"name"}) == prod.model_dump(
-        exclude={"name"}
-    )
+    assert qa.model_dump(exclude={"name"}) == prod.model_dump(exclude={"name"})
     assert qa.access_mode is AccessMode.READ_ONLY
     assert qa.allow_form_reads is True
     assert qa.allowed_forms == ()

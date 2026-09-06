@@ -32,6 +32,8 @@ from helix_mcp.dashboard import (
     DashboardProcessLauncher,
     DashboardService,
 )
+from helix_mcp.installation.managed import activate_managed_installation
+from helix_mcp.installation.updater import ReleaseStatus
 from helix_mcp.services.database import (
     DatabaseObjectKind,
     DatabaseObjectMetadata,
@@ -47,8 +49,7 @@ def _installation(tmp_path: Path, *, secret: str | None = None) -> Path:
     lines = [f"HELIX_CONFIG_PATH={json.dumps(str(config_path))}"]
     if secret is not None:
         lines.append(
-            "HELIX_CREDENTIAL_DEV="
-            + json.dumps(secret, ensure_ascii=False)
+            "HELIX_CREDENTIAL_DEV=" + json.dumps(secret, ensure_ascii=False)
         )
     dotenv_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return dotenv_path
@@ -69,14 +70,10 @@ def _configuration(
         "revision": state["revision"],
         "server": {
             "log_level": "WARNING",
-            "metadata_cache_ttl_seconds": server[
-                "metadata_cache_ttl_seconds"
-            ],
+            "metadata_cache_ttl_seconds": server["metadata_cache_ttl_seconds"],
             "health_cache_ttl_seconds": server["health_cache_ttl_seconds"],
             "write_plan_ttl_seconds": server["write_plan_ttl_seconds"],
-            "max_pending_write_plans": server[
-                "max_pending_write_plans"
-            ],
+            "max_pending_write_plans": server["max_pending_write_plans"],
         },
         "arapi": {
             "bridge_base_url": "http://127.0.0.1:8091",
@@ -131,6 +128,76 @@ def test_state_is_sanitized_and_describes_fixed_environments(
     assert isinstance(policies, dict)
     assert set(policies) == {"dev", "qa", "prod"}
     assert set(policies["dev"]) == set(TargetPolicyConfig.model_fields)
+    update = state["update"]
+    assert isinstance(update, dict)
+    assert update["managed"] is False
+    assert update["release"]["status"] == "unavailable"
+
+
+@pytest.mark.integration
+def test_managed_update_can_be_checked_and_started(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dotenv_path = _installation(tmp_path)
+    workspace = tmp_path / "data"
+    bridge = workspace / "bridge/helix-arapi-bridge.jar"
+    bridge.parent.mkdir(parents=True)
+    bridge.write_bytes(b"bridge")
+    with dotenv_path.open("a", encoding="utf-8") as stream:
+        stream.write(f"HELIX_ARAPI_BRIDGE_JAR_PATH={bridge}\n")
+    server = workspace / "runtime/0.6.8/venv/bin/helix-mcp"
+    server.parent.mkdir(parents=True)
+    server.write_text("server", encoding="utf-8")
+    activate_managed_installation(
+        workspace=workspace,
+        version="0.6.8",
+        server_command=server,
+        dotenv_path=dotenv_path,
+    )
+    monkeypatch.setattr(
+        dashboard_module,
+        "check_for_update",
+        lambda **kwargs: ReleaseStatus(
+            status="available",
+            repository="hvolckaert/helix-mcp-gateway",
+            current_version="0.6.8",
+            latest_version="0.7.0",
+            update_available=True,
+        ),
+    )
+    captured: dict[str, object] = {}
+
+    class FakeWorker:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        def start(self) -> SimpleNamespace:
+            return SimpleNamespace(pid=4_321)
+
+    monkeypatch.setattr(
+        dashboard_module,
+        "DashboardUpdateWorkerLauncher",
+        FakeWorker,
+    )
+    service = DashboardService(dotenv_path, process_environment={})
+
+    update = service.check_update()
+    started = service.start_update(
+        dashboard_port=8_766,
+        dashboard_token="local-token",
+    )
+
+    assert update["managed"] is True
+    assert update["release"]["latest_version"] == "0.7.0"
+    assert started == {
+        "status": "started",
+        "target_version": "0.7.0",
+        "process_id": 4_321,
+    }
+    assert captured["workspace"] == workspace
+    assert captured["dashboard_port"] == 8_766
+    assert captured["dashboard_token"] == "local-token"
 
 
 @pytest.mark.integration
@@ -156,9 +223,7 @@ def test_configure_updates_yaml_and_write_only_credential(
     assert result["restart_required"] is True
     config = yaml.safe_load((tmp_path / "helix.yaml").read_text())
     assert config["server"]["log_level"] == "WARNING"
-    assert config["arapi"]["bridge_base_url"] == (
-        "http://127.0.0.1:8091/"
-    )
+    assert config["arapi"]["bridge_base_url"] == ("http://127.0.0.1:8091/")
     assert [policy["name"] for policy in config["policies"]] == [
         "dev",
         "qa",
@@ -583,10 +648,13 @@ def test_dashboard_metadata_session_reuses_bridge_catalog_cache(
             ),
             False,
         )
-        assert session.check_sql_access(
-            dashboard_module.Environment.DEV,
-            "a" * 64,
-        ) is True
+        assert (
+            session.check_sql_access(
+                dashboard_module.Environment.DEV,
+                "a" * 64,
+            )
+            is True
+        )
         assert application.started is True
         assert calls == [
             ("forms", None),
@@ -636,10 +704,13 @@ def test_dashboard_sql_capability_recognizes_admin_required(
         {},
     )
     try:
-        assert session.check_sql_access(
-            dashboard_module.Environment.PROD,
-            "b" * 64,
-        ) is False
+        assert (
+            session.check_sql_access(
+                dashboard_module.Environment.PROD,
+                "b" * 64,
+            )
+            is False
+        )
     finally:
         session.close()
 
@@ -766,20 +837,31 @@ def test_http_surface_is_local_english_and_csrf_protected(
         assert "Enable form reads" not in html
         assert "Human approval for controlled writes" not in html
         assert "Require a write reason" not in html
-        assert "Controlled writes always require human approval and a reason" in html
+        assert (
+            "Controlled writes always require human approval and a reason"
+            in html
+        )
         assert "Form access scope" not in html
         assert "Form read scope" not in html
         assert "Controlled write scope" not in html
         assert "SQL read scope" not in html
-        assert html.count(
-            '<button class="workspace-tab" type="button" role="tab"'
-        ) == 4
+        assert (
+            html.count(
+                '<button class="workspace-tab" type="button" role="tab"'
+            )
+            == 4
+        )
         assert 'data-tab="dev"' in html
         assert 'data-tab="qa"' in html
         assert 'data-tab="prod"' in html
         assert 'data-tab="advanced"' in html
         assert 'id="tab-panel-advanced"' in html
         assert "Diagnostics" in html
+        assert "Server updates" in html
+        assert "Check for updates" in html
+        assert "Install update" in html
+        assert "/api/update/check" in html
+        assert "/api/update/install" in html
         assert "Search available forms" in html
         assert "/api/catalog/forms" in html
         assert "/api/catalog/fields" in html
@@ -932,7 +1014,9 @@ def test_dashboard_launcher_detaches_and_waits_for_readiness(
     captured: dict[str, object] = {}
     fake_process = FakeDashboardProcess()
 
-    def fake_popen(command: list[str], **kwargs: object) -> FakeDashboardProcess:
+    def fake_popen(
+        command: list[str], **kwargs: object
+    ) -> FakeDashboardProcess:
         captured["command"] = command
         captured["kwargs"] = kwargs
         return fake_process

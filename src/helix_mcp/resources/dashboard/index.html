@@ -348,6 +348,19 @@
                 </div>
               </div>
               <div class="advanced-group">
+                <h3>Server updates</h3>
+                <p class="panel-copy">Install verified GitHub releases into an isolated runtime. The current version and configuration are retained for rollback.</p>
+                <div class="checks">
+                  <div class="check"><span>Installed version</span><strong id="update-current-version">—</strong></div>
+                  <div class="check"><span>Update status</span><strong id="update-status">Not checked</strong></div>
+                </div>
+                <p class="hint" id="update-detail">Checking for updates is manual. Installation requires confirmation.</p>
+                <div class="actions">
+                  <button class="button secondary" type="button" id="check-update-button">Check for updates</button>
+                  <button class="button" type="button" id="install-update-button" hidden>Install update</button>
+                </div>
+              </div>
+              <div class="advanced-group">
                 <h3>Diagnostics</h3>
                 <p class="panel-copy">Check the saved configuration, local bridge requirements and configured credentials. Unsaved edits and remote connectivity are not tested.</p>
                 <div class="checks" id="checks"></div>
@@ -397,6 +410,7 @@
     let currentState = null;
     let activeTab = 'dev';
     let catalogRequestId = 0;
+    let updateReconnectRunning = false;
 
     async function api(path, options = {}) {
       const headers = {...(options.headers || {})};
@@ -1187,6 +1201,7 @@
       document.getElementById('credential-count').textContent = `${credentialCount} of 3`;
       document.getElementById('credential-count').className = `metric-value ${credentialCount === 3 ? 'status-good' : 'status-warn'}`;
       document.getElementById('transport').textContent = configuration.server.transport === 'stdio' ? 'stdio' : 'Local HTTP';
+      renderUpdate(state.update);
 
       document.getElementById('log-level').value = configuration.server.log_level;
       document.getElementById('metadata-ttl').value = configuration.server.metadata_cache_ttl_seconds;
@@ -1202,6 +1217,113 @@
       if (state.restart_required) {
         document.getElementById('save-note').textContent = 'Configuration saved. Restart your MCP client to apply the new settings.';
       }
+    }
+
+    function renderUpdate(update) {
+      const release = update?.release || {};
+      const operation = update?.operation || null;
+      const currentVersion = release.current_version || currentState?.server_version || '—';
+      const checkButton = document.getElementById('check-update-button');
+      const installButton = document.getElementById('install-update-button');
+      const status = document.getElementById('update-status');
+      const detail = document.getElementById('update-detail');
+      document.getElementById('update-current-version').textContent = currentVersion;
+      checkButton.disabled = !update?.managed || ['queued', 'preparing', 'running'].includes(operation?.status);
+      installButton.hidden = !(release.update_available && release.latest_version);
+      installButton.disabled = ['queued', 'preparing', 'running'].includes(operation?.status);
+      installButton.textContent = release.latest_version ? `Install ${release.latest_version}` : 'Install update';
+      status.className = '';
+      if (!update?.managed) {
+        status.textContent = 'Setup required';
+        status.className = 'status-warn';
+        detail.textContent = 'Run the installer once to create the stable managed launcher.';
+      } else if (['queued', 'preparing', 'running'].includes(operation?.status)) {
+        status.textContent = operation.status === 'queued' ? 'Queued' : 'Installing';
+        status.className = 'status-warn';
+        detail.textContent = `Installing ${operation.target_version}. This page will reconnect automatically.`;
+      } else if (operation?.status === 'error') {
+        status.textContent = 'Update failed';
+        status.className = 'status-bad';
+        detail.textContent = `The previous runtime remains active (${operation.error_code || 'UPDATE_ERROR'}).`;
+      } else if (operation?.status === 'success' && operation.current_version === currentVersion) {
+        status.textContent = 'Updated';
+        status.className = 'status-good';
+        detail.textContent = `${currentVersion} is active. The previous runtime is retained for rollback.`;
+      } else if (release.status === 'available') {
+        status.textContent = `${release.latest_version} available`;
+        status.className = 'status-warn';
+        detail.textContent = 'The release digest, isolated installation, bridge build and smoke test will be verified before activation.';
+      } else if (release.status === 'current') {
+        status.textContent = 'Current';
+        status.className = 'status-good';
+        detail.textContent = `${currentVersion} is the newest stable release.`;
+      } else if (release.status === 'error') {
+        status.textContent = 'Check failed';
+        status.className = 'status-bad';
+        detail.textContent = `GitHub release metadata is unavailable (${release.error_code || 'UPDATE_ERROR'}).`;
+      } else {
+        status.textContent = 'Not checked';
+        detail.textContent = 'Checking for updates is manual. Installation requires confirmation.';
+      }
+    }
+
+    async function checkForUpdate() {
+      const button = document.getElementById('check-update-button');
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = 'Checking…';
+      try {
+        currentState.update = await api('/api/update/check', {method: 'POST', body: '{}'});
+        renderUpdate(currentState.update);
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        button.textContent = original;
+        if (!updateReconnectRunning) button.disabled = !currentState?.update?.managed;
+      }
+    }
+
+    async function installUpdate() {
+      const targetVersion = currentState?.update?.release?.latest_version;
+      if (!targetVersion) return;
+      const client = currentState?.update?.client;
+      const accepted = window.confirm(
+        `Install Helix MCP Gateway ${targetVersion}?\n\nThe release digest, backup, isolated runtime, Java bridge and smoke test will be verified before the stable launcher changes.${client === 'openclaw' ? ' OpenClaw will restart briefly.' : ''} This page will reconnect automatically.`
+      );
+      if (!accepted) return;
+      const previousProcessId = currentState.dashboard.process_id;
+      try {
+        const result = await api('/api/update/install', {method: 'POST', body: '{}'});
+        currentState.update.operation = {status: 'queued', target_version: result.target_version};
+        renderUpdate(currentState.update);
+        showToast(`Installing ${result.target_version}. This page will reconnect automatically.`);
+        reconnectAfterUpdate(previousProcessId);
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    }
+
+    async function reconnectAfterUpdate(previousProcessId) {
+      if (updateReconnectRunning) return;
+      updateReconnectRunning = true;
+      let disconnected = false;
+      for (let attempt = 0; attempt < 600; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        try {
+          const identity = await api('/api/identity');
+          if (disconnected || identity.process_id !== previousProcessId) {
+            const state = await api('/api/state');
+            populate(state);
+            showToast(state.update?.operation?.status === 'success' ? 'Server updated successfully.' : 'Dashboard reconnected.');
+            updateReconnectRunning = false;
+            return;
+          }
+        } catch (_) {
+          disconnected = true;
+        }
+      }
+      updateReconnectRunning = false;
+      showToast('The dashboard did not reconnect in time. Reload this page to check the update.', true);
     }
 
     function numberValue(id) { return document.getElementById(id).valueAsNumber; }
@@ -1389,6 +1511,8 @@
     document.getElementById('cancel-save').addEventListener('click', () => reviewDialog.close());
     confirmSave.addEventListener('click', save);
     document.getElementById('validate-button').addEventListener('click', () => runChecks(false));
+    document.getElementById('check-update-button').addEventListener('click', checkForUpdate);
+    document.getElementById('install-update-button').addEventListener('click', installUpdate);
 
     api('/api/state').then(populate).catch(error => {
       document.getElementById('config-status').textContent = 'Unavailable';

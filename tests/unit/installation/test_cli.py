@@ -108,10 +108,23 @@ def test_setup_starts_detached_dashboard_by_default(
         dry_run=False,
         server_command="helix-mcp",
     )
+    setup_result.dotenv_path.parent.mkdir(parents=True)
+    setup_result.dotenv_path.write_text("HELIX_CONFIG_PATH=helix.yaml\n")
+    installed_server = tmp_path / "venv/bin/helix-mcp"
+    installed_server.parent.mkdir(parents=True)
+    installed_server.write_text("server", encoding="utf-8")
     captured: dict[str, object] = {}
     monkeypatch.setattr(
         "helix_mcp.installation.cli.setup_installation",
         lambda **kwargs: setup_result,
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli._installed_server_command",
+        lambda: installed_server,
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli._package_version",
+        lambda: "0.7.0",
     )
 
     class FakeLauncher:
@@ -145,6 +158,10 @@ def test_setup_starts_detached_dashboard_by_default(
         "dotenv_path": setup_result.dotenv_path,
         "errors_path": paths.state_dir / "errors",
     }
+    assert payload["codex_desktop"]["command"] == str(
+        paths.data_dir / "bin/helix-mcp"
+    )
+    assert payload["codex_desktop"]["args"] == []
 
 
 def test_setup_can_skip_dashboard(tmp_path, monkeypatch, capsys) -> None:
@@ -165,9 +182,22 @@ def test_setup_can_skip_dashboard(tmp_path, monkeypatch, capsys) -> None:
         dry_run=False,
         server_command="helix-mcp",
     )
+    setup_result.dotenv_path.parent.mkdir(parents=True)
+    setup_result.dotenv_path.write_text("HELIX_CONFIG_PATH=helix.yaml\n")
+    installed_server = tmp_path / "venv/bin/helix-mcp"
+    installed_server.parent.mkdir(parents=True)
+    installed_server.write_text("server", encoding="utf-8")
     monkeypatch.setattr(
         "helix_mcp.installation.cli.setup_installation",
         lambda **kwargs: setup_result,
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli._installed_server_command",
+        lambda: installed_server,
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli._package_version",
+        lambda: "0.7.0",
     )
     monkeypatch.setattr(
         "helix_mcp.installation.cli.DashboardProcessLauncher",
@@ -179,3 +209,7 @@ def test_setup_can_skip_dashboard(tmp_path, monkeypatch, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert result == 0
     assert payload["dashboard"] is None
+    assert payload["codex_desktop"]["command"] == str(
+        paths.data_dir / "bin/helix-mcp"
+    )
+    assert payload["codex_desktop"]["args"] == []

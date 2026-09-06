@@ -5,6 +5,18 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.7.0 - 2026-09-07
+
+- Add a stable client-facing launcher and managed installation metadata.
+- Install verified GitHub releases into isolated versioned runtimes while
+  retaining the previous runtime and a configuration/state backup for rollback.
+- Rebuild the Java AR API bridge and run package, dependency, setup, and
+  readiness checks before activating a new runtime.
+- Add dashboard controls to check for and explicitly confirm server updates,
+  with a detached worker that relaunches the dashboard afterward.
+- Preserve and reload compatible OpenClaw MCP definitions during updates;
+  generic MCP clients use the new runtime on their next server session.
+
 ## 0.6.8 - 2026-08-28
 
 - Add a complete release-wheel installation path with checksum verification,

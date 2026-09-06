@@ -28,7 +28,8 @@ The dashboard can:
 - configure the loopback AR API bridge URL, timeout, and pool size;
 - configure bounded cache and write-plan settings;
 - replace a DEV, QA, or PROD credential;
-- run sanitized installation and live environment checks.
+- run sanitized installation and live environment checks;
+- check for and explicitly install verified stable server releases.
 
 Each environment owns exactly one policy with the canonical internal name
 `dev`, `qa`, or `prod`; the assignment cannot be changed. Older policy names are
@@ -163,6 +164,22 @@ Credentials are write-only in the browser:
 
 The dashboard uses the existing per-environment credential contract. Treat
 the browser session and local account as administrative access.
+
+## Server updates
+
+The Advanced settings view shows the active managed version and release-check
+status. Checking never changes the installation. Installing is a separate,
+explicitly confirmed action and is available only after setup has created the
+stable launcher.
+
+The update runs in a detached worker because the dashboard's own Python runtime
+may be replaced. The page temporarily loses its loopback connection, polls for
+the new dashboard process, and reloads state after it returns. The worker
+verifies the GitHub release digest, installs an isolated runtime, backs up local
+configuration and state, rebuilds the Java bridge, runs readiness checks, and
+switches the stable launcher only after validation. Failed updates keep or
+restore the previous active runtime. See [Installation](installation.md) for
+the complete transaction and client restart behavior.
 
 ## Save transaction
 

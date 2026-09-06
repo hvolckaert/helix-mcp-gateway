@@ -95,7 +95,8 @@ The command:
 5. generates a private random key for encrypted plans;
 6. starts or reuses the detached local dashboard and opens it in the default
    browser;
-7. returns sanitized JSON with destinations, the MCP client command, and the
+7. creates a stable client-facing launcher and managed installation metadata;
+8. returns sanitized JSON with destinations, the MCP client command, and the
    dashboard process ID and URL.
 
 `--config-dir`, `--data-dir`, and `--state-dir` override the per-user defaults.
@@ -169,13 +170,15 @@ the client instead of relying on shell activation. A generic JSON entry is:
 
 ```json
 {
-  "command": "/path/to/helix-mcp/venv/bin/helix-mcp",
-  "args": ["--dotenv", "/path/to/config/.env"]
+  "command": "/path/to/per-user/data/helix-mcp/bin/helix-mcp",
+  "args": []
 }
 ```
 
-Use `Scripts\helix-mcp.exe` on native Windows. Restart the MCP client after
-registering the server or changing its configuration.
+Use the `.cmd` launcher returned by setup on native Windows. The launcher owns
+the active runtime and `.env` path, so the MCP client configuration remains
+unchanged across managed updates. Restart the MCP client after registering the
+server or changing its configuration.
 
 ## Expected installation time
 
@@ -218,8 +221,34 @@ handling, and recovery behavior.
 
 ## Upgrades
 
-Installing a newer wheel and running setup again rebuilds the bridge but does
-not overwrite existing `.env` or YAML policy files. A release that changes the
-configuration schema must provide a specific migration procedure.
+The dashboard's **Server updates** section follows the same managed model as
+Helix MCP Knowledge:
+
+1. the user explicitly checks for a newer stable GitHub release;
+2. the updater requires the release wheel's GitHub SHA-256 digest;
+3. it downloads and verifies the exact wheel asset;
+4. it installs the wheel into `runtime/<version>/venv` and runs `pip check`;
+5. it backs up `.env`, YAML, the Java bridge, encryption key, plan database,
+   stable launcher, and installation metadata;
+6. it rebuilds the bridge and runs the packaged readiness check;
+7. only then does it atomically switch the stable launcher;
+8. a detached worker relaunches the dashboard from the new runtime.
+
+The previous runtime and timestamped backup remain available for recovery. If
+setup, validation, activation, or the supported OpenClaw reload/probe fails,
+the updater restores the previous local files and launcher. It never installs
+an update merely because one was found: installation requires a separate user
+confirmation in the dashboard.
+
+For an OpenClaw-managed installation, the updater preserves the existing MCP
+definition, switches it to the stable launcher, reloads and probes it, and asks
+OpenClaw Gateway to restart. For Codex, Claude, and other generic stdio clients,
+the new runtime is used the next time that client starts the MCP server; the
+updater does not terminate client-owned processes.
+
+Manual upgrade remains possible by installing a newer wheel and running setup
+again. Setup rebuilds the bridge but does not overwrite existing `.env` or YAML
+policy files. A release that changes the configuration schema must provide a
+specific migration procedure.
 
 Never reuse an example encryption key or store the key in the repository.

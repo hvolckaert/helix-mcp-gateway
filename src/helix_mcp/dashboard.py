@@ -51,10 +51,25 @@ from helix_mcp.config import (
     BackendKind,
     ConfigLoader,
     Environment,
+    RuntimeSettings,
     SingleInstanceConfig,
     TargetPolicyConfig,
     load_runtime_settings,
     load_single_instance_config,
+)
+from helix_mcp.dashboard_update_worker import (
+    DashboardUpdateWorkerLauncher,
+    load_update_status,
+    write_update_status,
+)
+from helix_mcp.installation.managed import (
+    load_managed_installation,
+    supports_transactional_updates,
+)
+from helix_mcp.installation.updater import (
+    DEFAULT_REPOSITORY,
+    ReleaseStatus,
+    check_for_update,
 )
 from helix_mcp.observability import public_error_code
 from helix_mcp.operations.preflight import check_readiness
@@ -273,7 +288,10 @@ class DashboardProcessLauncher:
             return None
         finally:
             connection.close()
-        if response.status != HTTPStatus.OK or len(payload_bytes) > MAX_REQUEST_BYTES:
+        if (
+            response.status != HTTPStatus.OK
+            or len(payload_bytes) > MAX_REQUEST_BYTES
+        ):
             raise DashboardLaunchError(
                 "dashboard port is used by another local service"
             )
@@ -292,7 +310,9 @@ class DashboardProcessLauncher:
                 "dashboard port belongs to another Helix MCP installation"
             )
         if not isinstance(pid, int) or pid < 1:
-            raise DashboardLaunchError("dashboard returned an invalid process id")
+            raise DashboardLaunchError(
+                "dashboard returned an invalid process id"
+            )
         return pid
 
     def _prepare_errors_path(self) -> None:
@@ -364,7 +384,10 @@ class DashboardConfiguration(_StrictModel):
     ) -> dict[Environment, TargetPolicyConfig]:
         if set(value) != set(Environment):
             raise ValueError("policies must define dev, qa and prod")
-        if any(policy.name != environment.value for environment, policy in value.items()):
+        if any(
+            policy.name != environment.value
+            for environment, policy in value.items()
+        ):
             raise ValueError("policy names must match their environments")
         if any(not policy.allow_form_reads for policy in value.values()):
             raise ValueError(
@@ -574,6 +597,24 @@ class _DashboardMetadataSession:
             loop.call_soon_threadsafe(loop.stop)
             thread.join(timeout=2)
 
+    def reset(self) -> None:
+        """Release owned runtime resources while keeping the session reusable."""
+
+        with self._lifecycle_lock:
+            if self._closed:
+                raise DashboardMetadataError("metadata session is closed")
+            loop = self._loop
+        if loop is None:
+            return
+        future = asyncio.run_coroutine_threadsafe(self._aclose(), loop)
+        try:
+            future.result(timeout=10)
+        except Exception:
+            future.cancel()
+            raise DashboardMetadataError(
+                "metadata resources could not be released"
+            ) from None
+
     def _loop_or_start(self) -> asyncio.AbstractEventLoop:
         with self._lifecycle_lock:
             if self._closed:
@@ -601,7 +642,9 @@ class _DashboardMetadataSession:
             return future.result(timeout=_METADATA_OPERATION_TIMEOUT_SECONDS)
         except TimeoutError:
             future.cancel()
-            raise DashboardMetadataError("metadata discovery timed out") from None
+            raise DashboardMetadataError(
+                "metadata discovery timed out"
+            ) from None
 
     async def _list_forms(
         self,
@@ -797,6 +840,8 @@ class DashboardService:
         dotenv_path: str | Path,
         *,
         process_environment: Mapping[str, str] | None = None,
+        update_repository: str = DEFAULT_REPOSITORY,
+        gh_command: str | Path = "gh",
     ) -> None:
         self.dotenv_path = Path(dotenv_path).expanduser().absolute()
         self._process_environment = dict(
@@ -808,6 +853,9 @@ class DashboardService:
             self._process_environment,
         )
         self._sql_capabilities: dict[tuple[str, Environment], bool] = {}
+        self._update_repository = update_repository
+        self._gh_command = str(gh_command)
+        self._release_status: ReleaseStatus | None = None
 
     def state(self) -> dict[str, object]:
         """Return configuration state without paths or secret material."""
@@ -815,7 +863,9 @@ class DashboardService:
         runtime = load_runtime_settings(self.dotenv_path, environ={})
         configuration = load_single_instance_config(runtime.config_path)
         dotenv = self._dotenv_values()
-        policy_by_name = {policy.name: policy for policy in configuration.policies}
+        policy_by_name = {
+            policy.name: policy for policy in configuration.policies
+        }
         policies: dict[str, object] = {}
         environments = []
         for environment in Environment:
@@ -884,7 +934,138 @@ class DashboardService:
                 "dotenv": self.dotenv_path.name,
             },
             "restart_required": False,
+            "update": self._update_state(runtime),
         }
+
+    def check_update(self) -> dict[str, object]:
+        """Check the configured GitHub repository for a newer stable release."""
+
+        runtime = load_runtime_settings(self.dotenv_path, environ={})
+        workspace = self._workspace(runtime)
+        managed = load_managed_installation(workspace)
+        if not supports_transactional_updates(managed):
+            return self._update_state(runtime)
+        assert managed is not None
+        self._release_status = check_for_update(
+            current_version=managed.active_version,
+            repository=self._update_repository,
+            gh_command=self._gh_command,
+        )
+        return self._update_state(runtime)
+
+    def start_update(
+        self,
+        *,
+        dashboard_port: int,
+        dashboard_token: str,
+    ) -> dict[str, object]:
+        """Start the detached transactional updater for the checked release."""
+
+        runtime = load_runtime_settings(self.dotenv_path, environ={})
+        workspace = self._workspace(runtime)
+        managed = load_managed_installation(workspace)
+        if not supports_transactional_updates(managed):
+            raise DashboardConfigurationError(
+                "run setup once to enable managed updates"
+            )
+        assert managed is not None
+        release = self._release_status
+        if (
+            release is None
+            or release.status != "available"
+            or not release.update_available
+            or release.latest_version is None
+        ):
+            raise DashboardConfigurationError(
+                "check for an available update before installing"
+            )
+        operation = load_update_status(workspace)
+        if operation and operation.get("status") in {"preparing", "running"}:
+            raise DashboardConflictError("a managed update is already running")
+        state_dir = self._state_directory(runtime)
+        write_update_status(
+            workspace,
+            {
+                "status": "queued",
+                "current_version": managed.active_version,
+                "target_version": release.latest_version,
+            },
+        )
+        try:
+            process = DashboardUpdateWorkerLauncher(
+                dotenv_path=self.dotenv_path,
+                workspace=workspace,
+                errors_path=state_dir / "errors",
+                repository=self._update_repository,
+                target_version=release.latest_version,
+                gh_command=self._gh_command,
+                dashboard_port=dashboard_port,
+                dashboard_token=dashboard_token,
+            ).start()
+        except Exception:
+            write_update_status(
+                workspace,
+                {
+                    "status": "error",
+                    "current_version": managed.active_version,
+                    "target_version": release.latest_version,
+                    "error_code": "DASHBOARD_UPDATE_LAUNCH_ERROR",
+                },
+            )
+            raise DashboardError(
+                "update worker could not be started"
+            ) from None
+        return {
+            "status": "started",
+            "target_version": release.latest_version,
+            "process_id": process.pid,
+        }
+
+    def _update_state(self, runtime: RuntimeSettings) -> dict[str, object]:
+        workspace = self._workspace(runtime)
+        managed = load_managed_installation(workspace)
+        supported = supports_transactional_updates(managed)
+        checked = self._release_status
+        current_version = (
+            managed.active_version
+            if managed is not None
+            else _package_version()
+        )
+        if checked is None:
+            release: dict[str, object] = {
+                "status": "unknown" if supported else "unavailable",
+                "repository": self._update_repository,
+                "current_version": current_version,
+                "latest_version": None,
+                "update_available": None,
+                "release_url": None,
+                "error_code": None,
+            }
+        else:
+            release = checked.to_dict()
+        return {
+            "managed": supported,
+            "client": managed.client if managed is not None else None,
+            "release": release,
+            "operation": load_update_status(workspace),
+        }
+
+    def _workspace(self, runtime: RuntimeSettings) -> Path:
+        bridge = runtime.arapi_bridge_jar_path
+        if bridge is None:
+            return self.dotenv_path.parent
+        return bridge.parent.parent
+
+    @staticmethod
+    def _state_directory(runtime: RuntimeSettings) -> Path:
+        for candidate in (
+            runtime.write_plan_db_path,
+            runtime.audit_log_path,
+            runtime.metrics_path,
+        ):
+            if candidate is not None:
+                return candidate.parent
+        return runtime.config_path.parent / "state"
 
     def identity(self) -> dict[str, object]:
         """Identify the local process without loading configuration files."""
@@ -911,9 +1092,8 @@ class DashboardService:
                 environment.value
                 for environment, policy in request.policies.items()
                 if policy.allow_sql
-                and self._sql_capabilities.get(
-                    (current_revision, environment)
-                ) is False
+                and self._sql_capabilities.get((current_revision, environment))
+                is False
             ]
             if unavailable_sql:
                 raise DashboardConfigurationError(
@@ -1014,18 +1194,20 @@ class DashboardService:
 
         request = _validate_request(DashboardPreflightRequest, raw_payload)
         environments = request.environments or tuple(Environment)
-        report = asyncio.run(
-            check_readiness(
-                self.dotenv_path,
-                environ={
-                    key: value
-                    for key, value in self._process_environment.items()
-                    if key.startswith(_CREDENTIAL_PREFIX)
-                },
-                live=request.live,
-                environments=environments,
+        with self._mutex:
+            self._metadata_session.reset()
+            report = asyncio.run(
+                check_readiness(
+                    self.dotenv_path,
+                    environ={
+                        key: value
+                        for key, value in self._process_environment.items()
+                        if key.startswith(_CREDENTIAL_PREFIX)
+                    },
+                    live=request.live,
+                    environments=environments,
+                )
             )
-        )
         return report.model_dump(mode="json")
 
     def form_catalog(self, raw_payload: object) -> dict[str, object]:
@@ -1045,8 +1227,7 @@ class DashboardService:
                 raise
             except Exception as exc:
                 raise DashboardMetadataError(
-                    "form metadata is unavailable "
-                    f"({public_error_code(exc)})"
+                    f"form metadata is unavailable ({public_error_code(exc)})"
                 ) from None
         filtered = _filter_metadata_names(names, request.name_contains)
         page = filtered[request.offset : request.offset + request.limit]
@@ -1076,8 +1257,7 @@ class DashboardService:
                 raise
             except Exception as exc:
                 raise DashboardMetadataError(
-                    "field metadata is unavailable "
-                    f"({public_error_code(exc)})"
+                    f"field metadata is unavailable ({public_error_code(exc)})"
                 ) from None
         filtered = _filter_metadata_fields(fields, request.name_contains)
         page = filtered[request.offset : request.offset + request.limit]
@@ -1229,14 +1409,18 @@ class DashboardService:
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
-            rendered = f"{variable}={json.dumps(encoded_secret, ensure_ascii=False)}"
+            rendered = (
+                f"{variable}={json.dumps(encoded_secret, ensure_ascii=False)}"
+            )
             if matching:
                 lines[matching[0]] = rendered
             else:
                 if lines and lines[-1]:
                     lines.append("")
                 lines.append(rendered)
-        return (("\n".join(lines).rstrip("\n") + "\n") if lines else "").encode()
+        return (
+            ("\n".join(lines).rstrip("\n") + "\n") if lines else ""
+        ).encode()
 
 
 class DashboardHTTPServer(ThreadingHTTPServer):
@@ -1297,7 +1481,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._json(
                     HTTPStatus.INTERNAL_SERVER_ERROR,
-                    {"error": "dashboard state unavailable", "error_code": public_error_code(exc)},
+                    {
+                        "error": "dashboard state unavailable",
+                        "error_code": public_error_code(exc),
+                    },
                 )
             return
         if path == "/api/identity":
@@ -1320,7 +1507,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             return
         origin = self.headers.get("Origin")
         if origin and not self._trusted_origin(origin):
-            self._json(HTTPStatus.FORBIDDEN, {"error": "invalid request origin"})
+            self._json(
+                HTTPStatus.FORBIDDEN, {"error": "invalid request origin"}
+            )
             return
         try:
             path = urlsplit(self.path).path
@@ -1359,6 +1548,32 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     HTTPStatus.OK,
                     self.server.service.sql_capability(self._read_json()),
                 )
+                return
+            if path == "/api/update/check":
+                self._require_empty_object(self._read_json())
+                self._json(
+                    HTTPStatus.OK,
+                    self.server.service.check_update(),
+                )
+                return
+            if path == "/api/update/install":
+                self._require_empty_object(self._read_json())
+                self._json(
+                    HTTPStatus.ACCEPTED,
+                    self.server.service.start_update(
+                        dashboard_port=self.server.server_address[1],
+                        dashboard_token=self.server.dashboard_token,
+                    ),
+                )
+                return
+            if path == "/api/update/prepare":
+                self._require_empty_object(self._read_json())
+                self._json(HTTPStatus.ACCEPTED, {"status": "stopping"})
+                threading.Thread(
+                    target=self.server.shutdown,
+                    name="helix-dashboard-update-shutdown",
+                    daemon=True,
+                ).start()
                 return
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         except DashboardConflictError as exc:
@@ -1422,10 +1637,17 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             raise ValueError("Content-Type must be application/json")
         return json.loads(self.rfile.read(length))
 
+    @staticmethod
+    def _require_empty_object(payload: object) -> None:
+        if payload != {}:
+            raise ValueError("request body must be an empty object")
+
     def _json(self, status: HTTPStatus, payload: object) -> None:
         self._send(
             status,
-            json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(),
+            json.dumps(
+                payload, ensure_ascii=False, separators=(",", ":")
+            ).encode(),
             "application/json; charset=utf-8",
         )
 
@@ -1617,11 +1839,13 @@ def _filter_sql_objects(
                 and (kind is None or item.kind is kind)
                 and (
                     marker is None
-                    or marker
-                    in f"{item.schema_name}.{item.name}".casefold()
+                    or marker in f"{item.schema_name}.{item.name}".casefold()
                 )
             ),
-            key=lambda item: (item.schema_name.casefold(), item.name.casefold()),
+            key=lambda item: (
+                item.schema_name.casefold(),
+                item.name.casefold(),
+            ),
         )
     )
 
