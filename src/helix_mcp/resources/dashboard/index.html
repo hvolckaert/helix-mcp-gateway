@@ -1218,8 +1218,18 @@
       renderEnvironments(configuration.environments, configuration.policies);
       clearDirtyTabs();
       configuration.environments.forEach(item => loadSqlCapability(item.environment));
-      if (state.restart_required) {
-        document.getElementById('save-note').textContent = 'Configuration saved. Restart your MCP client to apply the new settings.';
+      const saveNote = document.getElementById('save-note');
+      const application = state.application || null;
+      if (application?.status === 'applied') {
+        saveNote.textContent = 'Configuration saved and applied to OpenClaw. Its MCP runtime will reconnect on the next request.';
+      } else if (application?.status === 'reload_failed') {
+        saveNote.textContent = `Configuration saved, but OpenClaw could not be reloaded (${application.error_code || 'OPENCLAW_INTEGRATION_ERROR'}). Reload it manually to apply the new settings.`;
+      } else if (state.restart_required) {
+        saveNote.textContent = 'Configuration saved. Restart your MCP client to apply the new settings.';
+      } else if (state.update?.client === 'openclaw') {
+        saveNote.textContent = 'Changes are validated before saving. Connected OpenClaw installations are reloaded automatically.';
+      } else {
+        saveNote.textContent = 'Changes are validated before saving. Restart a standalone MCP client afterward to apply them.';
       }
     }
 
@@ -1452,7 +1462,7 @@
         <li>Bridge: <strong>${escapeHtml(payload.arapi.bridge_base_url)}</strong></li>
         <li>Write access: DEV <strong>${payload.policies.dev.access_mode === 'read_write' ? 'enabled' : 'disabled'}</strong>, QA <strong>${payload.policies.qa.access_mode === 'read_write' ? 'enabled' : 'disabled'}</strong>, PROD <strong>${payload.policies.prod.access_mode === 'read_write' ? 'enabled' : 'disabled'}</strong></li>
         <li>Credentials replaced: <strong>${replacements.length ? replacements.map(environmentLabel).join(', ') : 'none'}</strong></li>
-        <li>The running MCP process will not change until it is restarted.</li>`;
+        <li>${currentState?.update?.client === 'openclaw' ? 'OpenClaw will reload its MCP runtime after this save.' : 'Restart the connected MCP client after this save.'}</li>`;
       reviewDialog.showModal();
     }
 
@@ -1462,7 +1472,13 @@
         const state = await api('/api/configuration', {method: 'POST', body: JSON.stringify(collectPayload())});
         reviewDialog.close();
         populate(state);
-        showToast('Configuration saved. Restart the MCP client to apply it.');
+        if (state.application?.status === 'applied') {
+          showToast('Configuration saved and applied to OpenClaw.');
+        } else if (state.application?.status === 'reload_failed') {
+          showToast(`Configuration saved, but OpenClaw reload failed (${state.application.error_code || 'OPENCLAW_INTEGRATION_ERROR'}).`, true);
+        } else {
+          showToast('Configuration saved. Restart the MCP client to apply it.');
+        }
       } catch (error) {
         showToast(error.message, true);
       } finally {

@@ -5,6 +5,12 @@ Semantic Versioning.
 
 ## Unreleased
 
+- Detect and register OpenClaw automatically during guided setup while keeping
+  an explicit standalone mode.
+- Reload an OpenClaw-managed MCP runtime after dashboard configuration saves;
+  standalone clients continue to receive an explicit restart-required result.
+- Refresh OpenClaw's complete public tool filter during managed updates.
+
 ## 0.7.0 - 2026-09-07
 
 - Add a stable client-facing launcher and managed installation metadata.

@@ -248,6 +248,108 @@ def test_configure_updates_yaml_and_write_only_credential(
 
 
 @pytest.mark.integration
+def test_configure_reloads_managed_openclaw_and_reports_applied(
+    tmp_path: Path,
+) -> None:
+    dotenv_path = _installation(tmp_path)
+    workspace = tmp_path / "data"
+    bridge = workspace / "bridge/helix-arapi-bridge.jar"
+    bridge.parent.mkdir(parents=True)
+    bridge.write_bytes(b"bridge")
+    with dotenv_path.open("a", encoding="utf-8") as stream:
+        stream.write(f"HELIX_ARAPI_BRIDGE_JAR_PATH={bridge}\n")
+    server = workspace / "runtime/0.7.0/venv/bin/helix-mcp"
+    server.parent.mkdir(parents=True)
+    server.write_text("server", encoding="utf-8")
+    openclaw = tmp_path / "bin/openclaw"
+    openclaw.parent.mkdir()
+    openclaw.write_text("openclaw", encoding="utf-8")
+    activate_managed_installation(
+        workspace=workspace,
+        version="0.7.0",
+        server_command=server,
+        dotenv_path=dotenv_path,
+        client="openclaw",
+        server_name="helix",
+        openclaw_command=openclaw,
+    )
+    calls: list[list[str]] = []
+
+    def runner(command: list[str], **kwargs: object):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    service = DashboardService(
+        dotenv_path,
+        process_environment={},
+        command_runner=runner,
+    )
+
+    result = service.configure(_configuration(service.state()))
+
+    assert calls == [[str(openclaw), "mcp", "reload"]]
+    assert result["restart_required"] is False
+    assert result["application"] == {
+        "client": "openclaw",
+        "status": "applied",
+        "error_code": None,
+    }
+
+
+@pytest.mark.integration
+def test_configure_keeps_saved_files_when_openclaw_reload_fails(
+    tmp_path: Path,
+) -> None:
+    dotenv_path = _installation(tmp_path)
+    workspace = tmp_path / "data"
+    bridge = workspace / "bridge/helix-arapi-bridge.jar"
+    bridge.parent.mkdir(parents=True)
+    bridge.write_bytes(b"bridge")
+    with dotenv_path.open("a", encoding="utf-8") as stream:
+        stream.write(f"HELIX_ARAPI_BRIDGE_JAR_PATH={bridge}\n")
+    server = workspace / "runtime/0.7.0/venv/bin/helix-mcp"
+    server.parent.mkdir(parents=True)
+    server.write_text("server", encoding="utf-8")
+    openclaw = tmp_path / "bin/openclaw"
+    openclaw.parent.mkdir()
+    openclaw.write_text("openclaw", encoding="utf-8")
+    activate_managed_installation(
+        workspace=workspace,
+        version="0.7.0",
+        server_command=server,
+        dotenv_path=dotenv_path,
+        client="openclaw",
+        server_name="helix",
+        openclaw_command=openclaw,
+    )
+
+    def runner(command: list[str], **kwargs: object):
+        return subprocess.CompletedProcess(command, 1, "", "failed")
+
+    service = DashboardService(
+        dotenv_path,
+        process_environment={},
+        command_runner=runner,
+    )
+    request = _configuration(service.state())
+
+    result = service.configure(request)
+
+    assert result["restart_required"] is True
+    assert result["application"] == {
+        "client": "openclaw",
+        "status": "reload_failed",
+        "error_code": "OPENCLAW_INTEGRATION_ERROR",
+    }
+    assert (
+        yaml.safe_load((tmp_path / "helix.yaml").read_text())["server"][
+            "log_level"
+        ]
+        == "WARNING"
+    )
+
+
+@pytest.mark.integration
 def test_dashboard_can_enable_controlled_writes_for_prod(
     tmp_path: Path,
 ) -> None:

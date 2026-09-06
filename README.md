@@ -119,7 +119,9 @@ requested. It never overwrites existing credentials or configuration. After a
 successful installation it starts the configuration dashboard as a detached
 local process and opens it in the default browser. Setup also creates one
 stable MCP launcher; clients keep that command while managed updates switch the
-validated runtime behind it.
+validated runtime behind it. By default, setup detects an available OpenClaw
+command, registers the launcher and verifies its tool catalog automatically.
+Use `--client standalone` when another MCP client will own the integration.
 
 The dashboard remains available on `http://127.0.0.1:8766/` independently of
 the MCP process. It edits the fixed DEV, QA, and PROD access policies, configures
@@ -127,11 +129,14 @@ the loopback AR API bridge, discovers selectable form and field metadata,
 replaces credentials without reading them back, and runs sanitized readiness
 checks. It can check GitHub releases and, after explicit confirmation, install
 a verified release into an isolated runtime with backup and rollback. Saving is
-validated and atomic; restart the MCP client before using configuration changes.
+validated and atomic. OpenClaw-managed installations reload their cached MCP
+runtime automatically after a save; other clients must reconnect their own
+stdio process before using configuration changes.
 Use `helix-mcp-setup --no-dashboard` only for a headless or unattended
 installation.
 
-Register the absolute stable MCP command returned by setup with the client.
+When OpenClaw is not selected, register the absolute stable MCP command returned
+by setup with the client.
 The complete verified workflow is in
 [Installation](docs/installation.md).
 

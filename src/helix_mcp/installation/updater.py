@@ -31,6 +31,7 @@ from helix_mcp.installation.managed import (
     supports_transactional_updates,
     versioned_runtime_paths,
 )
+from helix_mcp.installation.openclaw import EXPOSED_TOOLS
 
 DEFAULT_REPOSITORY = "hvolckaert/helix-mcp-gateway"
 DEFAULT_OPENCLAW_SERVER_NAME = "helix"
@@ -640,6 +641,7 @@ def _switch_openclaw(
     definition["command"] = str(stdio_command)
     definition["args"] = list(stdio_arguments)
     definition["cwd"] = str(managed.launcher.parent.parent)
+    definition["toolFilter"] = {"include": list(EXPOSED_TOOLS)}
     _set_openclaw_definition(
         command,
         server_name=managed.server_name or DEFAULT_OPENCLAW_SERVER_NAME,

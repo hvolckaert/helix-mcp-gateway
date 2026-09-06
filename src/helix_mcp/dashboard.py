@@ -16,7 +16,7 @@ import tempfile
 import threading
 import time
 import webbrowser
-from collections.abc import Coroutine, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from http import HTTPStatus
@@ -66,6 +66,7 @@ from helix_mcp.installation.managed import (
     load_managed_installation,
     supports_transactional_updates,
 )
+from helix_mcp.installation.openclaw import reload_managed_openclaw
 from helix_mcp.installation.updater import (
     DEFAULT_REPOSITORY,
     ReleaseStatus,
@@ -842,6 +843,9 @@ class DashboardService:
         process_environment: Mapping[str, str] | None = None,
         update_repository: str = DEFAULT_REPOSITORY,
         gh_command: str | Path = "gh",
+        command_runner: Callable[..., subprocess.CompletedProcess[str]] = (
+            subprocess.run
+        ),
     ) -> None:
         self.dotenv_path = Path(dotenv_path).expanduser().absolute()
         self._process_environment = dict(
@@ -855,6 +859,7 @@ class DashboardService:
         self._sql_capabilities: dict[tuple[str, Environment], bool] = {}
         self._update_repository = update_repository
         self._gh_command = str(gh_command)
+        self._command_runner = command_runner
         self._release_status: ReleaseStatus | None = None
 
     def state(self) -> dict[str, object]:
@@ -1185,9 +1190,39 @@ class DashboardService:
                 ) from None
             self._sql_capabilities.clear()
 
+        application = self._apply_saved_configuration()
         response = self.state()
-        response["restart_required"] = True
+        response["application"] = application
+        response["restart_required"] = application["status"] != "applied"
         return response
+
+    def _apply_saved_configuration(self) -> dict[str, object]:
+        runtime = load_runtime_settings(self.dotenv_path, environ={})
+        managed = load_managed_installation(self._workspace(runtime))
+        if managed is None or managed.client != "openclaw":
+            return {
+                "client": managed.client
+                if managed is not None
+                else "unmanaged",
+                "status": "restart_required",
+                "error_code": None,
+            }
+        try:
+            reload_managed_openclaw(
+                managed,
+                runner=self._command_runner,
+            )
+        except Exception as exc:
+            return {
+                "client": "openclaw",
+                "status": "reload_failed",
+                "error_code": public_error_code(exc),
+            }
+        return {
+            "client": "openclaw",
+            "status": "applied",
+            "error_code": None,
+        }
 
     def preflight(self, raw_payload: object) -> dict[str, object]:
         """Run a sanitized, read-only readiness check."""

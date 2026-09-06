@@ -96,13 +96,18 @@ The command:
 6. starts or reuses the detached local dashboard and opens it in the default
    browser;
 7. creates a stable client-facing launcher and managed installation metadata;
-8. returns sanitized JSON with destinations, the MCP client command, and the
-   dashboard process ID and URL.
+8. detects OpenClaw by default and, when available, registers the stable
+   launcher, reloads its MCP catalog, and probes the resulting tool surface;
+9. returns sanitized JSON with destinations, the selected client integration,
+   the MCP client command, and the dashboard process ID and URL.
 
 `--config-dir`, `--data-dir`, and `--state-dir` override the per-user defaults.
 `--dry-run` validates packaged resources and reports destinations without
 creating directories, compiling, changing files, or launching the dashboard.
 Use `--no-dashboard` for a headless or unattended installation.
+Use `--client standalone` to skip automatic OpenClaw integration, or
+`--client openclaw` to require it instead of falling back to a standalone
+installation when the command is unavailable.
 
 The generated `.env` contains no sample credentials. The user configures the
 required DEV, QA, and PROD credentials through the write-only dashboard fields

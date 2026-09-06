@@ -15,6 +15,7 @@ from helix_mcp.installation.managed import (
     load_managed_installation,
     versioned_runtime_paths,
 )
+from helix_mcp.installation.openclaw import EXPOSED_TOOLS
 from helix_mcp.installation.updater import (
     UpdateError,
     check_for_update,
@@ -109,6 +110,46 @@ class FakeUpdateRunner:
                 command, 1, stdout="", stderr=""
             )
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+
+class OpenClawUpdateRunner(FakeUpdateRunner):
+    def __init__(self, *, workspace: Path, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self.workspace = workspace
+        self.definition: dict[str, object] | None = None
+
+    def __call__(self, command: list[str], **kwargs: object):
+        if command[1:3] == ["mcp", "show"]:
+            self.commands.append(command)
+            payload = {
+                "command": str(self.workspace / "bin/helix-mcp"),
+                "args": [],
+                "cwd": str(self.workspace),
+                "toolFilter": {"include": ["list_targets"]},
+            }
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(payload), stderr=""
+            )
+        if command[1:3] == ["mcp", "set"]:
+            self.commands.append(command)
+            self.definition = json.loads(command[4])
+            return subprocess.CompletedProcess(command, 0, "", "")
+        if command[1:3] == ["mcp", "probe"]:
+            self.commands.append(command)
+            payload = {
+                "servers": {
+                    "helix": {
+                        "launch": f"stdio {self.workspace / 'bin/helix-mcp'}"
+                    }
+                }
+            }
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(payload), stderr=""
+            )
+        if command[1:3] == ["mcp", "reload"]:
+            self.commands.append(command)
+            return subprocess.CompletedProcess(command, 0, "", "")
+        return super().__call__(command, **kwargs)
 
 
 def _managed_installation(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
@@ -208,6 +249,51 @@ def test_update_activates_only_after_setup_and_smoke_test(
     assert str(managed.server_command) in managed.launcher.read_text()
     assert bridge_path.read_bytes() == b"updated bridge"
     assert (result.backup / "bridge").read_bytes() == b"original bridge"
+
+
+def test_update_refreshes_reloads_and_probes_openclaw_definition(
+    tmp_path: Path,
+) -> None:
+    workspace, dotenv_path, bridge_path, base_python = _managed_installation(
+        tmp_path
+    )
+    current = load_managed_installation(workspace)
+    assert current is not None
+    openclaw = tmp_path / "bin/openclaw"
+    openclaw.parent.mkdir()
+    openclaw.write_text("openclaw", encoding="utf-8")
+    activate_managed_installation(
+        workspace=workspace,
+        version=current.active_version,
+        server_command=current.server_command,
+        dotenv_path=dotenv_path,
+        client="openclaw",
+        server_name="helix",
+        openclaw_command=openclaw,
+    )
+    gh = tmp_path / "gh"
+    gh.write_text("gh", encoding="utf-8")
+    runner = OpenClawUpdateRunner(
+        workspace=workspace,
+        wheel_content=b"published gateway wheel",
+        bridge_path=bridge_path,
+    )
+
+    result = update_installation(
+        dotenv_path=dotenv_path,
+        workspace=workspace,
+        target_version="0.7.0",
+        gh_command=gh,
+        base_python=base_python,
+        runner=runner,
+        clock=lambda: datetime(2026, 9, 6, tzinfo=UTC),
+    )
+
+    assert result.openclaw_reloaded is True
+    assert result.openclaw_probed is True
+    assert runner.definition is not None
+    assert runner.definition["command"] == str(workspace / "bin/helix-mcp")
+    assert runner.definition["toolFilter"] == {"include": list(EXPOSED_TOOLS)}
 
 
 def test_update_rejects_a_wheel_that_does_not_match_release_digest(

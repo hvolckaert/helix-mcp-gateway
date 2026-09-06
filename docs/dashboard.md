@@ -195,10 +195,16 @@ For an accepted save, the service:
 3. validates it through `SingleInstanceConfig`;
 4. writes same-directory temporary files and replaces the targets atomically;
 5. reloads both files through the normal runtime loaders;
-6. restores the previous bytes if final validation fails.
+6. restores the previous bytes if final validation fails;
+7. asks OpenClaw to dispose the cached MCP runtime when this is an
+   OpenClaw-managed installation.
 
-No configuration is hot-reloaded. Restart the MCP client after a successful
-save. This intentionally discards in-memory clients and caches and causes all
+The MCP server still loads configuration at process startup. OpenClaw-managed
+installations apply a successful save automatically through `mcp reload`; the
+next OpenClaw tool request starts a fresh stdio process. A reload failure does
+not roll back a valid saved configuration and is reported as requiring manual
+reload. Codex, Claude, and other standalone clients must reconnect their own
+MCP process. Reconnection discards in-memory clients and caches and causes all
 pending plans to be checked again against current policy before application.
 
 ## HTTP security boundary

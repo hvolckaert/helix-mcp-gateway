@@ -17,7 +17,16 @@ from helix_mcp.dashboard import (
     DashboardProcessLauncher,
 )
 from helix_mcp.installation.bridge import build_bridge
-from helix_mcp.installation.managed import activate_managed_installation
+from helix_mcp.installation.managed import (
+    ManagedInstallation,
+    activate_managed_installation,
+    load_managed_installation,
+    supports_transactional_updates,
+)
+from helix_mcp.installation.openclaw import (
+    find_openclaw_command,
+    register_openclaw_server,
+)
 from helix_mcp.installation.setup import (
     default_install_paths,
     discover_arapi_lib_dir,
@@ -90,9 +99,12 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--client",
-        choices=("standalone", "openclaw"),
-        default="standalone",
-        help="client integration retained across managed updates",
+        choices=("auto", "standalone", "openclaw"),
+        default="auto",
+        help=(
+            "client integration retained across managed updates; auto "
+            "registers OpenClaw when its command is available"
+        ),
     )
     parser.add_argument(
         "--server-name",
@@ -111,6 +123,7 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     try:
         managed_activated = False
+        client_integration = arguments.client
         result = setup_installation(
             arapi_lib_dir=arguments.arapi_lib_dir,
             config_dir=arguments.config_dir,
@@ -120,22 +133,46 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
         )
         if not arguments.dry_run and not arguments.no_managed:
             server_command = _installed_server_command()
-            openclaw_command = arguments.openclaw_command
-            if arguments.client == "openclaw" and not openclaw_command:
-                openclaw_command = shutil.which("openclaw")
+            previous = load_managed_installation(result.paths.data_dir)
+            openclaw_command = _selected_openclaw_command(
+                requested_client=arguments.client,
+                requested_command=arguments.openclaw_command,
+                previous=previous,
+            )
+            client_integration = (
+                "openclaw" if openclaw_command is not None else "standalone"
+            )
             managed = activate_managed_installation(
                 workspace=result.paths.data_dir,
                 version=_package_version(),
                 server_command=server_command,
                 dotenv_path=result.dotenv_path,
-                client=arguments.client,
-                server_name=(
-                    arguments.server_name
-                    if arguments.client == "openclaw"
-                    else None
-                ),
-                openclaw_command=openclaw_command,
+                client="standalone",
             )
+            if client_integration == "openclaw":
+                assert openclaw_command is not None
+                try:
+                    register_openclaw_server(
+                        launcher=managed.launcher,
+                        workspace=result.paths.data_dir,
+                        server_name=arguments.server_name,
+                        openclaw_command=openclaw_command,
+                    )
+                except Exception:
+                    _restore_managed_installation(
+                        previous=previous,
+                        workspace=result.paths.data_dir,
+                    )
+                    raise
+                managed = activate_managed_installation(
+                    workspace=result.paths.data_dir,
+                    version=_package_version(),
+                    server_command=server_command,
+                    dotenv_path=result.dotenv_path,
+                    client="openclaw",
+                    server_name=arguments.server_name,
+                    openclaw_command=openclaw_command,
+                )
             result = replace(result, server_command=str(managed.launcher))
             managed_activated = True
         dashboard: dict[str, object] | None
@@ -161,6 +198,7 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
         return 1
     payload = _paths_to_strings(asdict(result))
     payload["status"] = "ready_for_configuration"
+    payload["client_integration"] = client_integration
     payload["codex_desktop"] = {
         "command": result.server_command,
         "args": (
@@ -240,3 +278,53 @@ def _package_version() -> str:
         return metadata.version("helix-mcp-gateway")
     except metadata.PackageNotFoundError:
         return "0.0.0"
+
+
+def _selected_openclaw_command(
+    *,
+    requested_client: str,
+    requested_command: str | None,
+    previous: ManagedInstallation | None,
+) -> Path | None:
+    if requested_client == "standalone":
+        return None
+    candidates = (
+        requested_command,
+        (
+            previous.openclaw_command
+            if previous is not None and previous.client == "openclaw"
+            else None
+        ),
+        "openclaw",
+    )
+    resolved = next(
+        (
+            command
+            for candidate in candidates
+            if candidate is not None
+            if (command := find_openclaw_command(candidate)) is not None
+        ),
+        None,
+    )
+    if resolved is None and requested_client == "openclaw":
+        raise RuntimeError("OpenClaw command was not found")
+    return resolved
+
+
+def _restore_managed_installation(
+    *,
+    previous: ManagedInstallation | None,
+    workspace: Path,
+) -> None:
+    if not supports_transactional_updates(previous):
+        return
+    assert previous is not None
+    activate_managed_installation(
+        workspace=workspace,
+        version=previous.active_version,
+        server_command=previous.server_command,
+        dotenv_path=previous.dotenv_path,
+        client=previous.client,
+        server_name=previous.server_name,
+        openclaw_command=previous.openclaw_command,
+    )

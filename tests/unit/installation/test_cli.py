@@ -126,6 +126,10 @@ def test_setup_starts_detached_dashboard_by_default(
         "helix_mcp.installation.cli._package_version",
         lambda: "0.7.0",
     )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli.find_openclaw_command",
+        lambda candidate=None: None,
+    )
 
     class FakeLauncher:
         def __init__(self, **kwargs) -> None:
@@ -162,6 +166,7 @@ def test_setup_starts_detached_dashboard_by_default(
         paths.data_dir / "bin/helix-mcp"
     )
     assert payload["codex_desktop"]["args"] == []
+    assert payload["client_integration"] == "standalone"
 
 
 def test_setup_can_skip_dashboard(tmp_path, monkeypatch, capsys) -> None:
@@ -200,6 +205,10 @@ def test_setup_can_skip_dashboard(tmp_path, monkeypatch, capsys) -> None:
         lambda: "0.7.0",
     )
     monkeypatch.setattr(
+        "helix_mcp.installation.cli.find_openclaw_command",
+        lambda candidate=None: None,
+    )
+    monkeypatch.setattr(
         "helix_mcp.installation.cli.DashboardProcessLauncher",
         lambda **kwargs: pytest.fail("dashboard should not launch"),
     )
@@ -213,3 +222,79 @@ def test_setup_can_skip_dashboard(tmp_path, monkeypatch, capsys) -> None:
         paths.data_dir / "bin/helix-mcp"
     )
     assert payload["codex_desktop"]["args"] == []
+
+
+def test_setup_auto_registers_detected_openclaw(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    paths = InstallPaths(
+        config_dir=tmp_path / "config",
+        data_dir=tmp_path / "data",
+        state_dir=tmp_path / "state",
+    )
+    setup_result = SetupResult(
+        paths=paths,
+        dotenv_path=paths.config_dir / ".env",
+        config_path=paths.config_dir / "helix.yaml",
+        bridge_path=paths.data_dir / "bridge/helix-arapi-bridge.jar",
+        arapi_lib_dir=tmp_path / "arapi/lib",
+        dotenv_created=True,
+        config_created=True,
+        bridge_built=True,
+        dry_run=False,
+        server_command="helix-mcp",
+    )
+    setup_result.dotenv_path.parent.mkdir(parents=True)
+    setup_result.dotenv_path.write_text(
+        "HELIX_CONFIG_PATH=helix.yaml\n", encoding="utf-8"
+    )
+    installed_server = tmp_path / "venv/bin/helix-mcp"
+    installed_server.parent.mkdir(parents=True)
+    installed_server.write_text("server", encoding="utf-8")
+    openclaw = tmp_path / "bin/openclaw"
+    openclaw.parent.mkdir()
+    openclaw.write_text("openclaw", encoding="utf-8")
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli.setup_installation",
+        lambda **kwargs: setup_result,
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli._installed_server_command",
+        lambda: installed_server,
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli._package_version",
+        lambda: "0.7.0",
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli.find_openclaw_command",
+        lambda candidate=None: openclaw,
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli.register_openclaw_server",
+        lambda **kwargs: captured.update(kwargs),
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli.DashboardProcessLauncher",
+        lambda **kwargs: SimpleNamespace(
+            start=lambda: SimpleNamespace(
+                to_dict=lambda: {
+                    "pid": 1_234,
+                    "url": "http://127.0.0.1:8766/",
+                    "reused": False,
+                }
+            )
+        ),
+    )
+
+    result = setup_main([])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert payload["client_integration"] == "openclaw"
+    assert captured["openclaw_command"] == openclaw
+    assert captured["server_name"] == "helix"
+    assert captured["launcher"] == paths.data_dir / "bin/helix-mcp"
