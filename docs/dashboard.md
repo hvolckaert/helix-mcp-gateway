@@ -167,10 +167,12 @@ the browser session and local account as administrative access.
 
 ## Server updates
 
-The Advanced settings view shows the active managed version and release-check
-status. Checking never changes the installation. Installing is a separate,
-explicitly confirmed action and is available only after setup has created the
-stable launcher.
+The **Server** card in the top summary shows the active release status and
+latest stable version, matching the Helix MCP Knowledge dashboard. It checks
+automatically when the page opens and also provides an explicit refresh action.
+Checking never changes the installation. Installing is a separate, explicitly
+confirmed action and is available only after setup has created the stable
+launcher.
 
 The update runs in a detached worker because the dashboard's own Python runtime
 may be replaced. The page temporarily loses its loopback connection, polls for

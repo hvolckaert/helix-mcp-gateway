@@ -77,6 +77,20 @@
     .metric-label { color: var(--muted); font-size: .78rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
     .metric-value { margin-top: 5px; font-size: 1.18rem; font-weight: 780; letter-spacing: -.02em; }
     .metric-detail { margin-top: 3px; color: var(--muted); font-size: .78rem; }
+    .update-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .mini-button {
+      border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px;
+      color: var(--navy-900); background: #f8fbfd; font-size: .73rem; font-weight: 720;
+    }
+    .mini-button:hover { border-color: var(--cyan-500); background: var(--cyan-100); }
+    .mini-button.install { border-color: transparent; color: white; background: var(--cyan-600); }
+    .mini-button:disabled { opacity: .5; cursor: wait; }
+    .status { display: inline-flex; align-items: center; gap: 7px; }
+    .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .status.ready::before, .status.success::before, .status.current::before { background: var(--success); box-shadow: 0 0 0 4px rgba(18,122,98,.11); }
+    .status.running::before, .status.queued::before, .status.preparing::before, .status.available::before { background: var(--cyan-500); box-shadow: 0 0 0 4px rgba(8,171,200,.12); }
+    .status.error::before { background: var(--danger); box-shadow: 0 0 0 4px rgba(184,56,76,.11); }
+    .status.unavailable::before { background: var(--warning); box-shadow: 0 0 0 4px rgba(178,103,12,.11); }
     .status-good { color: var(--success); }
     .status-warn { color: var(--warning); }
     .status-bad { color: var(--danger); }
@@ -266,9 +280,13 @@
         <span class="metric-detail">DEV · QA · PROD</span>
       </div>
       <div class="metric">
-        <span class="metric-label">Transport</span>
-        <span class="metric-value" id="transport">—</span>
-        <span class="metric-detail">Changes require restart</span>
+        <span class="metric-label">Server</span>
+        <span class="metric-value status" id="update-status">Loading</span>
+        <span class="metric-detail" id="update-detail">—</span>
+        <div class="update-actions">
+          <button class="mini-button" type="button" id="check-update-button">Check for updates</button>
+          <button class="mini-button install" type="button" id="install-update-button" hidden>Install update</button>
+        </div>
       </div>
     </section>
 
@@ -345,19 +363,6 @@
                     <label for="max-plans">Maximum pending plans</label>
                     <input id="max-plans" type="number" min="1" max="10000" required>
                   </div>
-                </div>
-              </div>
-              <div class="advanced-group">
-                <h3>Server updates</h3>
-                <p class="panel-copy">Install verified GitHub releases into an isolated runtime. The current version and configuration are retained for rollback.</p>
-                <div class="checks">
-                  <div class="check"><span>Installed version</span><strong id="update-current-version">—</strong></div>
-                  <div class="check"><span>Update status</span><strong id="update-status">Not checked</strong></div>
-                </div>
-                <p class="hint" id="update-detail">Checking for updates is manual. Installation requires confirmation.</p>
-                <div class="actions">
-                  <button class="button secondary" type="button" id="check-update-button">Check for updates</button>
-                  <button class="button" type="button" id="install-update-button" hidden>Install update</button>
                 </div>
               </div>
               <div class="advanced-group">
@@ -1200,7 +1205,6 @@
       const credentialCount = configuration.environments.filter(item => item.credential.configured).length;
       document.getElementById('credential-count').textContent = `${credentialCount} of 3`;
       document.getElementById('credential-count').className = `metric-value ${credentialCount === 3 ? 'status-good' : 'status-warn'}`;
-      document.getElementById('transport').textContent = configuration.server.transport === 'stdio' ? 'stdio' : 'Local HTTP';
       renderUpdate(state.update);
 
       document.getElementById('log-level').value = configuration.server.log_level;
@@ -1227,44 +1231,48 @@
       const installButton = document.getElementById('install-update-button');
       const status = document.getElementById('update-status');
       const detail = document.getElementById('update-detail');
-      document.getElementById('update-current-version').textContent = currentVersion;
       checkButton.disabled = !update?.managed || ['queued', 'preparing', 'running'].includes(operation?.status);
       installButton.hidden = !(release.update_available && release.latest_version);
       installButton.disabled = ['queued', 'preparing', 'running'].includes(operation?.status);
       installButton.textContent = release.latest_version ? `Install ${release.latest_version}` : 'Install update';
-      status.className = '';
+      let statusCode = 'unknown';
       if (!update?.managed) {
         status.textContent = 'Setup required';
-        status.className = 'status-warn';
+        statusCode = 'unavailable';
         detail.textContent = 'Run the installer once to create the stable managed launcher.';
       } else if (['queued', 'preparing', 'running'].includes(operation?.status)) {
         status.textContent = operation.status === 'queued' ? 'Queued' : 'Installing';
-        status.className = 'status-warn';
+        statusCode = operation.status;
         detail.textContent = `Installing ${operation.target_version}. This page will reconnect automatically.`;
       } else if (operation?.status === 'error') {
         status.textContent = 'Update failed';
-        status.className = 'status-bad';
+        statusCode = 'error';
         detail.textContent = `The previous runtime remains active (${operation.error_code || 'UPDATE_ERROR'}).`;
       } else if (operation?.status === 'success' && operation.current_version === currentVersion) {
         status.textContent = 'Updated';
-        status.className = 'status-good';
-        detail.textContent = `${currentVersion} is active. The previous runtime is retained for rollback.`;
+        statusCode = 'success';
+        detail.textContent = `Updated to ${currentVersion}`;
       } else if (release.status === 'available') {
-        status.textContent = `${release.latest_version} available`;
-        status.className = 'status-warn';
-        detail.textContent = 'The release digest, isolated installation, bridge build and smoke test will be verified before activation.';
+        status.textContent = 'Available';
+        statusCode = 'available';
+        detail.textContent = `Latest release ${release.latest_version}`;
       } else if (release.status === 'current') {
         status.textContent = 'Current';
-        status.className = 'status-good';
-        detail.textContent = `${currentVersion} is the newest stable release.`;
+        statusCode = 'current';
+        detail.textContent = release.latest_version === currentVersion
+          ? `Latest release ${release.latest_version}`
+          : release.latest_version
+            ? `Installed ${currentVersion} · latest release ${release.latest_version}`
+            : `Installed ${currentVersion}`;
       } else if (release.status === 'error') {
         status.textContent = 'Check failed';
-        status.className = 'status-bad';
+        statusCode = 'error';
         detail.textContent = `GitHub release metadata is unavailable (${release.error_code || 'UPDATE_ERROR'}).`;
       } else {
         status.textContent = 'Not checked';
-        detail.textContent = 'Checking for updates is manual. Installation requires confirmation.';
+        detail.textContent = `Installed ${currentVersion}`;
       }
+      status.className = `metric-value status ${statusCode}`;
     }
 
     async function checkForUpdate() {
@@ -1514,7 +1522,10 @@
     document.getElementById('check-update-button').addEventListener('click', checkForUpdate);
     document.getElementById('install-update-button').addEventListener('click', installUpdate);
 
-    api('/api/state').then(populate).catch(error => {
+    api('/api/state').then(state => {
+      populate(state);
+      if (state.update?.managed && state.update?.release?.status === 'unknown') checkForUpdate();
+    }).catch(error => {
       document.getElementById('config-status').textContent = 'Unavailable';
       document.getElementById('config-status').className = 'metric-value status-bad';
       showToast(error.message, true);

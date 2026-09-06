@@ -857,7 +857,8 @@ def test_http_surface_is_local_english_and_csrf_protected(
         assert 'data-tab="advanced"' in html
         assert 'id="tab-panel-advanced"' in html
         assert "Diagnostics" in html
-        assert "Server updates" in html
+        assert '<span class="metric-label">Server</span>' in html
+        assert '<span class="metric-label">Transport</span>' not in html
         assert "Check for updates" in html
         assert "Install update" in html
         assert "/api/update/check" in html
