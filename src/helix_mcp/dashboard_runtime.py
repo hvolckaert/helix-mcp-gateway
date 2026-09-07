@@ -14,7 +14,7 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 from helix_mcp.installation.managed import ManagedInstallation
 from helix_mcp.installation.setup import SetupError
@@ -45,15 +45,13 @@ class _NativeWindowsRunRegistry:
     def read(self, name: str) -> str | None:  # pragma: no cover - Windows
         import winreg
 
+        registry = cast(Any, winreg)
         try:
-            with winreg.OpenKey(  # type: ignore[attr-defined]
-                winreg.HKEY_CURRENT_USER,  # type: ignore[attr-defined]
+            with registry.OpenKey(
+                registry.HKEY_CURRENT_USER,
                 self.KEY,
             ) as key:
-                value, _ = winreg.QueryValueEx(  # type: ignore[attr-defined]
-                    key,
-                    name,
-                )
+                value, _ = registry.QueryValueEx(key, name)
         except FileNotFoundError:
             return None
         return str(value)
@@ -65,17 +63,9 @@ class _NativeWindowsRunRegistry:
     ) -> None:  # pragma: no cover - Windows
         import winreg
 
-        with winreg.CreateKey(  # type: ignore[attr-defined]
-            winreg.HKEY_CURRENT_USER,  # type: ignore[attr-defined]
-            self.KEY,
-        ) as key:
-            winreg.SetValueEx(  # type: ignore[attr-defined]
-                key,
-                name,
-                0,
-                winreg.REG_SZ,  # type: ignore[attr-defined]
-                command,
-            )
+        registry = cast(Any, winreg)
+        with registry.CreateKey(registry.HKEY_CURRENT_USER, self.KEY) as key:
+            registry.SetValueEx(key, name, 0, registry.REG_SZ, command)
 
 
 @dataclass(frozen=True, slots=True)
