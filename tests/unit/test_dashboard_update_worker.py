@@ -3,14 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-import helix_mcp.dashboard as dashboard_module
 import helix_mcp.dashboard_update_worker as worker_module
 from helix_mcp.dashboard_update_worker import (
     load_update_status,
     run_update,
     write_update_status,
 )
-from helix_mcp.installation.managed import versioned_runtime_paths
 
 
 def test_update_status_round_trip_is_atomic(tmp_path: Path) -> None:
@@ -46,13 +44,18 @@ def test_worker_relaunches_dashboard_from_updated_runtime(
         "_wait_until_port_is_free",
         lambda port: calls.update(port=port),
     )
-    monkeypatch.setattr(
-        worker_module,
-        "update_installation",
-        lambda **kwargs: SimpleNamespace(
+
+    def update_installation(**kwargs):
+        kwargs["post_activation_check"](
+            SimpleNamespace(active_version="0.7.0")
+        )
+        return SimpleNamespace(
             target_runtime=target_runtime,
             target_version="0.7.0",
-        ),
+        )
+
+    monkeypatch.setattr(
+        worker_module, "update_installation", update_installation
     )
     monkeypatch.setattr(
         worker_module,
@@ -60,18 +63,25 @@ def test_worker_relaunches_dashboard_from_updated_runtime(
         lambda workspace: False,
     )
 
-    class FakeDashboardLauncher:
-        def __init__(self, **kwargs: object) -> None:
-            calls["launcher"] = kwargs
+    class FakeRuntimeManager:
+        def __init__(self, installation: object) -> None:
+            calls["installation"] = installation
 
-        def start(self, *, open_browser: bool) -> SimpleNamespace:
-            calls["open_browser"] = open_browser
-            return SimpleNamespace(pid=8_766)
+        def restart_and_verify(
+            self, *, expected_version: str
+        ) -> SimpleNamespace:
+            calls["expected_version"] = expected_version
+            return SimpleNamespace(
+                to_dict=lambda: {
+                    "manager": "systemd_user",
+                    "active": True,
+                }
+            )
 
     monkeypatch.setattr(
-        dashboard_module,
-        "DashboardProcessLauncher",
-        FakeDashboardLauncher,
+        worker_module,
+        "DashboardRuntimeManager",
+        FakeRuntimeManager,
     )
 
     succeeded = run_update(
@@ -86,11 +96,7 @@ def test_worker_relaunches_dashboard_from_updated_runtime(
 
     assert succeeded is True
     assert calls["shutdown"] == (8_766, "worker-token")
-    launcher = calls["launcher"]
-    assert isinstance(launcher, dict)
-    expected_python, _, _, _ = versioned_runtime_paths(workspace, "0.7.0")
-    assert launcher["python_executable"] == str(expected_python)
-    assert calls["open_browser"] is False
+    assert calls["expected_version"] == "0.7.0"
     status = load_update_status(workspace)
     assert status is not None
     assert status["status"] == "success"

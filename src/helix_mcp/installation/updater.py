@@ -27,6 +27,7 @@ from helix_mcp.installation.managed import (
     activate_managed_installation,
     installation_metadata_path,
     load_managed_installation,
+    stable_dashboard_launcher_path,
     stable_launcher_path,
     supports_transactional_updates,
     versioned_runtime_paths,
@@ -159,6 +160,7 @@ def update_installation(
     base_python: str | Path | None = None,
     runner: CommandRunner = subprocess.run,
     clock: Callable[[], datetime] | None = None,
+    post_activation_check: Callable[[ManagedInstallation], None] | None = None,
 ) -> UpdateResult:
     """Install, verify and atomically activate one published release."""
 
@@ -266,12 +268,15 @@ def update_installation(
                 client=managed.client,
                 server_name=managed.server_name,
                 openclaw_command=managed.openclaw_command,
+                dashboard_port=managed.dashboard_port,
             )
             openclaw_reloaded, openclaw_probed = _switch_openclaw(
                 activated,
                 previous_openclaw,
                 runner=runner,
             )
+            if post_activation_check is not None:
+                post_activation_check(activated)
         except Exception:
             _restore_backup(
                 backup=backup,
@@ -515,6 +520,7 @@ def _create_backup(
         "bridge": runtime.arapi_bridge_jar_path,
         "key": runtime.write_plan_key_path,
         "launcher": managed.launcher,
+        "dashboard_launcher": managed.dashboard_launcher,
         "installation": installation_metadata_path(workspace),
     }
     for name, source in files.items():
@@ -567,6 +573,10 @@ def _restore_backup(
 def _restore_managed_files(backup: Path, workspace: Path) -> None:
     for name, target in (
         ("launcher", stable_launcher_path(workspace)),
+        (
+            "dashboard_launcher",
+            stable_dashboard_launcher_path(workspace),
+        ),
         ("installation", installation_metadata_path(workspace)),
     ):
         source = backup / name

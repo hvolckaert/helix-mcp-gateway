@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from helix_mcp.installation import InstallPaths, SetupResult
-from helix_mcp.installation.cli import setup_main
+from helix_mcp.installation.cli import _installed_server_command, setup_main
 from helix_mcp.installation.managed import stable_launcher_path
 
 
@@ -42,8 +44,11 @@ def test_setup_dry_run_returns_machine_readable_codex_configuration(
         "args": [
             "--dotenv",
             str(tmp_path / "config" / ".env"),
+            "--port",
+            "8766",
         ],
         "url": "http://127.0.0.1:8766/",
+        "browser_requested": True,
     }
 
 
@@ -66,6 +71,24 @@ def test_setup_failure_exposes_only_a_stable_code(monkeypatch, capsys) -> None:
         "status": "failed",
         "error_code": "SAFE_INSTALL_FAILURE",
     }
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX venv Python is a symlink")
+def test_installed_server_is_resolved_next_to_the_venv_python(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    executable_dir = tmp_path / "venv/bin"
+    executable_dir.mkdir(parents=True)
+    python = executable_dir / "python"
+    python.symlink_to(Path(sys.executable).resolve())
+    server = executable_dir / "helix-mcp"
+    server.write_text("server", encoding="utf-8")
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli.sys.executable", str(python)
+    )
+
+    assert _installed_server_command() == server.absolute()
 
 
 def test_setup_help_explains_prerequisites_and_destination_paths(
@@ -114,6 +137,10 @@ def test_setup_starts_detached_dashboard_by_default(
     installed_server = tmp_path / "venv/bin/helix-mcp"
     installed_server.parent.mkdir(parents=True)
     installed_server.write_text("server", encoding="utf-8")
+    (
+        installed_server.parent
+        / ("python.exe" if os.name == "nt" else "python")
+    ).write_text("python", encoding="utf-8")
     captured: dict[str, object] = {}
     monkeypatch.setattr(
         "helix_mcp.installation.cli.setup_installation",
@@ -132,22 +159,26 @@ def test_setup_starts_detached_dashboard_by_default(
         lambda candidate=None: None,
     )
 
-    class FakeLauncher:
-        def __init__(self, **kwargs) -> None:
-            captured.update(kwargs)
+    class FakeRuntimeManager:
+        def __init__(self, installation) -> None:
+            captured["installation"] = installation
 
-        def start(self):
+        def install_and_start(self):
             return SimpleNamespace(
                 to_dict=lambda: {
-                    "pid": 1_234,
-                    "url": "http://127.0.0.1:8766/",
-                    "reused": False,
+                    "manager": "systemd_user",
+                    "installed": True,
+                    "enabled": True,
+                    "active": True,
                 }
             )
 
     monkeypatch.setattr(
-        "helix_mcp.installation.cli.DashboardProcessLauncher",
-        FakeLauncher,
+        "helix_mcp.installation.cli.DashboardRuntimeManager",
+        FakeRuntimeManager,
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli.webbrowser.open", lambda url: True
     )
 
     result = setup_main([])
@@ -155,14 +186,13 @@ def test_setup_starts_detached_dashboard_by_default(
     payload = json.loads(capsys.readouterr().out)
     assert result == 0
     assert payload["dashboard"] == {
-        "pid": 1_234,
+        "manager": "systemd_user",
+        "installed": True,
+        "enabled": True,
+        "active": True,
         "url": "http://127.0.0.1:8766/",
-        "reused": False,
     }
-    assert captured == {
-        "dotenv_path": setup_result.dotenv_path,
-        "errors_path": paths.state_dir / "errors",
-    }
+    assert captured["installation"].dotenv_path == setup_result.dotenv_path
     assert payload["codex_desktop"]["command"] == str(
         stable_launcher_path(paths.data_dir)
     )
@@ -170,7 +200,9 @@ def test_setup_starts_detached_dashboard_by_default(
     assert payload["client_integration"] == "standalone"
 
 
-def test_setup_can_skip_dashboard(tmp_path, monkeypatch, capsys) -> None:
+def test_setup_can_keep_dashboard_without_opening_browser(
+    tmp_path, monkeypatch, capsys
+) -> None:
     paths = InstallPaths(
         config_dir=tmp_path / "config",
         data_dir=tmp_path / "data",
@@ -193,6 +225,10 @@ def test_setup_can_skip_dashboard(tmp_path, monkeypatch, capsys) -> None:
     installed_server = tmp_path / "venv/bin/helix-mcp"
     installed_server.parent.mkdir(parents=True)
     installed_server.write_text("server", encoding="utf-8")
+    (
+        installed_server.parent
+        / ("python.exe" if os.name == "nt" else "python")
+    ).write_text("python", encoding="utf-8")
     monkeypatch.setattr(
         "helix_mcp.installation.cli.setup_installation",
         lambda **kwargs: setup_result,
@@ -209,16 +245,34 @@ def test_setup_can_skip_dashboard(tmp_path, monkeypatch, capsys) -> None:
         "helix_mcp.installation.cli.find_openclaw_command",
         lambda candidate=None: None,
     )
+
+    class FakeRuntimeManager:
+        def __init__(self, installation) -> None:
+            self.installation = installation
+
+        def install_and_start(self):
+            return SimpleNamespace(
+                to_dict=lambda: {"manager": "systemd_user", "active": True}
+            )
+
     monkeypatch.setattr(
-        "helix_mcp.installation.cli.DashboardProcessLauncher",
-        lambda **kwargs: pytest.fail("dashboard should not launch"),
+        "helix_mcp.installation.cli.DashboardRuntimeManager",
+        FakeRuntimeManager,
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli.webbrowser.open",
+        lambda url: pytest.fail("browser should not open"),
     )
 
     result = setup_main(["--no-dashboard"])
 
     payload = json.loads(capsys.readouterr().out)
     assert result == 0
-    assert payload["dashboard"] is None
+    assert payload["dashboard"] == {
+        "manager": "systemd_user",
+        "active": True,
+        "url": "http://127.0.0.1:8766/",
+    }
     assert payload["codex_desktop"]["command"] == str(
         stable_launcher_path(paths.data_dir)
     )
@@ -254,6 +308,10 @@ def test_setup_auto_registers_detected_openclaw(
     installed_server = tmp_path / "venv/bin/helix-mcp"
     installed_server.parent.mkdir(parents=True)
     installed_server.write_text("server", encoding="utf-8")
+    (
+        installed_server.parent
+        / ("python.exe" if os.name == "nt" else "python")
+    ).write_text("python", encoding="utf-8")
     openclaw = tmp_path / "bin/openclaw"
     openclaw.parent.mkdir()
     openclaw.write_text("openclaw", encoding="utf-8")
@@ -279,16 +337,15 @@ def test_setup_auto_registers_detected_openclaw(
         lambda **kwargs: captured.update(kwargs),
     )
     monkeypatch.setattr(
-        "helix_mcp.installation.cli.DashboardProcessLauncher",
-        lambda **kwargs: SimpleNamespace(
-            start=lambda: SimpleNamespace(
-                to_dict=lambda: {
-                    "pid": 1_234,
-                    "url": "http://127.0.0.1:8766/",
-                    "reused": False,
-                }
+        "helix_mcp.installation.cli.DashboardRuntimeManager",
+        lambda installation: SimpleNamespace(
+            install_and_start=lambda: SimpleNamespace(
+                to_dict=lambda: {"manager": "systemd_user", "active": True}
             )
         ),
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli.webbrowser.open", lambda url: True
     )
 
     result = setup_main([])

@@ -6,6 +6,7 @@ import argparse
 import json
 import shutil
 import sys
+import webbrowser
 from collections.abc import Sequence
 from dataclasses import asdict, replace
 from importlib import metadata
@@ -16,6 +17,7 @@ from helix_mcp.dashboard import (
     DEFAULT_DASHBOARD_PORT,
     DashboardProcessLauncher,
 )
+from helix_mcp.dashboard_runtime import DashboardRuntimeManager
 from helix_mcp.installation.bridge import build_bridge
 from helix_mcp.installation.managed import (
     ManagedInstallation,
@@ -95,7 +97,13 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--no-dashboard",
         action="store_true",
-        help="do not start or open the local configuration dashboard",
+        help="keep the managed dashboard available without opening a browser",
+    )
+    parser.add_argument(
+        "--dashboard-port",
+        type=int,
+        default=DEFAULT_DASHBOARD_PORT,
+        help=f"loopback dashboard port (default: {DEFAULT_DASHBOARD_PORT})",
     )
     parser.add_argument(
         "--client",
@@ -123,6 +131,7 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     try:
         managed_activated = False
+        managed: ManagedInstallation | None = None
         client_integration = arguments.client
         result = setup_installation(
             arapi_lib_dir=arguments.arapi_lib_dir,
@@ -148,6 +157,7 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
                 server_command=server_command,
                 dotenv_path=result.dotenv_path,
                 client="standalone",
+                dashboard_port=arguments.dashboard_port,
             )
             if client_integration == "openclaw":
                 assert openclaw_command is not None
@@ -172,23 +182,39 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
                     client="openclaw",
                     server_name=arguments.server_name,
                     openclaw_command=openclaw_command,
+                    dashboard_port=arguments.dashboard_port,
                 )
             result = replace(result, server_command=str(managed.launcher))
             managed_activated = True
         dashboard: dict[str, object] | None
-        if arguments.no_dashboard:
-            dashboard = None
-        elif arguments.dry_run:
+        if arguments.dry_run:
             dashboard = {
                 "command": "helix-mcp-dashboard",
-                "args": ["--dotenv", str(result.dotenv_path)],
-                "url": (f"http://127.0.0.1:{DEFAULT_DASHBOARD_PORT}/"),
+                "args": [
+                    "--dotenv",
+                    str(result.dotenv_path),
+                    "--port",
+                    str(arguments.dashboard_port),
+                ],
+                "url": f"http://127.0.0.1:{arguments.dashboard_port}/",
+                "browser_requested": not arguments.no_dashboard,
             }
+        elif managed_activated:
+            assert managed is not None
+            dashboard = (
+                DashboardRuntimeManager(managed).install_and_start().to_dict()
+            )
+            dashboard["url"] = f"http://127.0.0.1:{arguments.dashboard_port}/"
+            if not arguments.no_dashboard:
+                webbrowser.open(str(dashboard["url"]))
+        elif arguments.no_dashboard:
+            dashboard = None
         else:
             dashboard = (
                 DashboardProcessLauncher(
                     dotenv_path=result.dotenv_path,
                     errors_path=result.paths.state_dir / "errors",
+                    port=arguments.dashboard_port,
                 )
                 .start()
                 .to_dict()
@@ -262,7 +288,7 @@ def _print_json(payload: object) -> None:
 
 
 def _installed_server_command() -> Path:
-    executable_dir = Path(sys.executable).resolve().parent
+    executable_dir = Path(sys.executable).expanduser().absolute().parent
     suffix = ".exe" if sys.platform == "win32" else ""
     sibling = executable_dir / f"helix-mcp{suffix}"
     if sibling.is_file():
@@ -327,4 +353,5 @@ def _restore_managed_installation(
         client=previous.client,
         server_name=previous.server_name,
         openclaw_command=previous.openclaw_command,
+        dashboard_port=previous.dashboard_port,
     )

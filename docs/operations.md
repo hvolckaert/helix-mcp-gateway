@@ -62,6 +62,12 @@ The default `stdio` server remains in the foreground and belongs to the MCP
 client that started it. It does not create a daemon or PID file. Use an orderly
 client shutdown or `Ctrl+C`; never kill generic Java processes.
 
+The dashboard has a separate per-user lifecycle. On Linux and WSL inspect it
+with `systemctl --user status helix-mcp-dashboard.service`; setup enables it for
+future user sessions. Native Windows uses the current user's startup registry
+entry and a crash-recovering supervisor. Neither mechanism requires
+administrator privileges. The dashboard remains bound to loopback port `8766`.
+
 Lifecycle events are emitted as structured JSON to `stderr`. Optional audit,
 metrics, and operation files use separate closed schemas and restrictive local
 permissions. A sink failure disables only that sink and does not stop MCP tool

@@ -68,7 +68,7 @@
     .version {
       z-index: 1; padding: 8px 12px; border: 1px solid rgba(255,255,255,.24);
       border-radius: 999px; color: #dff7fb; font-size: .82rem; background: rgba(255,255,255,.07); }
-    .summary { display: grid; grid-template-columns: 1.3fr repeat(3, minmax(160px, .7fr)); gap: 14px; margin: 18px 0; }
+    .summary { display: grid; grid-template-columns: 1.3fr repeat(4, minmax(140px, .7fr)); gap: 14px; margin: 18px 0; }
     .intro, .metric, .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; }
     .intro { padding: 20px 22px; }
     .intro h1 { margin: 0 0 5px; font-size: 1.34rem; line-height: 1.25; letter-spacing: -.025em; }
@@ -226,7 +226,7 @@
     .toast.visible { opacity: 1; transform: translateY(0); }
     .toast.error { background: var(--danger); }
     @media (max-width: 1050px) {
-      .summary { grid-template-columns: repeat(3, 1fr); }
+      .summary { grid-template-columns: repeat(2, 1fr); }
       .intro { grid-column: 1 / -1; }
       .savebar { position: static; }
     }
@@ -278,6 +278,11 @@
         <span class="metric-label">Credentials</span>
         <span class="metric-value" id="credential-count">—</span>
         <span class="metric-detail">DEV · QA · PROD</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Dashboard service</span>
+        <span class="metric-value status" id="runtime-status">Loading</span>
+        <span class="metric-detail" id="runtime-detail">—</span>
       </div>
       <div class="metric">
         <span class="metric-label">Server</span>
@@ -1205,6 +1210,7 @@
       const credentialCount = configuration.environments.filter(item => item.credential.configured).length;
       document.getElementById('credential-count').textContent = `${credentialCount} of 3`;
       document.getElementById('credential-count').className = `metric-value ${credentialCount === 3 ? 'status-good' : 'status-warn'}`;
+      renderDashboardRuntime(state.dashboard_runtime);
       renderUpdate(state.update);
 
       document.getElementById('log-level').value = configuration.server.log_level;
@@ -1231,6 +1237,33 @@
       } else {
         saveNote.textContent = 'Changes are validated before saving. Restart a standalone MCP client afterward to apply them.';
       }
+    }
+
+    function renderDashboardRuntime(runtime) {
+      const status = document.getElementById('runtime-status');
+      const detail = document.getElementById('runtime-detail');
+      if (!runtime || runtime.manager === 'unmanaged') {
+        status.textContent = 'Not managed';
+        status.className = 'metric-value status unavailable';
+        detail.textContent = 'Run setup to enable automatic startup.';
+        return;
+      }
+      if (runtime.active) {
+        status.textContent = 'Running';
+        status.className = 'metric-value status ready';
+      } else if (runtime.status === 'error') {
+        status.textContent = 'Manager error';
+        status.className = 'metric-value status error';
+      } else {
+        status.textContent = 'Stopped';
+        status.className = 'metric-value status unavailable';
+      }
+      const manager = runtime.manager === 'systemd_user'
+        ? 'systemd user service'
+        : runtime.manager === 'windows_startup'
+          ? 'Windows user startup'
+          : 'detached supervisor';
+      detail.textContent = `${manager} · port ${runtime.port}`;
     }
 
     function renderUpdate(update) {

@@ -7,6 +7,7 @@ import asyncio
 import hashlib
 import http.client
 import json
+import logging
 import os
 import secrets
 import signal
@@ -57,14 +58,21 @@ from helix_mcp.config import (
     load_runtime_settings,
     load_single_instance_config,
 )
+from helix_mcp.dashboard_runtime import (
+    DASHBOARD_MODE_ENV,
+    DashboardRuntimeManager,
+    dashboard_workspace_id,
+)
 from helix_mcp.dashboard_update_worker import (
     DashboardUpdateWorkerLauncher,
     load_update_status,
     write_update_status,
 )
 from helix_mcp.installation.managed import (
+    activate_managed_installation,
     load_managed_installation,
     supports_transactional_updates,
+    versioned_runtime_paths,
 )
 from helix_mcp.installation.openclaw import reload_managed_openclaw
 from helix_mcp.installation.updater import (
@@ -90,6 +98,7 @@ _METADATA_OPERATION_TIMEOUT_SECONDS = 330
 _METADATA_PAGE_LIMIT = 200
 _MAX_FIELD_CACHE_ENTRIES = 256
 _MAX_SQL_CATALOG_OBJECTS = 100_000
+LOGGER = logging.getLogger(__name__)
 
 _DASHBOARD_OBJECT_CATALOG_SQL = """
 SELECT
@@ -846,6 +855,7 @@ class DashboardService:
         command_runner: Callable[..., subprocess.CompletedProcess[str]] = (
             subprocess.run
         ),
+        dashboard_port: int = DEFAULT_DASHBOARD_PORT,
     ) -> None:
         self.dotenv_path = Path(dotenv_path).expanduser().absolute()
         self._process_environment = dict(
@@ -861,6 +871,7 @@ class DashboardService:
         self._gh_command = str(gh_command)
         self._command_runner = command_runner
         self._release_status: ReleaseStatus | None = None
+        self.dashboard_port = dashboard_port
 
     def state(self) -> dict[str, object]:
         """Return configuration state without paths or secret material."""
@@ -940,6 +951,17 @@ class DashboardService:
             },
             "restart_required": False,
             "update": self._update_state(runtime),
+            "dashboard_runtime": self._dashboard_runtime(runtime),
+        }
+
+    def health(self) -> dict[str, str]:
+        """Return the runtime identity used by lifecycle health checks."""
+
+        runtime = load_runtime_settings(self.dotenv_path, environ={})
+        return {
+            "status": "ok",
+            "server_version": _package_version(),
+            "workspace_id": dashboard_workspace_id(self._workspace(runtime)),
         }
 
     def check_update(self) -> dict[str, object]:
@@ -1060,6 +1082,30 @@ class DashboardService:
         if bridge is None:
             return self.dotenv_path.parent
         return bridge.parent.parent
+
+    def _dashboard_runtime(
+        self,
+        runtime: RuntimeSettings,
+    ) -> dict[str, object]:
+        workspace = self._workspace(runtime)
+        managed = load_managed_installation(workspace)
+        if managed is None:
+            return {
+                "manager": "unmanaged",
+                "installed": False,
+                "enabled": False,
+                "active": True,
+                "status": "running",
+                "restart_policy": "none",
+                "service_name": None,
+                "launcher": None,
+                "port": self.dashboard_port,
+                "process_managed": False,
+                "error": None,
+            }
+        payload = DashboardRuntimeManager(managed).status().to_dict()
+        payload["launcher"] = Path(str(payload["launcher"])).name
+        return payload
 
     @staticmethod
     def _state_directory(runtime: RuntimeSettings) -> Path:
@@ -1525,6 +1571,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/identity":
             self._json(HTTPStatus.OK, self.server.service.identity())
             return
+        if path == "/api/health":
+            self._json(HTTPStatus.OK, self.server.service.health())
+            return
         self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def do_POST(self) -> None:
@@ -1738,7 +1787,10 @@ def dashboard_main(argv: Sequence[str] | None = None) -> int:
     if not 1 <= arguments.port <= 65_535:
         parser.error("--port must be between 1 and 65535")
     try:
-        service = DashboardService(arguments.dotenv)
+        service = DashboardService(
+            arguments.dotenv,
+            dashboard_port=arguments.port,
+        )
         service.state()
         server = DashboardHTTPServer(
             (LOOPBACK_HOST, arguments.port),
@@ -1760,6 +1812,16 @@ def dashboard_main(argv: Sequence[str] | None = None) -> int:
     print(json.dumps({"status": "ready", "url": url}, separators=(",", ":")))
     if not arguments.no_browser:
         threading.Timer(0.2, webbrowser.open, args=(url,)).start()
+    if not os.environ.get(DASHBOARD_MODE_ENV):
+        threading.Thread(
+            target=_adopt_managed_dashboard,
+            kwargs={
+                "dotenv_path": arguments.dotenv.expanduser().absolute(),
+                "port": arguments.port,
+            },
+            name="helix-dashboard-runtime-adoption",
+            daemon=True,
+        ).start()
     previous_sigterm = signal.getsignal(signal.SIGTERM)
 
     def stop_dashboard(_signum: int, _frame: object) -> None:
@@ -1778,6 +1840,49 @@ def dashboard_main(argv: Sequence[str] | None = None) -> int:
         signal.signal(signal.SIGTERM, previous_sigterm)
         server.server_close()
     return 0
+
+
+def _adopt_managed_dashboard(
+    *,
+    dotenv_path: Path,
+    port: int,
+) -> None:
+    """Migrate an older managed dashboard without interrupting its port."""
+
+    try:
+        runtime = load_runtime_settings(dotenv_path, environ={})
+        bridge = runtime.arapi_bridge_jar_path
+        workspace = (
+            bridge.parent.parent if bridge is not None else dotenv_path.parent
+        )
+        managed = load_managed_installation(workspace)
+        if managed is None:
+            return
+        if (
+            not managed.dashboard_launcher.is_file()
+            or managed.dashboard_port != port
+        ):
+            _, server, _, _ = versioned_runtime_paths(
+                workspace,
+                managed.active_version,
+            )
+            if not server.is_file():
+                return
+            managed = activate_managed_installation(
+                workspace=workspace,
+                version=managed.active_version,
+                server_command=server,
+                dotenv_path=managed.dotenv_path,
+                client=managed.client,
+                server_name=managed.server_name,
+                openclaw_command=managed.openclaw_command,
+                dashboard_port=port,
+            )
+        DashboardRuntimeManager(managed).install_and_start(verify=False)
+    except Exception:
+        LOGGER.exception(
+            "could not adopt the dashboard into a persistent runtime manager"
+        )
 
 
 def dashboard_entrypoint() -> None:

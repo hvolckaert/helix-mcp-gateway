@@ -1,22 +1,34 @@
 # Local configuration dashboard
 
 The administrative dashboard is the normal configuration interface for a local
-Helix MCP Gateway installation. `helix-mcp-setup` launches it as a detached
-process, opens the browser, and reports its process ID and URL. It remains
-independent of the MCP transport and listens only on loopback:
+Helix MCP Gateway installation. `helix-mcp-setup` installs and starts its
+persistent per-user runtime manager, opens the browser, and reports the
+manager state and URL. It remains independent of the MCP transport and listens
+only on loopback:
 
 ```text
 http://127.0.0.1:8766/
 ```
 
-If setup finds the same installation already serving that address, it reuses
-the existing process instead of starting a duplicate. A different service or
-Helix MCP installation on the port is rejected safely.
+On Linux and WSL with a user systemd manager, setup installs and enables
+`helix-mcp-dashboard.service`; it requires no administrator privileges. On
+native Windows, it registers a current-user startup command under `HKCU` and
+runs the same crash-recovering supervisor without Task Scheduler. If neither
+manager is available, setup falls back to a detached supervisor for the
+current user session. The dashboard's **Dashboard service** card reports which
+manager is active.
+
+If setup finds the same managed installation already serving that address, it
+reuses it instead of starting a duplicate. A different service, workspace, or
+Helix MCP runtime on the port is rejected safely. The supervisor restarts the
+dashboard after an unexpected failure; an orderly stop is not treated as a
+crash.
 
 For manual operation, `helix-mcp-dashboard --dotenv /path/to/.env` starts the
 dashboard in the foreground. Use `--port` to select a different loopback port
 or `--no-browser` when it must not open a browser automatically. Setup accepts
-`--no-dashboard` for headless or unattended installation.
+`--no-dashboard` to install and start the persistent manager without opening a
+browser.
 
 ## Editable settings
 
@@ -179,9 +191,11 @@ may be replaced. The page temporarily loses its loopback connection, polls for
 the new dashboard process, and reloads state after it returns. The worker
 verifies the GitHub release digest, installs an isolated runtime, backs up local
 configuration and state, rebuilds the Java bridge, runs readiness checks, and
-switches the stable launcher only after validation. Failed updates keep or
-restore the previous active runtime. See [Installation](installation.md) for
-the complete transaction and client restart behavior.
+switches both stable launchers only after validation. It restarts the persistent
+manager and verifies the new dashboard version and workspace before committing
+the transaction. Failed updates keep or restore the previous active runtime and
+restart its dashboard manager. See [Installation](installation.md) for the
+complete transaction and client restart behavior.
 
 ## Save transaction
 

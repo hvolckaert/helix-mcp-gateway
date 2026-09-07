@@ -18,8 +18,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from helix_mcp.config import load_runtime_settings
-from helix_mcp.installation.managed import load_managed_installation
+from helix_mcp.dashboard_runtime import DashboardRuntimeManager
+from helix_mcp.installation.managed import (
+    ManagedInstallation,
+    load_managed_installation,
+)
 from helix_mcp.installation.updater import (
     DEFAULT_REPOSITORY,
     update_installation,
@@ -180,22 +183,9 @@ def run_update(
 ) -> bool:
     """Stop the dashboard, update atomically, and relaunch it."""
 
-    from helix_mcp.dashboard import DashboardProcessLauncher
-
     resolved_dotenv = Path(dotenv_path).expanduser().absolute()
     resolved_workspace = Path(workspace).expanduser().absolute()
-    runtime = load_runtime_settings(resolved_dotenv, environ={})
-    state_candidates = (
-        runtime.write_plan_db_path,
-        runtime.audit_log_path,
-        runtime.metrics_path,
-    )
-    state_dir = next(
-        (candidate.parent for candidate in state_candidates if candidate),
-        resolved_workspace / "state",
-    )
     current_python = Path(sys.executable).resolve()
-    next_python = current_python
     started_at = _timestamp()
     write_update_status(
         resolved_workspace,
@@ -206,6 +196,18 @@ def run_update(
             "process_id": os.getpid(),
         },
     )
+    dashboard_runtime: dict[str, object] | None = None
+
+    def activate_dashboard(installation: ManagedInstallation) -> None:
+        nonlocal dashboard_runtime
+        dashboard_runtime = (
+            DashboardRuntimeManager(installation)
+            .restart_and_verify(
+                expected_version=installation.active_version,
+            )
+            .to_dict()
+        )
+
     try:
         _request_dashboard_shutdown(dashboard_port, dashboard_token)
         _wait_until_port_is_free(dashboard_port)
@@ -225,27 +227,20 @@ def run_update(
             repository=repository,
             gh_command=gh_command,
             base_python=current_python,
-        )
-        executable_dir = (
-            result.target_runtime
-            / "venv"
-            / ("Scripts" if os.name == "nt" else "bin")
-        )
-        next_python = executable_dir / (
-            "python.exe" if os.name == "nt" else "python"
+            post_activation_check=activate_dashboard,
         )
         gateway_restarted = _restart_openclaw_gateway(resolved_workspace)
-        write_update_status(
-            resolved_workspace,
-            {
-                "status": "success",
-                "current_version": result.target_version,
-                "target_version": result.target_version,
-                "started_at": started_at,
-                "finished_at": _timestamp(),
-                "gateway_restarted": gateway_restarted,
-            },
-        )
+        success_state: dict[str, object] = {
+            "status": "success",
+            "current_version": result.target_version,
+            "target_version": result.target_version,
+            "started_at": started_at,
+            "finished_at": _timestamp(),
+            "gateway_restarted": gateway_restarted,
+        }
+        if dashboard_runtime is not None:
+            success_state["dashboard_runtime"] = dashboard_runtime
+        write_update_status(resolved_workspace, success_state)
         succeeded = True
     except Exception as exc:
         write_update_status(
@@ -259,15 +254,20 @@ def run_update(
             },
         )
         succeeded = False
-    try:
-        DashboardProcessLauncher(
-            dotenv_path=resolved_dotenv,
-            errors_path=state_dir / "errors",
-            python_executable=str(next_python),
-            port=dashboard_port,
-        ).start(open_browser=False)
-    except Exception:
-        return False
+    if dashboard_runtime is None:
+        try:
+            managed = load_managed_installation(resolved_workspace)
+            if managed is None:
+                raise RuntimeError(
+                    "managed installation metadata disappeared during update"
+                )
+            dashboard_runtime = (
+                DashboardRuntimeManager(managed)
+                .restart_and_verify(expected_version=managed.active_version)
+                .to_dict()
+            )
+        except Exception:
+            return False
     return succeeded
 
 

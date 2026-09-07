@@ -149,6 +149,9 @@ def test_managed_update_can_be_checked_and_started(
     server = workspace / "runtime/0.6.8/venv/bin/helix-mcp"
     server.parent.mkdir(parents=True)
     server.write_text("server", encoding="utf-8")
+    (
+        server.parent / ("python.exe" if os.name == "nt" else "python")
+    ).write_text("python", encoding="utf-8")
     activate_managed_installation(
         workspace=workspace,
         version="0.6.8",
@@ -262,6 +265,9 @@ def test_configure_reloads_managed_openclaw_and_reports_applied(
     server = workspace / "runtime/0.7.0/venv/bin/helix-mcp"
     server.parent.mkdir(parents=True)
     server.write_text("server", encoding="utf-8")
+    (
+        server.parent / ("python.exe" if os.name == "nt" else "python")
+    ).write_text("python", encoding="utf-8")
     openclaw = tmp_path / "bin/openclaw"
     openclaw.parent.mkdir()
     openclaw.write_text("openclaw", encoding="utf-8")
@@ -311,6 +317,9 @@ def test_configure_keeps_saved_files_when_openclaw_reload_fails(
     server = workspace / "runtime/0.7.0/venv/bin/helix-mcp"
     server.parent.mkdir(parents=True)
     server.write_text("server", encoding="utf-8")
+    (
+        server.parent / ("python.exe" if os.name == "nt" else "python")
+    ).write_text("python", encoding="utf-8")
     openclaw = tmp_path / "bin/openclaw"
     openclaw.parent.mkdir()
     openclaw.write_text("openclaw", encoding="utf-8")
@@ -961,6 +970,7 @@ def test_http_surface_is_local_english_and_csrf_protected(
         assert 'id="tab-panel-advanced"' in html
         assert "Diagnostics" in html
         assert '<span class="metric-label">Server</span>' in html
+        assert '<span class="metric-label">Dashboard service</span>' in html
         assert '<span class="metric-label">Transport</span>' not in html
         assert "Check for updates" in html
         assert "Install update" in html
@@ -1003,6 +1013,14 @@ def test_http_surface_is_local_english_and_csrf_protected(
         assert identity["product"] == "helix-mcp-gateway"
         assert identity["process_id"] == os.getpid()
         assert len(identity["installation_id"]) == 64
+
+        connection.request("GET", "/api/health")
+        response = connection.getresponse()
+        health = json.loads(response.read())
+        assert response.status == 200
+        assert health["status"] == "ok"
+        assert health["server_version"]
+        assert len(health["workspace_id"]) == 16
 
         connection.request("GET", "/api/state")
         response = connection.getresponse()

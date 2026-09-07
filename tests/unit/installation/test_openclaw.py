@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -101,6 +102,9 @@ def test_reload_managed_openclaw_uses_recorded_command(
     dotenv = tmp_path / "config/.env"
     dotenv.parent.mkdir()
     dotenv.write_text("HELIX_CONFIG_PATH=helix.yaml\n", encoding="utf-8")
+    (
+        server.parent / ("python.exe" if os.name == "nt" else "python")
+    ).write_text("python", encoding="utf-8")
     installation = activate_managed_installation(
         workspace=workspace,
         version="0.7.0",

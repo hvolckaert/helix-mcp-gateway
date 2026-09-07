@@ -93,18 +93,20 @@ The command:
 3. installs the bridge JAR atomically;
 4. creates `helix.yaml` and `.env` only when absent;
 5. generates a private random key for encrypted plans;
-6. starts or reuses the detached local dashboard and opens it in the default
-   browser;
-7. creates a stable client-facing launcher and managed installation metadata;
+6. installs or reuses the persistent per-user dashboard manager, starts it, and
+   opens it in the default browser;
+7. creates stable MCP and dashboard launchers plus managed installation
+   metadata;
 8. detects OpenClaw by default and, when available, registers the stable
    launcher, reloads its MCP catalog, and probes the resulting tool surface;
 9. returns sanitized JSON with destinations, the selected client integration,
-   the MCP client command, and the dashboard process ID and URL.
+   the MCP client command, and the dashboard manager state and URL.
 
 `--config-dir`, `--data-dir`, and `--state-dir` override the per-user defaults.
 `--dry-run` validates packaged resources and reports destinations without
 creating directories, compiling, changing files, or launching the dashboard.
-Use `--no-dashboard` for a headless or unattended installation.
+Use `--no-dashboard` to avoid opening a browser during headless or unattended
+installation; the persistent dashboard manager is still installed and started.
 Use `--client standalone` to skip automatic OpenClaw integration, or
 `--client openclaw` to require it instead of falling back to a standalone
 installation when the command is unavailable.
@@ -207,15 +209,18 @@ estimate.
 
 ## Local dashboard
 
-After setup, the detached dashboard is already available at:
+After setup, the managed dashboard is already available at:
 
 ```text
 http://127.0.0.1:8766/
 ```
 
 Running setup again safely reuses the dashboard when it belongs to the same
-installation. If the process was stopped, it can be run explicitly in the
-foreground with `helix-mcp-dashboard --dotenv /path/to/.env`.
+installation. Linux and WSL use the no-admin systemd user service when
+available; native Windows uses current-user startup plus a supervisor. A manual
+foreground launch with `helix-mcp-dashboard --dotenv /path/to/.env` adopts an
+older managed installation into this persistent model without interrupting the
+current port.
 
 The dashboard does not configure the external connectivity layer or hot-reload
 a running MCP process. Restart the MCP client after saving, then run the live
@@ -234,10 +239,11 @@ Helix MCP Knowledge:
 3. it downloads and verifies the exact wheel asset;
 4. it installs the wheel into `runtime/<version>/venv` and runs `pip check`;
 5. it backs up `.env`, YAML, the Java bridge, encryption key, plan database,
-   stable launcher, and installation metadata;
+   both stable launchers, and installation metadata;
 6. it rebuilds the bridge and runs the packaged readiness check;
-7. only then does it atomically switch the stable launcher;
-8. a detached worker relaunches the dashboard from the new runtime.
+7. only then does it atomically switch both stable launchers;
+8. a detached worker restarts the persistent dashboard manager and verifies
+   the expected version and workspace before the transaction succeeds.
 
 The previous runtime and timestamped backup remain available for recovery. If
 setup, validation, activation, or the supported OpenClaw reload/probe fails,

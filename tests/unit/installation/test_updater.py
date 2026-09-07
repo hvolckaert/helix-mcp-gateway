@@ -190,6 +190,8 @@ def _managed_installation(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     _, old_server, _, _ = versioned_runtime_paths(workspace, "0.6.8")
     old_server.parent.mkdir(parents=True)
     old_server.write_text("old server", encoding="utf-8")
+    old_python, _, _, _ = versioned_runtime_paths(workspace, "0.6.8")
+    old_python.write_text("python", encoding="utf-8")
     activate_managed_installation(
         workspace=workspace,
         version="0.6.8",

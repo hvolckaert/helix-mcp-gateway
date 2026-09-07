@@ -5,6 +5,18 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.7.1 - 2026-09-07
+
+- Keep the local dashboard available across supported user-session and WSL
+  restarts with a no-admin systemd user service on Linux/WSL, current-user
+  startup on Windows, and a detached supervisor fallback.
+- Add a stable dashboard launcher, managed port metadata, crash recovery,
+  runtime health identity, and visible dashboard-service status.
+- Switch and verify both MCP and dashboard launchers during transactional
+  updates, restoring the previous managed dashboard when an update fails.
+- Migrate schema-v1 managed installations without interrupting an already
+  running dashboard.
+
 ## 0.7.0 - 2026-09-07
 
 - Add a stable client-facing launcher and managed installation metadata.
