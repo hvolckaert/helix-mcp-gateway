@@ -201,7 +201,10 @@ def run_update(
     def activate_dashboard(installation: ManagedInstallation) -> None:
         nonlocal dashboard_runtime
         dashboard_runtime = (
-            DashboardRuntimeManager(installation)
+            DashboardRuntimeManager(
+                installation,
+                gh_command=gh_command,
+            )
             .restart_and_verify(
                 expected_version=installation.active_version,
             )
@@ -262,7 +265,10 @@ def run_update(
                     "managed installation metadata disappeared during update"
                 )
             dashboard_runtime = (
-                DashboardRuntimeManager(managed)
+                DashboardRuntimeManager(
+                    managed,
+                    gh_command=gh_command,
+                )
                 .restart_and_verify(expected_version=managed.active_version)
                 .to_dict()
             )

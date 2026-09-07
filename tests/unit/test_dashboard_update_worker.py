@@ -64,8 +64,14 @@ def test_worker_relaunches_dashboard_from_updated_runtime(
     )
 
     class FakeRuntimeManager:
-        def __init__(self, installation: object) -> None:
+        def __init__(
+            self,
+            installation: object,
+            *,
+            gh_command: str,
+        ) -> None:
             calls["installation"] = installation
+            calls["gh_command"] = gh_command
 
         def restart_and_verify(
             self, *, expected_version: str
@@ -97,6 +103,7 @@ def test_worker_relaunches_dashboard_from_updated_runtime(
     assert succeeded is True
     assert calls["shutdown"] == (8_766, "worker-token")
     assert calls["expected_version"] == "0.7.0"
+    assert calls["gh_command"] == "gh"
     status = load_update_status(workspace)
     assert status is not None
     assert status["status"] == "success"

@@ -76,6 +76,7 @@ def test_installs_no_admin_systemd_user_service(
     )
     manager = DashboardRuntimeManager(
         installation,
+        gh_command="/opt/github cli/gh",
         runner=runner,
         platform_name="posix",
         user_config_dir=tmp_path / "user-config",
@@ -96,6 +97,7 @@ def test_installs_no_admin_systemd_user_service(
     assert "dashboard-supervisor.log" in unit
     assert str(installation.dashboard_launcher) in unit
     assert '"8766"' in unit
+    assert '"--gh-command" "/opt/github cli/gh"' in unit
     assert [
         "systemctl",
         "--user",
@@ -253,11 +255,16 @@ def test_supervisor_restarts_after_failure_and_stops_after_clean_exit(
         dotenv_path=dotenv,
         workspace=workspace,
         port=8766,
+        gh_command="/opt/github-cli/gh",
         restart_seconds=0,
     )
 
     assert result == 0
     assert len(commands) == 2
+    assert all(
+        command[-3:-1] == ["--gh-command", "/opt/github-cli/gh"]
+        for command in commands
+    )
     assert not (workspace / "runtime/dashboard-supervisor.json").exists()
 
 

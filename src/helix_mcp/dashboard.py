@@ -1103,7 +1103,14 @@ class DashboardService:
                 "process_managed": False,
                 "error": None,
             }
-        payload = DashboardRuntimeManager(managed).status().to_dict()
+        payload = (
+            DashboardRuntimeManager(
+                managed,
+                gh_command=self._gh_command,
+            )
+            .status()
+            .to_dict()
+        )
         payload["launcher"] = Path(str(payload["launcher"])).name
         return payload
 
@@ -1783,6 +1790,11 @@ def dashboard_main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="do not open the dashboard in the default browser",
     )
+    parser.add_argument(
+        "--gh-command",
+        default="gh",
+        help="GitHub CLI command used for managed release checks",
+    )
     arguments = parser.parse_args(argv)
     if not 1 <= arguments.port <= 65_535:
         parser.error("--port must be between 1 and 65535")
@@ -1790,6 +1802,7 @@ def dashboard_main(argv: Sequence[str] | None = None) -> int:
         service = DashboardService(
             arguments.dotenv,
             dashboard_port=arguments.port,
+            gh_command=arguments.gh_command,
         )
         service.state()
         server = DashboardHTTPServer(
@@ -1818,6 +1831,7 @@ def dashboard_main(argv: Sequence[str] | None = None) -> int:
             kwargs={
                 "dotenv_path": arguments.dotenv.expanduser().absolute(),
                 "port": arguments.port,
+                "gh_command": arguments.gh_command,
             },
             name="helix-dashboard-runtime-adoption",
             daemon=True,
@@ -1846,6 +1860,7 @@ def _adopt_managed_dashboard(
     *,
     dotenv_path: Path,
     port: int,
+    gh_command: str | Path,
 ) -> None:
     """Migrate an older managed dashboard without interrupting its port."""
 
@@ -1878,7 +1893,10 @@ def _adopt_managed_dashboard(
                 openclaw_command=managed.openclaw_command,
                 dashboard_port=port,
             )
-        DashboardRuntimeManager(managed).install_and_start(verify=False)
+        DashboardRuntimeManager(
+            managed,
+            gh_command=gh_command,
+        ).install_and_start(verify=False)
     except Exception:
         LOGGER.exception(
             "could not adopt the dashboard into a persistent runtime manager"

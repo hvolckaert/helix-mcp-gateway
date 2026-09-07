@@ -106,6 +106,7 @@ class DashboardRuntimeManager:
         self,
         installation: ManagedInstallation,
         *,
+        gh_command: str | Path | None = None,
         runner: Callable[..., subprocess.CompletedProcess[str]] = (
             subprocess.run
         ),
@@ -133,6 +134,7 @@ class DashboardRuntimeManager:
         )
         self.log_path = self.workspace / "errors/dashboard-supervisor.log"
         self.windows_registry = windows_registry
+        self.gh_command = str(gh_command or shutil.which("gh") or "gh")
 
     @property
     def port(self) -> int:
@@ -509,6 +511,8 @@ class DashboardRuntimeManager:
             str(self.workspace),
             "--port",
             str(self.port),
+            "--gh-command",
+            self.gh_command,
         ]
 
     def _windows_startup_command(self) -> str:

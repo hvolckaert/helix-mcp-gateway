@@ -5,6 +5,12 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.7.2 - 2026-09-07
+
+- Preserve the resolved GitHub CLI path in persistent dashboard supervisors so
+  release checks and transactional updates continue to work when systemd or
+  current-user startup uses a restricted process environment.
+
 ## 0.7.1 - 2026-09-07
 
 - Keep the local dashboard available across supported user-session and WSL
