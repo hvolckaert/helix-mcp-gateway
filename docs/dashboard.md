@@ -228,17 +228,17 @@ The dashboard:
 
 - binds only to a loopback host;
 - validates the `Host` and browser `Origin` headers;
-- requires an owner-only random token for every API request except lifecycle
-  identity and health;
-- delivers that token in a URL fragment, removes it from the address bar, and
-  never embeds it in an unauthenticated HTTP response;
+- requires a process-local random token for every POST request and embeds it in
+  the loopback-served page, so opening the normal dashboard URL needs no token;
 - bounds JSON request bodies to 64 KiB;
 - serves restrictive CSP, no-store, no-referrer, and anti-framing headers;
 - suppresses HTTP request logging;
 - returns stable, sanitized errors without rejected values.
 
-The authenticated state endpoint contains no paths beyond file names and no
-secret material. Lifecycle endpoints expose a non-secret installation
-fingerprint only to distinguish the dashboard from another local installation
-during startup. The dashboard is not designed for remote exposure. Do not
-publish the port through a reverse proxy, tunnel, or shared network listener.
+The state endpoint contains no paths beyond file names and no secret material.
+The embedded token protects browser mutations together with the origin checks;
+it is not a boundary against another local process that can access loopback.
+Lifecycle endpoints expose a non-secret installation fingerprint only to
+distinguish the dashboard from another local installation during startup. The
+dashboard is not designed for remote exposure. Do not publish the port through
+a reverse proxy, tunnel, or shared network listener.

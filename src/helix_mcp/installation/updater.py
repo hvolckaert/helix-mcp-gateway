@@ -36,6 +36,7 @@ from helix_mcp.installation.openclaw import EXPOSED_TOOLS
 
 DEFAULT_REPOSITORY = "hvolckaert/helix-mcp-gateway"
 DEFAULT_OPENCLAW_SERVER_NAME = "helix"
+_MINIMUM_PIP_SPEC = "pip>=26.2,<27"
 _VERSION_PATTERN = re.compile(
     r"^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$"
 )
@@ -460,6 +461,20 @@ def _install_runtime(
             timeout=300,
             action="target virtual environment creation",
         )
+    _run(
+        [
+            str(target_python),
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--upgrade",
+            _MINIMUM_PIP_SPEC,
+        ],
+        runner=runner,
+        timeout=300,
+        action="target package installer update",
+    )
     install_command = [
         str(target_python),
         "-m",

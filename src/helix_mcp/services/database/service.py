@@ -287,6 +287,8 @@ def _validate_read_query(
         raise DatabaseQueryInvalidError(
             "SQL parameters are not supported by ARAPI; use reviewed literals"
         )
+    if statement.find(exp.Operator) is not None:
+        raise DatabaseQueryInvalidError("SQL custom operators are not allowed")
     for function in statement.find_all(exp.Func):
         function_name = (
             function.name

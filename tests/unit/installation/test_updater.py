@@ -263,6 +263,19 @@ def test_update_activates_only_after_setup_and_smoke_test(
     assert str(managed.server_command) in managed.launcher.read_text()
     assert bridge_path.read_bytes() == b"updated bridge"
     assert (result.backup / "bridge").read_bytes() == b"original bridge"
+    pip_update = next(
+        command
+        for command in runner.commands
+        if command[-1] == "pip>=26.2,<27"
+    )
+    assert pip_update[1:] == [
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        "--upgrade",
+        "pip>=26.2,<27",
+    ]
 
 
 def test_update_refreshes_reloads_and_probes_openclaw_definition(

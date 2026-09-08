@@ -241,7 +241,8 @@ command available.
 2. the updater requires the release wheel's GitHub SHA-256 digest and verifies
    its signed build provenance against this repository's release workflow;
 3. it downloads and verifies the exact wheel asset;
-4. it installs the wheel into `runtime/<version>/venv` and runs `pip check`;
+4. it updates the runtime package installer, installs the wheel into
+   `runtime/<version>/venv`, and runs `pip check`;
 5. it backs up `.env`, YAML, the Java bridge, encryption key, plan database,
    both stable launchers, and installation metadata;
 6. it rebuilds the bridge and runs the packaged readiness check;

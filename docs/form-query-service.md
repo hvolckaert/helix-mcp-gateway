@@ -46,8 +46,9 @@ Before external access, the service:
 9. verifies AR API availability.
 
 The rate limiter is shared by form queries, direct reads, field discovery, and
-form discovery within one process. A distributed deployment would require a
-shared coordinator.
+form discovery. Managed installations persist decisions in the private plan
+database, so all local MCP processes share one budget. Stateless development
+configurations fall back to a process-local budget.
 
 ## Metadata cache
 

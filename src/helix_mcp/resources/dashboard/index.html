@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
+  <meta name="helix-dashboard-token" content="__DASHBOARD_TOKEN__">
   <title>IntelliAgentia · Helix MCP Gateway</title>
   <style nonce="__CSP_NONCE__">
     :root {
@@ -403,13 +404,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script nonce="__CSP_NONCE__">
-    const dashboardFragment = new URLSearchParams(window.location.hash.slice(1));
-    const fragmentToken = dashboardFragment.get('token');
-    if (fragmentToken) {
-      sessionStorage.setItem('helix-dashboard-token', fragmentToken);
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-    }
-    const token = fragmentToken || sessionStorage.getItem('helix-dashboard-token') || '';
+    const token = document.querySelector('meta[name="helix-dashboard-token"]').content;
     const form = document.getElementById('configuration-form');
     const reviewButton = document.getElementById('review-button');
     const reviewDialog = document.getElementById('review-dialog');
@@ -429,9 +424,9 @@
 
     async function api(path, options = {}) {
       const headers = {...(options.headers || {})};
-      if (token) headers['X-Helix-Dashboard-Token'] = token;
       if (options.method === 'POST') {
         headers['Content-Type'] = 'application/json';
+        headers['X-Helix-Dashboard-Token'] = token;
       }
       const response = await fetch(path, {...options, headers, cache: 'no-store'});
       let payload = {};

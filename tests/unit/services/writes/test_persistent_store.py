@@ -41,6 +41,7 @@ def build_store(
     tmp_path: Path,
     *,
     clock: Clock | None = None,
+    recover_interrupted: bool = False,
 ) -> PersistentWritePlanStore:
     key = tmp_path / "write-plans.key"
     if not key.exists():
@@ -52,6 +53,7 @@ def build_store(
         ttl_seconds=60,
         max_pending=10,
         clock=clock or Clock(),
+        recover_interrupted=recover_interrupted,
     )
 
 
@@ -138,18 +140,11 @@ def test_applying_plan_becomes_outcome_unknown_after_restart(
         )
     )
 
-    inspection = PersistentWritePlanStore(
-        database_path=tmp_path / "write-plans.sqlite3",
-        key_path=tmp_path / "write-plans.key",
-        ttl_seconds=60,
-        max_pending=10,
-        clock=Clock(),
-        recover_interrupted=False,
-    )
+    inspection = build_store(tmp_path)
     unchanged = run(inspection.get(plan_id=plan.plan_id, target=TARGET))
     assert unchanged.status is WritePlanStatus.APPLYING
 
-    restarted = build_store(tmp_path)
+    restarted = build_store(tmp_path, recover_interrupted=True)
     recovered = run(restarted.get(plan_id=plan.plan_id, target=TARGET))
 
     assert recovered.status is WritePlanStatus.OUTCOME_UNKNOWN

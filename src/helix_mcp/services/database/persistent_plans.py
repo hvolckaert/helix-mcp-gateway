@@ -67,7 +67,7 @@ class PersistentSqlQueryPlanStore:
         ttl_seconds: int,
         max_pending: int,
         clock: Callable[[], float] = time.time,
-        recover_interrupted: bool = True,
+        recover_interrupted: bool = False,
     ) -> None:
         self._database_path = prepare_plan_database_path(database_path)
         self._cipher = AESGCM(load_plan_encryption_key(key_path))

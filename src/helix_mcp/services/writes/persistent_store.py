@@ -69,7 +69,7 @@ class PersistentWritePlanStore:
         ttl_seconds: int,
         max_pending: int,
         clock: Callable[[], float] = time.time,
-        recover_interrupted: bool = True,
+        recover_interrupted: bool = False,
     ) -> None:
         self._database_path = database_path.absolute()
         self._ttl = ttl_seconds

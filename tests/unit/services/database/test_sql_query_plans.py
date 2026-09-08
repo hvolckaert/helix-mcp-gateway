@@ -24,7 +24,11 @@ def run(coroutine):
     return asyncio.run(coroutine)
 
 
-def build_store(tmp_path: Path) -> PersistentSqlQueryPlanStore:
+def build_store(
+    tmp_path: Path,
+    *,
+    recover_interrupted: bool = False,
+) -> PersistentSqlQueryPlanStore:
     key = tmp_path / "write-plans.key"
     if not key.exists():
         key.write_bytes(b"k" * 32)
@@ -34,6 +38,7 @@ def build_store(tmp_path: Path) -> PersistentSqlQueryPlanStore:
         key_path=key,
         ttl_seconds=60,
         max_pending=10,
+        recover_interrupted=recover_interrupted,
     )
 
 
@@ -80,7 +85,11 @@ def test_interrupted_read_execution_is_safely_recoverable(
         )
     )
 
-    restarted = build_store(tmp_path)
+    inspection = build_store(tmp_path)
+    unchanged = run(inspection.get(plan_id=plan.plan_id, target=TARGET))
+    assert unchanged.status is SqlQueryPlanStatus.EXECUTING
+
+    restarted = build_store(tmp_path, recover_interrupted=True)
     recovered = run(restarted.get(plan_id=plan.plan_id, target=TARGET))
 
     assert recovered.status is SqlQueryPlanStatus.PENDING
