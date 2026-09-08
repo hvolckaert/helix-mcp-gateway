@@ -181,6 +181,7 @@ class FormWriteService:
             return acquired.reused_result
         assert acquired.plan is not None
         plan = acquired.plan
+        write_succeeded = False
         try:
             values = _enforce_write(
                 target,
@@ -209,6 +210,16 @@ class FormWriteService:
                     precondition=plan.precondition,
                 )
                 entry_id = plan.entry_id
+            write_succeeded = True
+            result = ApplyWriteResult(
+                plan_id=plan.plan_id,
+                operation=operation,
+                environment=target.key.environment,
+                form=plan.form,
+                status=WritePlanStatus.APPLIED,
+                entry_id=entry_id,
+            )
+            return await self._plans.complete(request.plan_id, result)
         except ArapiBridgeConflictError:
             await self._plans.fail(request.plan_id, outcome_unknown=False)
             raise FormWriteConflictError(
@@ -226,18 +237,16 @@ class FormWriteService:
                 ) from None
             raise
         except Exception:
-            await self._plans.fail(request.plan_id, outcome_unknown=False)
+            await self._plans.fail(
+                request.plan_id,
+                outcome_unknown=write_succeeded,
+            )
+            if write_succeeded:
+                raise WriteOutcomeUnknownError(
+                    "write succeeded but its local result could not be "
+                    "persisted; the operation cannot be retried"
+                ) from None
             raise
-
-        result = ApplyWriteResult(
-            plan_id=plan.plan_id,
-            operation=operation,
-            environment=target.key.environment,
-            form=plan.form,
-            status=WritePlanStatus.APPLIED,
-            entry_id=entry_id,
-        )
-        return await self._plans.complete(request.plan_id, result)
 
     def _resolve(
         self,

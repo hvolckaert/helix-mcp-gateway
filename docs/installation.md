@@ -234,8 +234,12 @@ handling, and recovery behavior.
 The dashboard's **Server updates** section follows the same managed model as
 Helix MCP Knowledge:
 
+Managed updates require a recent GitHub CLI with the `gh attestation verify`
+command available.
+
 1. the user explicitly checks for a newer stable GitHub release;
-2. the updater requires the release wheel's GitHub SHA-256 digest;
+2. the updater requires the release wheel's GitHub SHA-256 digest and verifies
+   its signed build provenance against this repository's release workflow;
 3. it downloads and verifies the exact wheel asset;
 4. it installs the wheel into `runtime/<version>/venv` and runs `pip check`;
 5. it backs up `.env`, YAML, the Java bridge, encryption key, plan database,

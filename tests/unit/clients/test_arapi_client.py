@@ -64,6 +64,32 @@ def secrets() -> SecretResolver:
     )
 
 
+def test_declared_oversized_response_is_rejected_before_buffering() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"Content-Length": str(8 * 1024 * 1024 + 1)},
+            content=b"",
+        )
+
+    async def scenario() -> None:
+        transport = httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(handler),
+        )
+        client = ArapiBridgeClient(
+            target=TARGET,
+            config=config(),
+            secrets=secrets(),
+            http_client=transport,
+        )
+        with pytest.raises(ArapiBridgeProtocolError, match="safety limit"):
+            await client.list_forms()
+        await client.aclose()
+
+    run(scenario())
+
+
 def test_sql_query_uses_positional_contract_and_detects_admin_requirement() -> (
     None
 ):

@@ -170,6 +170,10 @@ class WritePlanStore:
     ) -> ApplyWriteResult:
         async with self._lock:
             plan = self._required(plan_id)
+            if plan.status is not WritePlanStatus.APPLYING:
+                raise WritePlanStateError(
+                    "only an applying write plan can be completed"
+                )
             plan.status = WritePlanStatus.APPLIED
             plan.result = result
             _clear_payload(plan)

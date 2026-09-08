@@ -240,7 +240,6 @@ async def _write_plan_restart_flow(
             raise AssertionError(stderr.read()) from exc
 
         await _wait_until_port_closed(bridge_port)
-
         try:
             async with (
                 stdio_client(parameters, errlog=stderr) as streams,
@@ -419,7 +418,6 @@ async def _assert_two_phase_writes(session: ClientSession) -> None:
     assert stored.isError is False
     assert stored.structuredContent["status"] == "pending"
     assert stored.structuredContent["plan_digest"] == plan_digest
-
     applied = await session.call_tool(
         "apply_create_entry",
         {
@@ -527,7 +525,6 @@ async def _assert_two_phase_sql(session: ClientSession) -> None:
         stored.structuredContent["plan_digest"]
         == (planned.structuredContent["plan_digest"])
     )
-
     executed = await session.call_tool(
         "execute_sql_query",
         {
@@ -721,6 +718,7 @@ arapi:
 """,
         encoding="utf-8",
     )
+    path.chmod(0o600)
 
 
 def _write_dotenv(
@@ -753,6 +751,7 @@ def _write_dotenv(
         f"HELIX_CREDENTIAL_PROD='{credential}'\n",
         encoding="utf-8",
     )
+    path.chmod(0o600)
 
 
 def _write_plan_key(tmp_path: Path) -> Path:

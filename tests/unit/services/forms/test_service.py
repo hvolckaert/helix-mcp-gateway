@@ -31,6 +31,7 @@ from helix_mcp.services.forms import (
     FormFieldsQuery,
     FormNotAllowedError,
     FormNotFoundError,
+    FormQualificationInvalidError,
     FormQuery,
     FormQueryLimitError,
     FormQueryService,
@@ -627,6 +628,70 @@ def test_query_models_reject_ambiguous_fields_and_redact_qualification() -> (
             form="Example:HelpDesk",
             entry_id="INC0001\nother",
             fields=("Status",),
+        )
+
+
+@pytest.mark.parametrize(
+    "query",
+    (
+        FormQuery(
+            form="Example:HelpDesk",
+            fields=("Status",),
+            sort=(FormSort(field="Secret"),),
+        ),
+        FormQuery(
+            form="Example:HelpDesk",
+            fields=("Status",),
+            qualification="'Secret' = \"private-value\"",
+        ),
+    ),
+)
+def test_query_policy_rejects_disallowed_filter_and_sort_fields(
+    query: FormQuery,
+) -> None:
+    raw_client = FakeClient([])
+    service, _ = build_service(raw_client)
+
+    with pytest.raises(FormFieldNotAllowedError):
+        run(service.search(environment="dev", query=query))
+
+    assert raw_client.calls == []
+
+
+def test_query_policy_handles_escaped_fields_and_rejects_bad_quotes() -> None:
+    raw_client = FakeClient([])
+    service, _ = build_service(
+        raw_client,
+        allowed_fields=("Status", "Doug's Requests"),
+    )
+
+    result = run(
+        service.search(
+            environment="dev",
+            query=FormQuery(
+                form="Example:HelpDesk",
+                fields=("Status",),
+                qualification=(
+                    "'Doug''s Requests' = \"O'Brien\" AND "
+                    "'Status' = \"Assigned\""
+                ),
+                limit=2,
+            ),
+        )
+    )
+    assert result.entries == ()
+
+    with pytest.raises(FormQualificationInvalidError):
+        run(
+            service.search(
+                environment="dev",
+                query=FormQuery(
+                    form="Example:HelpDesk",
+                    fields=("Status",),
+                    qualification='\'Status = "Assigned"',
+                    limit=2,
+                ),
+            )
         )
 
 

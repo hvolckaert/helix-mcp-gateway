@@ -52,6 +52,7 @@ def _installation(tmp_path: Path, *, secret: str | None = None) -> Path:
             "HELIX_CREDENTIAL_DEV=" + json.dumps(secret, ensure_ascii=False)
         )
     dotenv_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    dotenv_path.chmod(0o600)
     return dotenv_path
 
 
@@ -991,11 +992,18 @@ def test_http_surface_is_local_english_and_csrf_protected(
         assert "Manual entry fallback" not in html
         assert "Manual JSON fallback" not in html
         assert 'class="manual-editor"' not in html
-        assert "test-token" in html
+        assert "test-token" not in html
+        assert "__DASHBOARD_TOKEN__" not in html
+        assert "__CSP_NONCE__" not in html
         assert response.getheader("Cache-Control") == "no-store"
-        assert "frame-ancestors 'none'" in response.getheader(
-            "Content-Security-Policy"
-        )
+        content_security_policy = response.getheader("Content-Security-Policy")
+        assert "frame-ancestors 'none'" in content_security_policy
+        assert "'unsafe-inline'" not in content_security_policy
+        nonce = content_security_policy.split("script-src 'nonce-", 1)[
+            1
+        ].split("'", 1)[0]
+        assert f'<style nonce="{nonce}">' in html
+        assert f'<script nonce="{nonce}">' in html
 
         connection.request(
             "GET",
@@ -1023,6 +1031,17 @@ def test_http_surface_is_local_english_and_csrf_protected(
         assert len(health["workspace_id"]) == 16
 
         connection.request("GET", "/api/state")
+        response = connection.getresponse()
+        assert response.status == 403
+        assert json.loads(response.read())["error"] == (
+            "invalid dashboard token"
+        )
+
+        connection.request(
+            "GET",
+            "/api/state",
+            headers={"X-Helix-Dashboard-Token": "test-token"},
+        )
         response = connection.getresponse()
         state = json.loads(response.read())
         assert response.status == 200
@@ -1187,7 +1206,9 @@ def test_dashboard_launcher_detaches_and_waits_for_readiness(
     else:
         assert kwargs["start_new_session"] is True
     assert fake_process.waited.wait(timeout=1)
-    assert opened == ["http://127.0.0.1:8877/"]
+    assert len(opened) == 1
+    assert opened[0].startswith("http://127.0.0.1:8877/#token=")
+    assert "HELIX_DASHBOARD_TOKEN" in kwargs["env"]
     assert (tmp_path / "state/errors/dashboard.log").is_file()
 
 
@@ -1221,7 +1242,8 @@ def test_dashboard_launcher_reuses_the_same_installation(
         "url": "http://127.0.0.1:8877/",
         "reused": True,
     }
-    assert opened == ["http://127.0.0.1:8877/"]
+    assert len(opened) == 1
+    assert opened[0].startswith("http://127.0.0.1:8877/#token=")
 
 
 @pytest.mark.integration

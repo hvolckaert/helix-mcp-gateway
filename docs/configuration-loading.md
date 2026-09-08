@@ -80,3 +80,7 @@ Encrypted plan persistence requires both:
 
 The key file must contain exactly 32 bytes. Startup rejects configurations
 that define only one of the two paths.
+
+`streamable_http` additionally requires
+`HELIX_MCP_HTTP_BEARER_TOKEN` with at least 32 characters. A credential-bearing
+`.env` must deny all group and other-user permission bits on POSIX systems.

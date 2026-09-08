@@ -102,7 +102,13 @@ java -cp "build/helix-arapi-bridge.jar:/path/to/lib/*" \
 
 Optional variables:
 
+- `HELIX_ARAPI_BRIDGE_HOST`, loopback only, default `127.0.0.1`;
 - `HELIX_ARAPI_BRIDGE_PORT`, default `8090`;
 - `HELIX_ARAPI_BRIDGE_THREADS`, default `4`.
+
+`HELIX_ARAPI_BRIDGE_TOKEN` enables authenticated operations and HMAC identity
+proofs. Persisted gateway installations derive and supply an
+installation-scoped token; stateless instances supply a fresh token. Manual
+unauthenticated execution is intended only for isolated development tests.
 
 Normal gateway startup manages this child process automatically.

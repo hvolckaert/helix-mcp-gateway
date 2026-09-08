@@ -27,13 +27,19 @@ import java.math.BigInteger;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Executors;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 public final class ArapiBridge {
     private static final int DEFAULT_PORT = 8090;
@@ -54,11 +60,15 @@ public final class ArapiBridge {
     private static final long MAX_TIMESTAMP = 253_402_300_799L;
     private static final int UPDATE_LOCK_STRIPES = 64;
     private static final Object[] UPDATE_LOCKS = createUpdateLocks();
+    private static final String BRIDGE_TOKEN = System.getenv(
+        "HELIX_ARAPI_BRIDGE_TOKEN"
+    );
 
     private ArapiBridge() {
     }
 
     public static void main(String[] args) throws IOException {
+        String host = readLoopbackHost("HELIX_ARAPI_BRIDGE_HOST");
         int port = readBoundedInteger(
             "HELIX_ARAPI_BRIDGE_PORT",
             DEFAULT_PORT,
@@ -72,10 +82,14 @@ public final class ArapiBridge {
             32
         );
         HttpServer server = HttpServer.create(
-            new InetSocketAddress("127.0.0.1", port),
+            new InetSocketAddress(host, port),
             0
         );
         server.createContext("/health", new HealthHandler());
+        server.createContext(
+            "/v1/authentication/probe",
+            new AuthenticationProbeHandler()
+        );
         server.createContext("/v1/forms", new FormsHandler());
         server.createContext("/v1/fields", new FieldsHandler());
         server.createContext("/v1/entries/query", new QueryEntriesHandler());
@@ -90,8 +104,23 @@ public final class ArapiBridge {
         server.setExecutor(Executors.newFixedThreadPool(threads));
         server.start();
         System.err.println(
-            "Helix ARAPI bridge listening on 127.0.0.1:" + port
+            "Helix ARAPI bridge listening on " + host + ":" + port
         );
+    }
+
+    private static String readLoopbackHost(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank()) {
+            return "127.0.0.1";
+        }
+        if (
+            !"127.0.0.1".equals(value)
+            && !"::1".equals(value)
+            && !"localhost".equals(value)
+        ) {
+            throw new IllegalArgumentException(name + " must be loopback");
+        }
+        return value;
     }
 
     private static int readBoundedInteger(
@@ -125,7 +154,35 @@ public final class ArapiBridge {
                 respond(exchange, 405, "{\"error\":\"method not allowed\"}");
                 return;
             }
+            if (BRIDGE_TOKEN != null && !BRIDGE_TOKEN.isBlank()) {
+                String challenge = exchange.getRequestHeaders().getFirst(
+                    "X-Helix-Bridge-Challenge"
+                );
+                if (challenge == null || challenge.length() > 256) {
+                    respond(exchange, 403, "{\"error\":\"forbidden\"}");
+                    return;
+                }
+                exchange.getResponseHeaders().set(
+                    "X-Helix-Bridge-Proof",
+                    bridgeProof(challenge)
+                );
+            }
             respond(exchange, 200, "{\"status\":\"ok\"}");
+        }
+    }
+
+    private static final class AuthenticationProbeHandler
+        extends ArapiHandler {
+        AuthenticationProbeHandler() {
+            super("/v1/authentication/probe");
+        }
+
+        @Override
+        protected String execute(
+            ARServerUser user,
+            Map<String, String> input
+        ) {
+            return "{\"status\":\"authenticated\"}";
         }
     }
 
@@ -143,6 +200,10 @@ public final class ArapiBridge {
                 || !"POST".equals(exchange.getRequestMethod())
             ) {
                 respond(exchange, 405, "{\"error\":\"method not allowed\"}");
+                return;
+            }
+            if (!authorizedBridgeRequest(exchange)) {
+                respond(exchange, 403, "{\"error\":\"forbidden\"}");
                 return;
             }
             try {
@@ -1562,6 +1623,34 @@ public final class ArapiBridge {
         exchange.sendResponseHeaders(status, body.length);
         try (var stream = exchange.getResponseBody()) {
             stream.write(body);
+        }
+    }
+
+    private static boolean authorizedBridgeRequest(HttpExchange exchange) {
+        if (BRIDGE_TOKEN == null || BRIDGE_TOKEN.isBlank()) {
+            return true;
+        }
+        String supplied = exchange.getRequestHeaders().getFirst(
+            "X-Helix-Bridge-Token"
+        );
+        return supplied != null && MessageDigest.isEqual(
+            supplied.getBytes(StandardCharsets.UTF_8),
+            BRIDGE_TOKEN.getBytes(StandardCharsets.UTF_8)
+        );
+    }
+
+    private static String bridgeProof(String challenge) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(
+                BRIDGE_TOKEN.getBytes(StandardCharsets.UTF_8),
+                "HmacSHA256"
+            ));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(
+                mac.doFinal(challenge.getBytes(StandardCharsets.US_ASCII))
+            );
+        } catch (GeneralSecurityException error) {
+            throw new IllegalStateException("bridge authentication failed");
         }
     }
 

@@ -5,6 +5,20 @@ Semantic Versioning.
 
 ## Unreleased
 
+- Require bearer authentication for Streamable HTTP and protect dashboard
+  state with a private fragment-delivered token.
+- Authenticate the managed Java bridge with an installation-scoped token and
+  HMAC identity challenge, support safe local bridge reuse, and honor the
+  configured bridge host and port.
+- Add a real AR System login/logout preflight probe, strict SQL function
+  allowlisting, shared form-read rate limiting, qualification/sort field
+  enforcement, bounded HTTP streaming, and private credential-file checks.
+- Preserve `outcome_unknown` when Helix succeeds but local result persistence
+  fails, and tighten terminal plan-state invariants.
+- Parse quoted AR qualification tokens, remove `unsafe-inline` from the
+  dashboard CSP, enforce an 80% CI coverage floor, pin CI actions by commit,
+  and publish and verify GitHub build provenance for managed updates.
+
 ## 0.7.2 - 2026-09-07
 
 - Preserve the resolved GitHub CLI path in persistent dashboard supervisors so

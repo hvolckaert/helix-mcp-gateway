@@ -12,6 +12,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SecretStr,
     ValidationError,
     model_validator,
 )
@@ -28,6 +29,7 @@ _OPERATION_LOG_MAX_BYTES_VARIABLE = "HELIX_OPERATION_LOG_MAX_BYTES"
 _OPERATION_LOG_BACKUP_COUNT_VARIABLE = "HELIX_OPERATION_LOG_BACKUP_COUNT"
 _WRITE_PLAN_DATABASE_VARIABLE = "HELIX_WRITE_PLAN_DB_PATH"
 _WRITE_PLAN_KEY_VARIABLE = "HELIX_WRITE_PLAN_KEY_PATH"
+_HTTP_BEARER_TOKEN_VARIABLE = "HELIX_MCP_HTTP_BEARER_TOKEN"
 _CREDENTIAL_VARIABLE_PREFIXES = ("HELIX_CREDENTIAL_",)
 _KNOWN_VARIABLES = frozenset(
     {
@@ -43,6 +45,7 @@ _KNOWN_VARIABLES = frozenset(
         _OPERATION_LOG_BACKUP_COUNT_VARIABLE,
         _WRITE_PLAN_DATABASE_VARIABLE,
         _WRITE_PLAN_KEY_VARIABLE,
+        _HTTP_BEARER_TOKEN_VARIABLE,
     }
 )
 _MAX_DOTENV_BYTES = 65_536
@@ -74,6 +77,12 @@ class RuntimeSettings(BaseModel):
     operation_log_backup_count: int = Field(default=5, ge=1, le=100)
     write_plan_db_path: Path | None = None
     write_plan_key_path: Path | None = None
+    http_bearer_token: SecretStr | None = Field(
+        default=None,
+        min_length=32,
+        max_length=512,
+        repr=False,
+    )
 
     @model_validator(mode="after")
     def require_complete_write_plan_storage(self) -> RuntimeSettings:
@@ -145,6 +154,7 @@ def load_runtime_settings(
             values[_WRITE_PLAN_DATABASE_VARIABLE]
         )
         write_plan_key_value = _optional_text(values[_WRITE_PLAN_KEY_VARIABLE])
+        http_bearer_token = _optional_text(values[_HTTP_BEARER_TOKEN_VARIABLE])
         return RuntimeSettings.model_validate(
             {
                 "config_path": _resolve_runtime_path(
@@ -210,6 +220,7 @@ def load_runtime_settings(
                     if write_plan_key_value
                     else None
                 ),
+                "http_bearer_token": http_bearer_token,
             }
         )
     except ValidationError:
@@ -226,11 +237,26 @@ def _read_dotenv(path: Path) -> Mapping[str, str | None]:
     if not path.is_file():
         raise RuntimeSettingsError(".env source is not a regular file")
     try:
-        if path.stat().st_size > _MAX_DOTENV_BYTES:
+        metadata = path.stat()
+        if metadata.st_size > _MAX_DOTENV_BYTES:
             raise RuntimeSettingsError(
                 ".env exceeds the configured size limit"
             )
-        return dotenv_values(path, interpolate=False, encoding="utf-8")
+        values = dotenv_values(path, interpolate=False, encoding="utf-8")
+        contains_credentials = any(
+            key.startswith(_CREDENTIAL_VARIABLE_PREFIXES)
+            or key == _HTTP_BEARER_TOKEN_VARIABLE
+            for key in values
+        )
+        if (
+            os.name == "posix"
+            and contains_credentials
+            and metadata.st_mode & 0o077
+        ):
+            raise RuntimeSettingsError(
+                ".env permissions must deny access to group and other users"
+            )
+        return values
     except (OSError, UnicodeError):
         raise RuntimeSettingsError(".env could not be read as UTF-8") from None
 

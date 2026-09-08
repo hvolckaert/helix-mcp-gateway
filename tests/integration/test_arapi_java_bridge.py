@@ -41,6 +41,7 @@ ENTRY_ID = "000000000000001"
 CREATED_ENTRY_ID = "000000000000999"
 USERNAME = "java-bridge-user"
 PASSWORD = "java-bridge-password-never-expose"
+BRIDGE_TOKEN = "java-bridge-test-token-that-is-long-enough"
 
 
 def test_real_client_and_managed_java_bridge_contract(
@@ -82,11 +83,16 @@ def test_real_client_and_managed_java_bridge_contract(
     )
 
     async def scenario() -> None:
-        process = ArapiBridgeProcess(settings, (base_url,))
+        process = ArapiBridgeProcess(
+            settings,
+            (base_url,),
+            bridge_token=BRIDGE_TOKEN,
+        )
         client = ArapiBridgeClient(
             target=TargetKey(environment=Environment.DEV),
             config=config,
             secrets=secrets,
+            bridge_token=BRIDGE_TOKEN,
         )
         try:
             await process.start()

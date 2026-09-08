@@ -111,8 +111,10 @@ def test_owned_bridge_is_terminated_on_close(
             return 0
 
     process = FakeProcess()
+    captured: dict[str, object] = {}
 
     async def create(*args, **kwargs):
+        captured["environment"] = kwargs["env"]
         return process
 
     monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
@@ -123,7 +125,8 @@ def test_owned_bridge_is_terminated_on_close(
     )
     manager = ArapiBridgeProcess(
         settings(tmp_path),
-        ("http://127.0.0.1:8090/",),
+        ("http://127.0.0.1:8097/",),
+        bridge_token="bridge-test-token",
     )
 
     run(manager.start())
@@ -132,6 +135,11 @@ def test_owned_bridge_is_terminated_on_close(
 
     assert manager.owned is False
     assert process.terminated is True
+    environment = captured["environment"]
+    assert isinstance(environment, dict)
+    assert environment["HELIX_ARAPI_BRIDGE_HOST"] == "127.0.0.1"
+    assert environment["HELIX_ARAPI_BRIDGE_PORT"] == "8097"
+    assert environment["HELIX_ARAPI_BRIDGE_TOKEN"] == "bridge-test-token"
 
 
 def test_unavailable_java_fails_before_process_creation(

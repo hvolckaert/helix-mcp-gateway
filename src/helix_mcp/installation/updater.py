@@ -388,7 +388,14 @@ def _download_release(
     if destination.is_symlink():
         raise UpdateError("release wheel cannot be a link")
     if destination.is_file():
-        _verify_sha256(destination, release.sha256)
+        _verify_release_artifact(
+            gh_command,
+            destination,
+            repository=repository,
+            release_tag=release.tag,
+            expected_sha256=release.sha256,
+            runner=runner,
+        )
         return destination
     with tempfile.TemporaryDirectory(
         prefix=".download-",
@@ -414,7 +421,14 @@ def _download_release(
         downloaded = Path(temporary) / release.wheel_name
         if not downloaded.is_file():
             raise UpdateError("GitHub did not download the expected wheel")
-        _verify_sha256(downloaded, release.sha256)
+        _verify_release_artifact(
+            gh_command,
+            downloaded,
+            repository=repository,
+            release_tag=release.tag,
+            expected_sha256=release.sha256,
+            runner=runner,
+        )
         os.replace(downloaded, destination)
     return destination
 
@@ -819,6 +833,36 @@ def _verify_sha256(path: Path, expected: str) -> None:
             digest.update(block)
     if digest.hexdigest() != expected:
         raise UpdateError("release wheel digest mismatch")
+
+
+def _verify_release_artifact(
+    gh_command: Path,
+    path: Path,
+    *,
+    repository: str,
+    release_tag: str,
+    expected_sha256: str,
+    runner: CommandRunner,
+) -> None:
+    _verify_sha256(path, expected_sha256)
+    _run(
+        [
+            str(gh_command),
+            "attestation",
+            "verify",
+            str(path),
+            "--repo",
+            repository,
+            "--signer-workflow",
+            f"{repository}/.github/workflows/release.yml",
+            "--source-ref",
+            f"refs/tags/{release_tag}",
+            "--deny-self-hosted-runners",
+        ],
+        runner=runner,
+        timeout=120,
+        action="release provenance verification",
+    )
 
 
 def _write_update_manifest(path: Path, payload: Mapping[str, object]) -> None:

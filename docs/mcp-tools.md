@@ -189,8 +189,10 @@ The default transport is `stdio`:
 helix-mcp
 ```
 
-`streamable_http` uses `/mcp`, JSON responses, and stateless mode. Until MCP
-client authentication is implemented, its listener is restricted to loopback.
+`streamable_http` uses `/mcp`, JSON responses, stateless mode, and bearer-token
+authentication. Configure a private token of at least 32 characters with
+`HELIX_MCP_HTTP_BEARER_TOKEN`; startup fails closed when it is absent. The
+listener remains restricted to loopback.
 
 Application lifespan starts the managed Java bridge only when needed and stops
 only the child process it owns.

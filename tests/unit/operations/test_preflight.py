@@ -60,6 +60,16 @@ class FakeHealth:
         return self.result
 
 
+class FakeAuthenticationClient:
+    async def probe_authentication(self) -> None:
+        return None
+
+
+class FakeAuthenticationClients:
+    def get(self, target: object) -> FakeAuthenticationClient:
+        return FakeAuthenticationClient()
+
+
 class FakeApplication:
     def __init__(
         self,
@@ -87,6 +97,8 @@ class FakeApplication:
             secrets=FakeSecrets(secret_error),
         )
         self.arapi_bridge = FakeBridge(bridge_error)
+        self.target_resolver = SimpleNamespace(resolve=lambda **kwargs: target)
+        self.arapi_clients = FakeAuthenticationClients()
         self.health_checks = FakeHealth(
             health
             or HealthCheckResult(
@@ -195,6 +207,7 @@ def test_live_preflight_reports_each_component(monkeypatch) -> None:
     assert application.started is True
     assert application.closed is True
     assert by_name["arapi_bridge_lifecycle"].status is CheckStatus.PASSED
+    assert by_name["live.dev.authentication"].status is CheckStatus.PASSED
     assert by_name["live.dev.arapi_bridge"].status is CheckStatus.PASSED
     assert by_name["live.dev.kaazing"].error_code == (
         "HEALTH_CHECK_UNREACHABLE"

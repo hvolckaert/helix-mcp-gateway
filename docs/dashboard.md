@@ -189,13 +189,14 @@ launcher.
 The update runs in a detached worker because the dashboard's own Python runtime
 may be replaced. The page temporarily loses its loopback connection, polls for
 the new dashboard process, and reloads state after it returns. The worker
-verifies the GitHub release digest, installs an isolated runtime, backs up local
-configuration and state, rebuilds the Java bridge, runs readiness checks, and
-switches both stable launchers only after validation. It restarts the persistent
-manager and verifies the new dashboard version and workspace before committing
-the transaction. Failed updates keep or restore the previous active runtime and
-restart its dashboard manager. See [Installation](installation.md) for the
-complete transaction and client restart behavior.
+verifies the GitHub release digest and signed build provenance, installs an
+isolated runtime, backs up local configuration and state, rebuilds the Java
+bridge, runs readiness checks, and switches both stable launchers only after
+validation. It restarts the persistent manager and verifies the new dashboard
+version and workspace before committing the transaction. Failed updates keep
+or restore the previous active runtime and restart its dashboard manager. See
+[Installation](installation.md) for the complete transaction and client
+restart behavior.
 
 ## Save transaction
 
@@ -227,14 +228,17 @@ The dashboard:
 
 - binds only to a loopback host;
 - validates the `Host` and browser `Origin` headers;
-- requires a process-local random token for every POST request;
+- requires an owner-only random token for every API request except lifecycle
+  identity and health;
+- delivers that token in a URL fragment, removes it from the address bar, and
+  never embeds it in an unauthenticated HTTP response;
 - bounds JSON request bodies to 64 KiB;
 - serves restrictive CSP, no-store, no-referrer, and anti-framing headers;
 - suppresses HTTP request logging;
 - returns stable, sanitized errors without rejected values.
 
-The read-only state endpoint contains no paths beyond file names and no secret
-material. It exposes a non-secret installation fingerprint only to distinguish
-the dashboard from another local installation during startup. The dashboard is
-not designed for remote exposure. Do not publish the port through a reverse
-proxy, tunnel, or shared network listener.
+The authenticated state endpoint contains no paths beyond file names and no
+secret material. Lifecycle endpoints expose a non-secret installation
+fingerprint only to distinguish the dashboard from another local installation
+during startup. The dashboard is not designed for remote exposure. Do not
+publish the port through a reverse proxy, tunnel, or shared network listener.

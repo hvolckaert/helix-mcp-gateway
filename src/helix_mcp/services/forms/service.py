@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections import deque
 from collections.abc import Callable
 from difflib import SequenceMatcher
 from time import monotonic
@@ -19,10 +18,11 @@ from helix_mcp.services.forms.errors import (
     FormFieldNotAllowedError,
     FormNotAllowedError,
     FormNotFoundError,
+    FormQualificationInvalidError,
     FormQueryLimitError,
-    FormRateLimitError,
     FormReadDisabledError,
 )
+from helix_mcp.services.forms.limiter import FormRateLimiter
 from helix_mcp.services.forms.models import (
     FormEntry,
     FormEntryQuery,
@@ -32,6 +32,10 @@ from helix_mcp.services.forms.models import (
     FormFieldsResult,
     FormQuery,
     FormQueryResult,
+)
+from helix_mcp.services.forms.qualification import (
+    QualificationSyntaxError,
+    referenced_fields,
 )
 from helix_mcp.targeting import ResolvedTarget, TargetResolver
 
@@ -65,12 +69,13 @@ class FormQueryService:
         *,
         metadata_cache_ttl_seconds: int = 0,
         time_source: Callable[[], float] = monotonic,
+        limiter: FormRateLimiter | None = None,
     ) -> None:
         if metadata_cache_ttl_seconds < 0:
             raise ValueError("metadata cache TTL cannot be negative")
         self._targets = targets
         self._clients = clients
-        self._limiter = _SlidingWindowRateLimiter(time_source=time_source)
+        self._limiter = limiter or FormRateLimiter(time_source)
         self._metadata_cache: dict[
             tuple[TargetKey, str],
             tuple[float, tuple[FormFieldMetadata, ...]],
@@ -303,36 +308,29 @@ class FormQueryService:
         ) from None
 
 
-class _SlidingWindowRateLimiter:
-    """Per-process, per-target sliding window limiter."""
-
-    __slots__ = ("_events", "_lock", "_time")
-
-    def __init__(self, *, time_source: Callable[[], float]) -> None:
-        self._events: dict[TargetKey, deque[float]] = {}
-        self._lock = asyncio.Lock()
-        self._time = time_source
-
-    async def check(self, target: TargetKey, limit: int) -> None:
-        async with self._lock:
-            now = self._time()
-            oldest_allowed = now - 60.0
-            events = self._events.setdefault(target, deque())
-            while events and events[0] <= oldest_allowed:
-                events.popleft()
-            if len(events) >= limit:
-                raise FormRateLimitError(
-                    target,
-                    "form query rate limit was reached",
-                )
-            events.append(now)
-
-
 def _enforce_query_policy(
     target: ResolvedTarget,
     query: FormQuery,
 ) -> None:
     _enforce_field_access(target, query.form, query.fields)
+    _enforce_field_access(
+        target,
+        query.form,
+        tuple(item.field for item in query.sort),
+    )
+    if query.qualification is not None:
+        try:
+            qualification_fields = referenced_fields(query.qualification)
+        except QualificationSyntaxError:
+            raise FormQualificationInvalidError(
+                target.key,
+                "qualification quoting is invalid",
+            ) from None
+        _enforce_field_access(
+            target,
+            query.form,
+            qualification_fields,
+        )
     policy = target.policy
 
     if query.limit > policy.max_rows:

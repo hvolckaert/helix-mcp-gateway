@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 from helix_mcp.bootstrap import ApplicationContext, load_application
-from helix_mcp.config import Environment, SecretRef
+from helix_mcp.config import BackendKind, Environment, SecretRef
 from helix_mcp.observability import public_error_code
 from helix_mcp.services.health import HealthStatus
 
@@ -143,6 +143,18 @@ async def _append_live_checks(
 
     checks.append(_passed("arapi_bridge_lifecycle"))
     for environment in environments:
+        try:
+            target = application.target_resolver.resolve(
+                environment=environment,
+                backend=BackendKind.ARAPI,
+            )
+            await application.arapi_clients.get(target).probe_authentication()
+        except Exception as exc:
+            checks.append(
+                _failed(f"live.{environment.value}.authentication", exc)
+            )
+        else:
+            checks.append(_passed(f"live.{environment.value}.authentication"))
         try:
             result = await application.health_checks.check(
                 environment=environment,

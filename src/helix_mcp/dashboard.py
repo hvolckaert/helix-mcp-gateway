@@ -88,6 +88,8 @@ from helix_mcp.services.database import (
 )
 
 LOOPBACK_HOST = "127.0.0.1"
+DASHBOARD_TOKEN_ENV = "HELIX_DASHBOARD_TOKEN"
+_DASHBOARD_TOKEN_FILENAME = "dashboard.token"
 DEFAULT_DASHBOARD_PORT = 8766
 MAX_REQUEST_BYTES = 65_536
 _CREDENTIAL_PREFIX = "HELIX_CREDENTIAL_"
@@ -204,6 +206,9 @@ class DashboardProcessLauncher:
         if self._process is not None:
             raise DashboardLaunchError("dashboard launcher was already used")
         url = f"http://{LOOPBACK_HOST}:{self.port}/"
+        self._prepare_errors_path()
+        authorized_url = dashboard_browser_url(self.errors_path, self.port)
+        token = authorized_url.rsplit("#token=", maxsplit=1)[1]
         existing_pid = self._probe_pid()
         if existing_pid is not None:
             result = DashboardProcess(
@@ -212,10 +217,9 @@ class DashboardProcessLauncher:
                 reused=True,
             )
             if open_browser:
-                webbrowser.open(url)
+                webbrowser.open(authorized_url)
             return result
 
-        self._prepare_errors_path()
         log_path = self.errors_path / "dashboard.log"
         command = [
             self.python_executable,
@@ -229,6 +233,7 @@ class DashboardProcessLauncher:
         ]
         environment = os.environ.copy()
         environment["PYTHONUNBUFFERED"] = "1"
+        environment[DASHBOARD_TOKEN_ENV] = token
         kwargs: dict[str, Any] = {
             "cwd": self.dotenv_path.parent,
             "env": environment,
@@ -271,7 +276,7 @@ class DashboardProcessLauncher:
                     reused=pid != process.pid,
                 )
                 if open_browser:
-                    webbrowser.open(url)
+                    webbrowser.open(authorized_url)
                 return result
             if process.poll() is not None:
                 raise DashboardLaunchError(
@@ -861,7 +866,7 @@ class DashboardService:
         self._process_environment = dict(
             os.environ if process_environment is None else process_environment
         )
-        self._mutex = threading.Lock()
+        self._mutex = threading.RLock()
         self._metadata_session = _DashboardMetadataSession(
             self.dotenv_path,
             self._process_environment,
@@ -876,6 +881,10 @@ class DashboardService:
     def state(self) -> dict[str, object]:
         """Return configuration state without paths or secret material."""
 
+        with self._mutex:
+            return self._state()
+
+    def _state(self) -> dict[str, object]:
         runtime = load_runtime_settings(self.dotenv_path, environ={})
         configuration = load_single_instance_config(runtime.config_path)
         dotenv = self._dotenv_values()
@@ -967,6 +976,10 @@ class DashboardService:
     def check_update(self) -> dict[str, object]:
         """Check the configured GitHub repository for a newer stable release."""
 
+        with self._mutex:
+            return self._check_update()
+
+    def _check_update(self) -> dict[str, object]:
         runtime = load_runtime_settings(self.dotenv_path, environ={})
         workspace = self._workspace(runtime)
         managed = load_managed_installation(workspace)
@@ -988,6 +1001,18 @@ class DashboardService:
     ) -> dict[str, object]:
         """Start the detached transactional updater for the checked release."""
 
+        with self._mutex:
+            return self._start_update(
+                dashboard_port=dashboard_port,
+                dashboard_token=dashboard_token,
+            )
+
+    def _start_update(
+        self,
+        *,
+        dashboard_port: int,
+        dashboard_token: str,
+    ) -> dict[str, object]:
         runtime = load_runtime_settings(self.dotenv_path, environ={})
         workspace = self._workspace(runtime)
         managed = load_managed_installation(workspace)
@@ -1548,22 +1573,27 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path == "/":
+            csp_nonce = secrets.token_urlsafe(24)
             template = (
                 files("helix_mcp.resources")
                 .joinpath("dashboard", "index.html")
                 .read_text(encoding="utf-8")
-            )
-            html = template.replace(
-                "__DASHBOARD_TOKEN__",
-                self.server.dashboard_token,
+                .replace("__CSP_NONCE__", csp_nonce)
             )
             self._send(
                 HTTPStatus.OK,
-                html.encode(),
+                template.encode(),
                 "text/html; charset=utf-8",
+                csp_nonce=csp_nonce,
             )
             return
         if path == "/api/state":
+            if not self._authenticated():
+                self._json(
+                    HTTPStatus.FORBIDDEN,
+                    {"error": "invalid dashboard token"},
+                )
+                return
             try:
                 self._json(HTTPStatus.OK, self.server.service.state())
             except Exception as exc:
@@ -1587,10 +1617,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if not self._trusted_host():
             self._json(HTTPStatus.FORBIDDEN, {"error": "invalid request host"})
             return
-        if (
-            self.headers.get("X-Helix-Dashboard-Token")
-            != self.server.dashboard_token
-        ):
+        if not self._authenticated():
             self._json(
                 HTTPStatus.FORBIDDEN,
                 {"error": "invalid dashboard token"},
@@ -1705,6 +1732,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             return False
         return port in {None, self.server.server_address[1]}
 
+    def _authenticated(self) -> bool:
+        supplied = self.headers.get("X-Helix-Dashboard-Token", "")
+        return secrets.compare_digest(supplied, self.server.dashboard_token)
+
     def _trusted_origin(self, origin: str) -> bool:
         parsed = urlsplit(origin)
         try:
@@ -1747,6 +1778,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         status: HTTPStatus,
         body: bytes,
         content_type: str,
+        *,
+        csp_nonce: str | None = None,
     ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -1755,13 +1788,19 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "DENY")
-        self.send_header(
-            "Content-Security-Policy",
-            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-            "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
-            "form-action 'self'",
-        )
+        if csp_nonce is None:
+            content_security_policy = (
+                "default-src 'none'; frame-ancestors 'none'; "
+                "base-uri 'none'; form-action 'none'"
+            )
+        else:
+            content_security_policy = (
+                f"default-src 'none'; script-src 'nonce-{csp_nonce}'; "
+                f"style-src 'nonce-{csp_nonce}'; img-src 'self' data:; "
+                "connect-src 'self'; frame-ancestors 'none'; "
+                "base-uri 'none'; form-action 'self'"
+            )
+        self.send_header("Content-Security-Policy", content_security_policy)
         self.end_headers()
         self.wfile.write(body)
 
@@ -1805,10 +1844,25 @@ def dashboard_main(argv: Sequence[str] | None = None) -> int:
             gh_command=arguments.gh_command,
         )
         service.state()
+        runtime = load_runtime_settings(arguments.dotenv, environ={})
+        token_directory = (
+            runtime.write_plan_db_path.parent / "errors"
+            if runtime.write_plan_db_path is not None
+            else arguments.dotenv.expanduser().absolute().parent
+            / ".helix-mcp-dashboard"
+        )
+        dashboard_token = (
+            os.environ.get(DASHBOARD_TOKEN_ENV)
+            or (
+                dashboard_browser_url(token_directory, arguments.port).rsplit(
+                    "#token=", maxsplit=1
+                )[1]
+            )
+        )
         server = DashboardHTTPServer(
             (LOOPBACK_HOST, arguments.port),
             service,
-            token=secrets.token_urlsafe(32),
+            token=dashboard_token,
         )
     except Exception as exc:
         print(
@@ -1822,9 +1876,14 @@ def dashboard_main(argv: Sequence[str] | None = None) -> int:
         )
         return 1
     url = f"http://{LOOPBACK_HOST}:{arguments.port}/"
+    authorized_url = f"{url}#token={dashboard_token}"
     print(json.dumps({"status": "ready", "url": url}, separators=(",", ":")))
     if not arguments.no_browser:
-        threading.Timer(0.2, webbrowser.open, args=(url,)).start()
+        threading.Timer(
+            0.2,
+            webbrowser.open,
+            args=(authorized_url,),
+        ).start()
     if not os.environ.get(DASHBOARD_MODE_ENV):
         threading.Thread(
             target=_adopt_managed_dashboard,
@@ -2084,6 +2143,68 @@ def _open_private_append(path: Path) -> int:
         raise DashboardLaunchError(
             "dashboard log could not be opened"
         ) from None
+
+
+def _load_or_create_dashboard_token(path: Path) -> str:
+    """Return a persistent owner-only token for one managed dashboard."""
+
+    if path.exists():
+        if path.is_symlink() or not path.is_file():
+            raise DashboardLaunchError(
+                "dashboard token path is not a regular file"
+            )
+        metadata = path.stat()
+        if os.name == "posix" and metadata.st_mode & 0o077:
+            raise DashboardLaunchError(
+                "dashboard token permissions are not private"
+            )
+        try:
+            token = path.read_text(encoding="ascii").strip()
+        except (OSError, UnicodeError):
+            raise DashboardLaunchError(
+                "dashboard token could not be read"
+            ) from None
+        if not _valid_dashboard_token(token):
+            raise DashboardLaunchError("dashboard token is invalid")
+        return token
+
+    token = secrets.token_urlsafe(32)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags, 0o600)
+        with os.fdopen(descriptor, "w", encoding="ascii") as stream:
+            stream.write(token)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError:
+        return _load_or_create_dashboard_token(path)
+    except OSError:
+        raise DashboardLaunchError(
+            "dashboard token could not be created"
+        ) from None
+    return token
+
+
+def dashboard_browser_url(errors_path: Path, port: int) -> str:
+    """Return a fragment-authorized URL without sending its token to HTTP."""
+
+    errors_path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.name != "nt":
+        errors_path.chmod(0o700)
+    token = _load_or_create_dashboard_token(
+        errors_path / _DASHBOARD_TOKEN_FILENAME
+    )
+    return f"http://{LOOPBACK_HOST}:{port}/#token={token}"
+
+
+def _valid_dashboard_token(token: str) -> bool:
+    return 40 <= len(token) <= 128 and all(
+        character.isascii() and (character.isalnum() or character in "-_")
+        for character in token
+    )
 
 
 def _installation_id(dotenv_path: Path) -> str:
