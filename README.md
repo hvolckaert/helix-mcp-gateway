@@ -93,7 +93,7 @@ a real environment.
 
 - Python 3.12;
 - a Java 17 or later JDK with the required compiler modules;
-- an authorized BMC Developer Studio / AR API 21.30.x installation;
+- an authorized BMC Developer Studio / AR System Java API installation;
 - a configured local BMC Helix Client Gateway connection to the permitted
   Helix environments;
 - authorized per-environment credentials.

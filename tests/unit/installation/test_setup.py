@@ -12,10 +12,40 @@ from dotenv import dotenv_values
 from helix_mcp.installation import (
     BridgeBuildResult,
     SetupError,
+    discover_arapi_lib_dir,
     setup_installation,
 )
 
 setup_implementation = importlib.import_module("helix_mcp.installation.setup")
+
+
+def test_discovery_supports_versioned_arsystem_directories(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    candidate = (
+        tmp_path
+        / "ARSystem25"
+        / "DeveloperStudio"
+        / "plugins"
+        / "com.bmc.arsys.studio.api_25.1.0.build000"
+        / "lib"
+    )
+    candidate.mkdir(parents=True)
+    validated: list[Path] = []
+    monkeypatch.setattr(
+        setup_implementation, "_KNOWN_ARAPI_ROOTS", (tmp_path,)
+    )
+    monkeypatch.setattr(
+        setup_implementation,
+        "validate_arapi_libraries",
+        lambda directory: validated.append(directory),
+    )
+
+    result = discover_arapi_lib_dir()
+
+    assert result == candidate.absolute()
+    assert validated == [candidate]
 
 
 def test_dry_run_validates_resources_without_writing(tmp_path) -> None:

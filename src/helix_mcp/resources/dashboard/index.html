@@ -330,7 +330,7 @@
                   <div class="field wide">
                     <label for="bridge-url">Bridge URL</label>
                     <input id="bridge-url" type="url" required placeholder="http://127.0.0.1:8090">
-                    <p class="hint">Only loopback addresses are accepted.</p>
+                    <p class="hint" id="arapi-client-version">Only loopback addresses are accepted.</p>
                   </div>
                   <div class="field">
                     <label for="request-timeout">Request timeout (seconds)</label>
@@ -1219,6 +1219,9 @@
       document.getElementById('plan-ttl').value = configuration.server.write_plan_ttl_seconds;
       document.getElementById('max-plans').value = configuration.server.max_pending_write_plans;
       document.getElementById('bridge-url').value = configuration.arapi.bridge_base_url;
+      document.getElementById('arapi-client-version').textContent = configuration.arapi.client_version
+        ? `Detected BMC Java API ${configuration.arapi.client_version}. Compatibility is verified by capabilities, not a fixed release list.`
+        : 'BMC Java API version unavailable. Only loopback bridge addresses are accepted.';
       document.getElementById('request-timeout').value = configuration.arapi.request_timeout_seconds;
       document.getElementById('pool-size').value = configuration.arapi.pool_size;
       renderEnvironments(configuration.environments, configuration.policies);
