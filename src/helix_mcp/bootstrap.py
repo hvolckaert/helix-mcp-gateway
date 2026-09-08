@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import secrets
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -9,7 +13,12 @@ from helix_mcp.clients.arapi import (
     ArapiBridgeClientPool,
     ArapiBridgeProcess,
 )
-from helix_mcp.config import ServerSettings
+from helix_mcp.config import (
+    RuntimeSettings,
+    RuntimeSettingsError,
+    ServerSettings,
+    Transport,
+)
 from helix_mcp.observability import MetricsRegistry, ToolAuditor
 from helix_mcp.services.database import (
     DatabaseMetadataService,
@@ -18,12 +27,19 @@ from helix_mcp.services.database import (
     PersistentSqlQueryPlanStore,
     SqlQueryPlanStore,
 )
-from helix_mcp.services.forms import FormCatalogService, FormQueryService
+from helix_mcp.services.forms import (
+    FormCatalogService,
+    FormQueryService,
+    FormRateLimiter,
+)
 from helix_mcp.services.health import HealthCheckService
 from helix_mcp.services.writes import (
     FormWriteService,
     PersistentWritePlanStore,
     WritePlanStore,
+)
+from helix_mcp.services.writes.persistent_store import (
+    load_plan_encryption_key,
 )
 from helix_mcp.targeting import (
     RuntimeTargetContext,
@@ -72,21 +88,35 @@ class ApplicationContext:
         recover_write_plans: bool = True,
     ) -> None:
         self.runtime = runtime
+        if (
+            runtime.config.server.transport is Transport.STREAMABLE_HTTP
+            and runtime.settings.http_bearer_token is None
+        ):
+            raise RuntimeSettingsError(
+                "streamable_http requires HELIX_MCP_HTTP_BEARER_TOKEN"
+            )
         self.target_resolver = TargetResolver(runtime.registry)
-        self.arapi_clients = ArapiBridgeClientPool(runtime.secrets)
+        bridge_token = _bridge_auth_token(runtime.settings)
+        self.arapi_clients = ArapiBridgeClientPool(
+            runtime.secrets,
+            bridge_token=bridge_token,
+        )
         self.arapi_bridge = ArapiBridgeProcess(
             runtime.settings,
             tuple(
                 str(target.arapi.bridge_base_url)
                 for target in runtime.config.targets
             ),
+            bridge_token=bridge_token,
         )
+        form_limiter = FormRateLimiter()
         self.form_queries = FormQueryService(
             self.target_resolver,
             self.arapi_clients,
             metadata_cache_ttl_seconds=(
                 self.settings.metadata_cache_ttl_seconds
             ),
+            limiter=form_limiter,
         )
         self.form_catalog = FormCatalogService(
             self.target_resolver,
@@ -94,6 +124,7 @@ class ApplicationContext:
             metadata_cache_ttl_seconds=(
                 self.settings.metadata_cache_ttl_seconds
             ),
+            limiter=form_limiter,
         )
         database_limiter = DatabaseRateLimiter()
         self.database_metadata = DatabaseMetadataService(
@@ -199,6 +230,20 @@ class ApplicationContext:
             f"<ApplicationContext targets={len(self.runtime.registry)} "
             f"state={state}>"
         )
+
+
+def _bridge_auth_token(settings: RuntimeSettings) -> str:
+    """Derive a stable, domain-separated token for one persisted install."""
+
+    if settings.write_plan_key_path is None:
+        return secrets.token_urlsafe(32)
+    key = load_plan_encryption_key(settings.write_plan_key_path)
+    digest = hmac.new(
+        key,
+        b"helix-mcp/arapi-bridge-auth/v1",
+        hashlib.sha256,
+    ).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
 def load_application(

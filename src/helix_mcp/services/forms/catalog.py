@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections import deque
 from collections.abc import Callable
 from time import monotonic
 from typing import Protocol
@@ -12,9 +11,9 @@ from helix_mcp.clients.arapi import ArapiBridgeClient
 from helix_mcp.config import BackendKind, Environment, TargetKey
 from helix_mcp.services.forms.errors import (
     FormQueryLimitError,
-    FormRateLimitError,
     FormReadDisabledError,
 )
+from helix_mcp.services.forms.limiter import FormRateLimiter
 from helix_mcp.services.forms.models import (
     FormCatalogQuery,
     FormCatalogResult,
@@ -40,8 +39,7 @@ class FormCatalogService:
         "_cache_lock",
         "_cache_ttl",
         "_clients",
-        "_events",
-        "_lock",
+        "_limiter",
         "_targets",
         "_time",
     )
@@ -53,13 +51,13 @@ class FormCatalogService:
         *,
         metadata_cache_ttl_seconds: int = 0,
         time_source: Callable[[], float] = monotonic,
+        limiter: FormRateLimiter | None = None,
     ) -> None:
         if metadata_cache_ttl_seconds < 0:
             raise ValueError("metadata cache TTL cannot be negative")
         self._targets = targets
         self._clients = clients
-        self._events: dict[TargetKey, deque[float]] = {}
-        self._lock = asyncio.Lock()
+        self._limiter = limiter or FormRateLimiter(time_source)
         self._cache: dict[TargetKey, tuple[float, tuple[str, ...]]] = {}
         self._cache_lock = asyncio.Lock()
         self._cache_ttl = metadata_cache_ttl_seconds
@@ -87,7 +85,7 @@ class FormCatalogService:
                 target.key,
                 "form catalog limit exceeds the target policy",
             )
-        await self._check_rate_limit(
+        await self._limiter.check(
             target.key,
             target.policy.rate_limit_per_minute,
         )
@@ -148,21 +146,3 @@ class FormCatalogService:
             self._cache.pop(key, None)
             return None
         return names
-
-    async def _check_rate_limit(
-        self,
-        target: TargetKey,
-        limit: int,
-    ) -> None:
-        async with self._lock:
-            now = self._time()
-            oldest_allowed = now - 60.0
-            events = self._events.setdefault(target, deque())
-            while events and events[0] <= oldest_allowed:
-                events.popleft()
-            if len(events) >= limit:
-                raise FormRateLimitError(
-                    target,
-                    "form catalog rate limit was reached",
-                )
-            events.append(now)

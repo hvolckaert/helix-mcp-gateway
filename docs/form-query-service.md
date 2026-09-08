@@ -37,12 +37,16 @@ Before external access, the service:
 2. verifies `allow_form_reads`;
 3. checks `allowed_forms` unless `allow_all_forms` is enabled;
 4. rejects `sensitive_fields` and sensitive-name markers;
-5. checks `allowed_fields_by_form` unless `allow_all_fields` is enabled;
-6. applies `max_rows`;
-7. applies the per-target rate limit;
-8. verifies AR API availability.
+5. checks selected, sort, and qualification field references against
+   `allowed_fields_by_form` unless `allow_all_fields` is enabled;
+6. parses AR quoted tokens, including doubled quote escapes, without treating
+   apostrophes inside double-quoted character values as fields;
+7. applies `max_rows`;
+8. applies the shared per-target form-read rate limit;
+9. verifies AR API availability.
 
-The rate limiter is process-local. A distributed deployment would require a
+The rate limiter is shared by form queries, direct reads, field discovery, and
+form discovery within one process. A distributed deployment would require a
 shared coordinator.
 
 ## Metadata cache

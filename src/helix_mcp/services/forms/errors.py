@@ -46,6 +46,10 @@ class FormQueryLimitError(FormServiceError):
     code = "FORM_QUERY_LIMIT_EXCEEDED"
 
 
+class FormQualificationInvalidError(FormServiceError):
+    code = "FORM_QUALIFICATION_INVALID"
+
+
 class FormRateLimitError(FormServiceError):
     code = "FORM_RATE_LIMIT_EXCEEDED"
 

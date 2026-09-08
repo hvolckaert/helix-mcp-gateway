@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "helix-mcp-gateway"
-version = "0.7.2"
+version = "0.7.3"
 description = "Policy-controlled MCP access to BMC Helix through the AR API"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -14,9 +14,9 @@ authors = [
     { name = "Hugo Volckaert" },
 ]
 dependencies = [
-    "cryptography>=46,<51",
+    "cryptography>=50,<51",
     "httpx>=0.28.1,<1",
-    "mcp>=1.28.1,<2",
+    "mcp>=1.30.0,<2",
     "pydantic>=2.13.4,<3",
     "PyYAML>=6.0.3,<7",
     "python-dotenv>=1.2.2,<2",
@@ -37,6 +37,7 @@ test = [
     "hatchling>=1.27,<2",
     "mypy>=1.20,<2",
     "pytest>=9.1.1,<10",
+    "pytest-cov>=7.1,<8",
     "ruff>=0.16,<1",
     "types-PyYAML>=6.0,<7",
 ]

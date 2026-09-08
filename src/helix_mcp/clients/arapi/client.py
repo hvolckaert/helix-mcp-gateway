@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import math
+import secrets
 from collections.abc import Mapping
 from typing import Any, TypeGuard
 
@@ -42,7 +47,14 @@ _ARERR_FORM_NOT_FOUND = 303
 class ArapiBridgeClient:
     """Send bounded read operations to one local bridge."""
 
-    __slots__ = ("_client", "_closed", "_config", "_secrets", "_target")
+    __slots__ = (
+        "_bridge_token",
+        "_client",
+        "_closed",
+        "_config",
+        "_secrets",
+        "_target",
+    )
 
     def __init__(
         self,
@@ -51,11 +63,13 @@ class ArapiBridgeClient:
         config: ArapiBackendConfig,
         secrets: SecretResolver,
         http_client: httpx.AsyncClient | None = None,
+        bridge_token: str | None = None,
     ) -> None:
         self._target = target
         self._config = config
         self._secrets = secrets
         self._closed = False
+        self._bridge_token = bridge_token
         self._client = http_client or httpx.AsyncClient(
             base_url=str(config.bridge_base_url),
             timeout=httpx.Timeout(config.request_timeout_seconds),
@@ -71,6 +85,20 @@ class ArapiBridgeClient:
 
         payload, status_code = await self._post("/v1/forms", {})
         return _parse_forms(self._target, payload, status_code)
+
+    async def probe_authentication(self) -> None:
+        """Verify that the configured AR System credentials can log in."""
+
+        payload, status_code = await self._post(
+            "/v1/authentication/probe",
+            {},
+        )
+        if payload != {"status": "authenticated"}:
+            raise ArapiBridgeProtocolError(
+                self._target,
+                "local ARAPI bridge returned invalid authentication data",
+                status_code=status_code,
+            )
 
     async def list_fields(self, form: str) -> tuple[ArapiField, ...]:
         """Return all field definitions visible on one form."""
@@ -250,8 +278,16 @@ class ArapiBridgeClient:
         """Validate the local bridge liveness endpoint without credentials."""
 
         self._ensure_open()
+        challenge = secrets.token_urlsafe(24)
         try:
-            response = await self._client.get("/health")
+            response = await self._client.get(
+                "/health",
+                headers=(
+                    {"X-Helix-Bridge-Challenge": challenge}
+                    if self._bridge_token is not None
+                    else None
+                ),
+            )
         except httpx.RequestError:
             raise ArapiBridgeTransportError(
                 self._target,
@@ -277,6 +313,27 @@ class ArapiBridgeClient:
                 "local ARAPI bridge returned invalid health data",
                 status_code=response.status_code,
             )
+        if self._bridge_token is not None:
+            expected = (
+                base64.urlsafe_b64encode(
+                    hmac.new(
+                        self._bridge_token.encode("utf-8"),
+                        challenge.encode("ascii"),
+                        hashlib.sha256,
+                    ).digest()
+                )
+                .rstrip(b"=")
+                .decode("ascii")
+            )
+            if not hmac.compare_digest(
+                response.headers.get("X-Helix-Bridge-Proof", ""),
+                expected,
+            ):
+                raise ArapiBridgeProtocolError(
+                    self._target,
+                    "local ARAPI bridge identity check failed",
+                    status_code=response.status_code,
+                )
 
     async def aclose(self) -> None:
         if self._closed:
@@ -332,13 +389,31 @@ class ArapiBridgeClient:
                     )
                 form.update(operation_data)
                 try:
-                    if timeout_seconds is None:
-                        response = await self._client.post(path, data=form)
-                    else:
-                        response = await self._client.post(
-                            path,
-                            data=form,
-                            timeout=timeout_seconds,
+                    request_timeout = (
+                        httpx.USE_CLIENT_DEFAULT
+                        if timeout_seconds is None
+                        else timeout_seconds
+                    )
+                    async with self._client.stream(
+                        "POST",
+                        path,
+                        data=form,
+                        headers=(
+                            {"X-Helix-Bridge-Token": self._bridge_token}
+                            if self._bridge_token is not None
+                            else None
+                        ),
+                        timeout=request_timeout,
+                    ) as streamed_response:
+                        body = await _read_bounded_body(
+                            streamed_response,
+                            target=self._target,
+                        )
+                        response = httpx.Response(
+                            status_code=streamed_response.status_code,
+                            headers=streamed_response.headers,
+                            content=body,
+                            request=streamed_response.request,
                         )
                 except httpx.RequestError:
                     raise ArapiBridgeTransportError(
@@ -388,15 +463,9 @@ class ArapiBridgeClient:
                 "local ARAPI bridge rejected the request",
                 status_code=response.status_code,
             )
-        if len(response.content) > _MAX_RESPONSE_BYTES:
-            raise ArapiBridgeProtocolError(
-                self._target,
-                "local ARAPI bridge response exceeds the safety limit",
-                status_code=response.status_code,
-            )
         try:
-            payload: Any = response.json()
-        except (UnicodeDecodeError, ValueError):
+            payload: Any = json.loads(response.content)
+        except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
             raise ArapiBridgeProtocolError(
                 self._target,
                 "local ARAPI bridge returned invalid JSON",
@@ -755,6 +824,35 @@ def _contains_arapi_error(response: httpx.Response, code: int) -> bool:
         and all(_is_integer(item) for item in codes)
         and code in codes
     )
+
+
+async def _read_bounded_body(
+    response: httpx.Response,
+    *,
+    target: TargetKey,
+) -> bytes:
+    raw_length = response.headers.get("content-length")
+    if raw_length is not None:
+        try:
+            declared_length = int(raw_length)
+        except ValueError:
+            declared_length = -1
+        if declared_length < 0 or declared_length > _MAX_RESPONSE_BYTES:
+            raise ArapiBridgeProtocolError(
+                target,
+                "local ARAPI bridge response exceeds the safety limit",
+                status_code=response.status_code,
+            )
+    body = bytearray()
+    async for chunk in response.aiter_bytes():
+        if len(body) + len(chunk) > _MAX_RESPONSE_BYTES:
+            raise ArapiBridgeProtocolError(
+                target,
+                "local ARAPI bridge response exceeds the safety limit",
+                status_code=response.status_code,
+            )
+        body.extend(chunk)
+    return bytes(body)
 
 
 def _contains_bridge_code(response: httpx.Response, code: str) -> bool:

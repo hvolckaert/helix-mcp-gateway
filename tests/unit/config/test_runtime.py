@@ -2,11 +2,49 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
 from helix_mcp.config import RuntimeSettingsError, load_runtime_settings
+
+
+def _private(path: Path) -> Path:
+    path.chmod(0o600)
+    return path
+
+
+def test_credential_dotenv_rejects_access_for_other_users(
+    tmp_path: Path,
+) -> None:
+    if os.name != "posix":
+        pytest.skip("POSIX permission bits only")
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(
+        'HELIX_CREDENTIAL_DEV_ARAPI_JSON={"username":"u","password":"p"}\n',
+        encoding="utf-8",
+    )
+    dotenv.chmod(0o640)
+
+    with pytest.raises(RuntimeSettingsError, match="permissions"):
+        load_runtime_settings(dotenv, environ={})
+
+
+def test_http_token_dotenv_rejects_access_for_other_users(
+    tmp_path: Path,
+) -> None:
+    if os.name != "posix":
+        pytest.skip("POSIX permission bits only")
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(
+        f"HELIX_MCP_HTTP_BEARER_TOKEN={'x' * 32}\n",
+        encoding="utf-8",
+    )
+    dotenv.chmod(0o644)
+
+    with pytest.raises(RuntimeSettingsError, match="permissions"):
+        load_runtime_settings(dotenv, environ={})
 
 
 def test_config_path_is_resolved_relative_to_dotenv_file(
@@ -20,7 +58,7 @@ def test_config_path_is_resolved_relative_to_dotenv_file(
         encoding="utf-8",
     )
 
-    settings = load_runtime_settings(dotenv, environ={})
+    settings = load_runtime_settings(_private(dotenv), environ={})
 
     assert settings.config_path == tmp_path / "config" / "custom-helix.yaml"
     assert (
@@ -40,7 +78,7 @@ def test_audit_settings_are_loaded_and_path_is_resolved(
         encoding="utf-8",
     )
 
-    settings = load_runtime_settings(dotenv, environ={})
+    settings = load_runtime_settings(_private(dotenv), environ={})
 
     assert settings.audit_log_path == tmp_path / "state" / "audit.jsonl"
     assert settings.audit_log_max_bytes == 2048
@@ -57,7 +95,7 @@ def test_persistent_write_plan_paths_are_resolved_together(
         encoding="utf-8",
     )
 
-    settings = load_runtime_settings(dotenv, environ={})
+    settings = load_runtime_settings(_private(dotenv), environ={})
 
     assert settings.write_plan_db_path == (
         tmp_path / "state" / "write-plans.sqlite3"
@@ -79,7 +117,7 @@ def test_advanced_observability_paths_and_rotation_are_loaded(
         encoding="utf-8",
     )
 
-    settings = load_runtime_settings(dotenv, environ={})
+    settings = load_runtime_settings(_private(dotenv), environ={})
 
     assert settings.metrics_path == tmp_path / "state" / "metrics.json"
     assert settings.operation_log_path == (
@@ -198,6 +236,7 @@ def test_only_credential_variables_are_returned_and_process_wins(
         "UNRELATED_SECRET=do-not-load\n",
         encoding="utf-8",
     )
+    dotenv.chmod(0o600)
 
     values = load_secret_environment(
         dotenv,

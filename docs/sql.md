@@ -55,8 +55,10 @@ included in those errors.
 
 Output wildcards such as `SELECT *` are rejected. `COUNT(*) AS alias` is
 allowed because it produces one named column. The guard also rejects multiple
-statements, comments, DML, `SELECT INTO`, row locks, placeholders, and known
-side-effect or delay functions. Objects are checked against policy before a
+statements, comments, DML, `SELECT INTO`, row locks, and placeholders. SQL
+functions use a finite allowlist of common deterministic functions; unknown,
+volatile, locking, notification, filesystem, and custom functions are
+rejected. Objects are checked against policy before a
 plan is stored, and the Java bridge repeats a SELECT-only validation.
 
 AR API returns positional rows. Python derives output names from approved

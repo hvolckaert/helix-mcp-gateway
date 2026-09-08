@@ -15,10 +15,16 @@ from helix_mcp.targeting import ResolvedTarget
 class ArapiBridgeClientPool:
     """Create at most one bridge client per ARAPI target."""
 
-    __slots__ = ("_clients", "_closed", "_secrets")
+    __slots__ = ("_bridge_token", "_clients", "_closed", "_secrets")
 
-    def __init__(self, secrets: SecretResolver) -> None:
+    def __init__(
+        self,
+        secrets: SecretResolver,
+        *,
+        bridge_token: str | None = None,
+    ) -> None:
         self._secrets = secrets
+        self._bridge_token = bridge_token
         self._clients: dict[TargetKey, ArapiBridgeClient] = {}
         self._closed = False
 
@@ -42,6 +48,7 @@ class ArapiBridgeClientPool:
                 target=target.key,
                 config=target.config.arapi,
                 secrets=self._secrets,
+                bridge_token=self._bridge_token,
             )
             self._clients[target.key] = client
         return client

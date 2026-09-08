@@ -39,22 +39,30 @@ _OBJECT_PATTERN = re.compile(
     r"(?:\.[A-Za-z_][A-Za-z0-9_$]*){0,2}$"
 )
 _COLUMN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
-_FORBIDDEN_FUNCTIONS = frozenset(
+_ALLOWED_FUNCTIONS = frozenset(
     {
-        "dblink_exec",
-        "lo_export",
-        "lo_import",
-        "nextval",
-        "pg_cancel_backend",
-        "pg_log_backend_memory_contexts",
-        "pg_read_binary_file",
-        "pg_read_file",
-        "pg_reload_conf",
-        "pg_rotate_logfile",
-        "pg_sleep",
-        "pg_terminate_backend",
-        "set_config",
-        "setval",
+        "abs",
+        "avg",
+        "ceil",
+        "ceiling",
+        "char_length",
+        "coalesce",
+        "count",
+        "date_part",
+        "extract",
+        "floor",
+        "greatest",
+        "least",
+        "length",
+        "lower",
+        "max",
+        "min",
+        "nullif",
+        "round",
+        "substring",
+        "sum",
+        "trim",
+        "upper",
     }
 )
 
@@ -280,10 +288,14 @@ def _validate_read_query(
             "SQL parameters are not supported by ARAPI; use reviewed literals"
         )
     for function in statement.find_all(exp.Func):
-        function_name = function.name or function.sql_name()
-        if function_name.casefold() in _FORBIDDEN_FUNCTIONS:
+        function_name = (
+            function.name
+            if isinstance(function, exp.Anonymous)
+            else function.sql_name()
+        )
+        if function_name.casefold() not in _ALLOWED_FUNCTIONS:
             raise DatabaseQueryInvalidError(
-                "SQL contains a function that is not allowed"
+                "SQL contains a function outside the read-only allowlist"
             )
 
     columns = _output_columns(statement)

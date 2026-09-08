@@ -47,7 +47,11 @@ Local Java bridge
 BMC AR API -> authorized BMC Helix environment
 ```
 
-The Python process communicates with a managed Java bridge over loopback. The
+The Python process communicates with a managed Java bridge over loopback. A
+persisted installation derives a domain-separated bridge token from its
+private plan key, allowing its local dashboard and MCP processes to reuse the
+same authenticated bridge. Stateless instances use an ephemeral token. Bridge
+identity is verified with an HMAC challenge before credentials are sent. The
 bridge uses the official AR API libraries already installed on the user's
 machine. Those proprietary libraries are never copied into this repository,
 the wheel, or a GitHub release.

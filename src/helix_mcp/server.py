@@ -5,11 +5,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import secrets
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
+from mcp.server.auth.provider import AccessToken
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
+from pydantic import AnyHttpUrl
 
 from helix_mcp.bootstrap import ApplicationContext, load_application
 from helix_mcp.config import Transport
@@ -42,12 +46,44 @@ SERVER_INSTRUCTIONS = (
 )
 
 
+class _StaticTokenVerifier:
+    """Constant-time verifier for the configured loopback bearer token."""
+
+    __slots__ = ("_token",)
+
+    def __init__(self, token: str) -> None:
+        self._token = token
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if not secrets.compare_digest(token, self._token):
+            return None
+        return AccessToken(
+            token=token,
+            client_id="helix-mcp-local-client",
+            scopes=["helix:mcp"],
+        )
+
+
 def create_mcp_server(application: ApplicationContext) -> FastMCP:
     """Create the MCP protocol adapter without starting a transport."""
 
     settings = application.settings
     host = settings.http.host if settings.http is not None else "127.0.0.1"
     port = settings.http.port if settings.http is not None else 8000
+    token = application.runtime.settings.http_bearer_token
+    auth = None
+    token_verifier = None
+    if settings.transport is Transport.STREAMABLE_HTTP:
+        assert token is not None
+        url_host = f"[{host}]" if ":" in host else host
+        server_url = f"http://{url_host}:{port}/mcp"
+        auth = AuthSettings(
+            issuer_url=AnyHttpUrl(f"http://{url_host}:{port}/"),
+            resource_server_url=AnyHttpUrl(server_url),
+            required_scopes=["helix:mcp"],
+            validate_token_resource=False,
+        )
+        token_verifier = _StaticTokenVerifier(token.get_secret_value())
     server = FastMCP(
         name=SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
@@ -59,6 +95,8 @@ def create_mcp_server(application: ApplicationContext) -> FastMCP:
         stateless_http=True,
         max_request_body_size=1_048_576,
         lifespan=application_lifespan(application),
+        auth=auth,
+        token_verifier=token_verifier,
     )
     register_mcp_tools(
         server,

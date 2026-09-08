@@ -33,11 +33,13 @@ class FakeUpdateRunner:
         wheel_content: bytes,
         digest_content: bytes | None = None,
         fail_smoke_test: bool = False,
+        fail_attestation: bool = False,
         bridge_path: Path | None = None,
     ) -> None:
         self.wheel_content = wheel_content
         self.digest_content = digest_content or wheel_content
         self.fail_smoke_test = fail_smoke_test
+        self.fail_attestation = fail_attestation
         self.bridge_path = bridge_path
         self.commands: list[list[str]] = []
 
@@ -70,6 +72,13 @@ class FakeUpdateRunner:
             ).write_bytes(self.wheel_content)
             return subprocess.CompletedProcess(
                 command, 0, stdout="", stderr=""
+            )
+        if command[1:3] == ["attestation", "verify"]:
+            return subprocess.CompletedProcess(
+                command,
+                1 if self.fail_attestation else 0,
+                stdout="",
+                stderr="",
             )
         if command[1:3] == ["-m", "venv"]:
             executable_dir = Path(command[-1]) / (
@@ -340,6 +349,50 @@ def test_update_rejects_a_wheel_that_does_not_match_release_digest(
     managed = load_managed_installation(workspace)
     assert managed is not None
     assert managed.active_version == "0.6.8"
+
+
+def test_update_rejects_a_wheel_without_trusted_provenance(
+    tmp_path: Path,
+) -> None:
+    workspace, dotenv_path, _bridge_path, base_python = _managed_installation(
+        tmp_path
+    )
+    gh = tmp_path / "gh"
+    gh.write_text("gh", encoding="utf-8")
+    runner = FakeUpdateRunner(
+        wheel_content=b"published wheel without provenance",
+        fail_attestation=True,
+    )
+
+    with pytest.raises(UpdateError, match="provenance verification"):
+        update_installation(
+            dotenv_path=dotenv_path,
+            workspace=workspace,
+            target_version="0.7.0",
+            gh_command=gh,
+            base_python=base_python,
+            runner=runner,
+        )
+
+    managed = load_managed_installation(workspace)
+    assert managed is not None
+    assert managed.active_version == "0.6.8"
+
+    verification = next(
+        command
+        for command in runner.commands
+        if command[1:3] == ["attestation", "verify"]
+    )
+    assert verification[verification.index("--repo") + 1] == (
+        "hvolckaert/helix-mcp-gateway"
+    )
+    assert verification[verification.index("--signer-workflow") + 1] == (
+        "hvolckaert/helix-mcp-gateway/.github/workflows/release.yml"
+    )
+    assert verification[verification.index("--source-ref") + 1] == (
+        "refs/tags/v0.7.0"
+    )
+    assert "--deny-self-hosted-runners" in verification
 
 
 def test_failed_smoke_test_restores_data_and_keeps_previous_launcher(

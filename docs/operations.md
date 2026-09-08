@@ -1,8 +1,10 @@
 # Local operation
 
-The MCP process manages only the Java bridge it starts. If a healthy bridge
-already exists at the configured loopback URL, the gateway reuses it and does
-not stop it during shutdown.
+The MCP process manages only the Java bridge it starts. It reuses a bridge only
+when the process proves knowledge of the installation-scoped secret through an
+HMAC challenge. The secret is domain-separated from the private plan key;
+stateless configurations use a process-local ephemeral secret instead. All
+bridge operations require the matching secret.
 
 ## Local model prerequisites
 
@@ -39,7 +41,8 @@ helix-mcp-check --dotenv /path/to/.env --live --environment dev
 
 `--environment` may be repeated. Without it, all configured environments are
 checked. The check may start the local bridge temporarily and stops it when
-finished. It does not execute SQL.
+finished. It performs a credential login/logout probe but does not read forms,
+execute SQL, or modify entries.
 
 ## Startup
 

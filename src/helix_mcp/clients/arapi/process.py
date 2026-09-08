@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import os
 import re
+import secrets
 import shutil
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -60,12 +65,13 @@ class ArapiLibraries:
 class ArapiBridgeProcess:
     """Start and stop the bridge only when this process owns it."""
 
-    __slots__ = ("_base_url", "_process", "_settings")
+    __slots__ = ("_base_url", "_bridge_token", "_process", "_settings")
 
     def __init__(
         self,
         settings: RuntimeSettings,
         base_urls: tuple[str, ...],
+        bridge_token: str | None = None,
     ) -> None:
         unique = set(base_urls)
         if len(unique) > 1:
@@ -73,6 +79,7 @@ class ArapiBridgeProcess:
                 "ARAPI targets must share one local bridge URL"
             )
         self._settings = settings
+        self._bridge_token = bridge_token
         self._base_url = next(iter(unique), None)
         self._process: asyncio.subprocess.Process | None = None
 
@@ -97,6 +104,22 @@ class ArapiBridgeProcess:
             "ARAPI library directory",
         )
         classpath = os.pathsep.join((str(jar), str(libraries / "*")))
+        bridge_url = urlsplit(self._base_url)
+        bridge_host = bridge_url.hostname
+        bridge_port = bridge_url.port
+        if bridge_host is None or bridge_port is None:
+            raise ArapiBridgeProcessError("ARAPI bridge URL is invalid")
+        process_environment = dict(os.environ)
+        process_environment.update(
+            {
+                "HELIX_ARAPI_BRIDGE_HOST": bridge_host,
+                "HELIX_ARAPI_BRIDGE_PORT": str(bridge_port),
+            }
+        )
+        if self._bridge_token is not None:
+            process_environment["HELIX_ARAPI_BRIDGE_TOKEN"] = (
+                self._bridge_token
+            )
         try:
             self._process = await asyncio.create_subprocess_exec(
                 "java",
@@ -106,6 +129,7 @@ class ArapiBridgeProcess:
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
+                env=process_environment,
             )
         except OSError:
             raise ArapiBridgeProcessError(
@@ -156,15 +180,45 @@ class ArapiBridgeProcess:
     async def _healthy(self) -> bool:
         assert self._base_url is not None
         try:
+            challenge = secrets.token_urlsafe(24)
+            headers = (
+                {"X-Helix-Bridge-Challenge": challenge}
+                if self._bridge_token is not None
+                else None
+            )
             async with httpx.AsyncClient(
                 timeout=1,
                 trust_env=False,
             ) as client:
                 response = await client.get(
-                    f"{self._base_url.rstrip('/')}/health"
+                    f"{self._base_url.rstrip('/')}/health",
+                    headers=headers,
                 )
-            return response.status_code == 200
-        except httpx.RequestError:
+            healthy = (
+                response.status_code == 200
+                and response.headers.get("content-type", "")
+                .lower()
+                .startswith("application/json")
+                and response.json() == {"status": "ok"}
+            )
+            if not healthy or self._bridge_token is None:
+                return healthy
+            expected = (
+                base64.urlsafe_b64encode(
+                    hmac.new(
+                        self._bridge_token.encode("utf-8"),
+                        challenge.encode("ascii"),
+                        hashlib.sha256,
+                    ).digest()
+                )
+                .rstrip(b"=")
+                .decode("ascii")
+            )
+            return hmac.compare_digest(
+                response.headers.get("X-Helix-Bridge-Proof", ""),
+                expected,
+            )
+        except (httpx.RequestError, UnicodeDecodeError, ValueError):
             return False
 
     @staticmethod

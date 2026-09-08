@@ -224,6 +224,10 @@ class PersistentWritePlanStore:
                 connection: sqlite3.Connection,
             ) -> ApplyWriteResult:
                 plan = self._required(connection, plan_id, check_expiry=False)
+                if plan.status is not WritePlanStatus.APPLYING:
+                    raise WritePlanStateError(
+                        "only an applying write plan can be completed"
+                    )
                 plan.status = WritePlanStatus.APPLIED
                 plan.result = result
                 _clear_payload(plan)

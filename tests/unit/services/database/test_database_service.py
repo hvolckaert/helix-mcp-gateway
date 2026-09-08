@@ -158,6 +158,19 @@ def test_select_is_bounded_mapped_and_uses_policy_timeout() -> None:
             DatabaseQueryInvalidError,
         ),
         (
+            "SELECT pg_notify('channel', 'payload') AS notified "
+            "FROM public.allowed_table",
+            DatabaseQueryInvalidError,
+        ),
+        (
+            "SELECT pg_advisory_lock(42) AS locked FROM public.allowed_table",
+            DatabaseQueryInvalidError,
+        ),
+        (
+            "SELECT custom_side_effect() AS result FROM public.allowed_table",
+            DatabaseQueryInvalidError,
+        ),
+        (
             "SELECT id AS id FROM public.allowed_table; SELECT 1 AS value",
             DatabaseQueryInvalidError,
         ),
