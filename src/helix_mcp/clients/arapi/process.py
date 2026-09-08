@@ -20,13 +20,36 @@ import httpx
 from helix_mcp.config import RuntimeSettings
 
 _MAIN_CLASS = "com.example.helix.bridge.ArapiBridge"
-_SUPPORTED_ARAPI_VERSION = re.compile(r"^21\.30(?:\.|$)")
 _MAX_MANIFEST_BYTES = 65_536
 _REQUIRED_ARAPI_JARS = {
     "arapi": re.compile(r"^arapi(?!ext).+\.jar$", re.IGNORECASE),
     "arapiext": re.compile(r"^arapiext.+\.jar$", re.IGNORECASE),
     "arlogger": re.compile(r"^arlogger.+\.jar$", re.IGNORECASE),
 }
+_REQUIRED_ARAPI_CLASSES = frozenset(
+    {
+        f"com/bmc/arsys/api/{name}.class"
+        for name in (
+            "ARException",
+            "ARErrors",
+            "ARServerUser",
+            "Constants",
+            "DataType",
+            "DateInfo",
+            "Entry",
+            "Field",
+            "OutputInteger",
+            "QualifierInfo",
+            "SQLResult",
+            "ServerInfoMap",
+            "SortInfo",
+            "StatusInfo",
+            "Time",
+            "Timestamp",
+            "Value",
+        )
+    }
+)
 
 
 class ArapiBridgeProcessError(RuntimeError):
@@ -48,7 +71,7 @@ class ArapiRuntimeInvalidError(ArapiBridgeProcessError):
 
 
 class ArapiRuntimeVersionError(ArapiBridgeProcessError):
-    """The configured ARAPI runtime version is unsupported."""
+    """Legacy error retained for callers of releases before capability checks."""
 
     code = "ARAPI_RUNTIME_VERSION_UNSUPPORTED"
 
@@ -60,6 +83,7 @@ class ArapiLibraries:
     arapi: Path
     arapiext: Path
     arlogger: Path
+    version: str = "unknown"
 
 
 class ArapiBridgeProcess:
@@ -235,7 +259,7 @@ class ArapiBridgeProcess:
 
 
 def validate_arapi_libraries(directory: Path) -> ArapiLibraries:
-    """Validate and return the unique supported BMC ARAPI libraries."""
+    """Validate a BMC AR API library set by manifest identity and capability."""
 
     try:
         files = tuple(path for path in directory.iterdir() if path.is_file())
@@ -256,23 +280,61 @@ def validate_arapi_libraries(directory: Path) -> ArapiLibraries:
             )
         selected[component] = matches[0]
 
+    versions: dict[str, str] = {}
     for component, path in selected.items():
         attributes = _read_manifest(path)
-        vendor = attributes.get("Implementation-Vendor", "")
-        version = attributes.get("Implementation-Version", "")
+        vendor = _first_manifest_value(
+            attributes,
+            "Implementation-Vendor",
+            "Specification-Vendor",
+            "Bundle-Vendor",
+        )
+        version = _first_manifest_value(
+            attributes,
+            "Implementation-Version",
+            "Specification-Version",
+            "Bundle-Version",
+        )
         if not vendor.startswith("BMC Software") or not version:
             raise ArapiRuntimeInvalidError(
                 f"{component} library manifest is invalid"
             )
-        if _SUPPORTED_ARAPI_VERSION.match(version) is None:
-            raise ArapiRuntimeVersionError(
-                f"{component} library version is unsupported"
-            )
+        versions[component] = version
+    _validate_arapi_capabilities(selected["arapi"])
     return ArapiLibraries(
         arapi=selected["arapi"],
         arapiext=selected["arapiext"],
         arlogger=selected["arlogger"],
+        version=versions["arapi"],
     )
+
+
+def _first_manifest_value(
+    attributes: dict[str, str],
+    *names: str,
+) -> str:
+    return next(
+        (
+            value.strip()
+            for name in names
+            if (value := attributes.get(name, "")).strip()
+        ),
+        "",
+    )
+
+
+def _validate_arapi_capabilities(path: Path) -> None:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            available = frozenset(archive.namelist())
+    except (OSError, zipfile.BadZipFile):
+        raise ArapiRuntimeInvalidError(
+            "arapi library archive is invalid"
+        ) from None
+    if not _REQUIRED_ARAPI_CLASSES.issubset(available):
+        raise ArapiRuntimeInvalidError(
+            "arapi library does not provide the required Java API classes"
+        )
 
 
 def _read_manifest(path: Path) -> dict[str, str]:

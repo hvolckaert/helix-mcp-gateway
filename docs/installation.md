@@ -16,7 +16,7 @@ GitHub release -> checksum -> virtual environment -> wheel install
 - Python 3.12;
 - a Java 17 or later JDK with the `jdk.compiler` and `jdk.jartool` modules;
 - an authorized and configured BMC Helix Client Gateway connection;
-- BMC Developer Studio / AR API 21.30.x;
+- an authorized BMC Developer Studio / AR System Java API installation;
 - credentials authorized for the selected environments;
 - access to GitHub and the configured Python package index while installing.
 
@@ -88,7 +88,9 @@ between multiple installations.
 
 The command:
 
-1. validates the `arapi`, `arapiext`, and `arlogger` manifests;
+1. validates the BMC manifest identity and required Java API capabilities of
+   the `arapi`, `arapiext`, and `arlogger` libraries without pinning a BMC
+   release;
 2. compiles the packaged bridge source in a temporary directory;
 3. installs the bridge JAR atomically;
 4. creates `helix.yaml` and `.env` only when absent;

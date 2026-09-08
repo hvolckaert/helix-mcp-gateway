@@ -5,6 +5,15 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.7.5 - 2026-09-09
+
+- Replace the AR API 21.30-only gate with BMC manifest, required-class, bridge
+  compilation, and runtime health validation so compatible 7.x, 21.x, 25.x,
+  26.x, and future Java API clients can be selected without a gateway release.
+- Discover versioned BMC installation directories such as
+  `ARSystem25/DeveloperStudio` while preserving explicit selection when more
+  than one valid client is installed.
+
 ## 0.7.4 - 2026-09-08
 
 - Restore the dashboard's direct loopback URL while retaining origin checks,

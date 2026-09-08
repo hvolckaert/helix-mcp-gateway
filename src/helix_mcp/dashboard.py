@@ -44,8 +44,10 @@ from pydantic import (
 from helix_mcp.bootstrap import ApplicationContext, load_application
 from helix_mcp.clients.arapi import (
     ArapiAdminRequiredError,
+    ArapiBridgeProcessError,
     ArapiField,
     ArapiSqlValue,
+    validate_arapi_libraries,
 )
 from helix_mcp.config import (
     ARAPI_PORT_BY_ENVIRONMENT,
@@ -941,6 +943,7 @@ class DashboardService:
                     "bridge_base_url": str(
                         configuration.arapi.bridge_base_url
                     ),
+                    "client_version": self._arapi_client_version(runtime),
                     "request_timeout_seconds": (
                         configuration.arapi.request_timeout_seconds
                     ),
@@ -1102,6 +1105,16 @@ class DashboardService:
         if bridge is None:
             return self.dotenv_path.parent
         return bridge.parent.parent
+
+    @staticmethod
+    def _arapi_client_version(runtime: RuntimeSettings) -> str | None:
+        directory = runtime.arapi_lib_dir
+        if directory is None:
+            return None
+        try:
+            return validate_arapi_libraries(directory).version
+        except ArapiBridgeProcessError:
+            return None
 
     def _dashboard_runtime(
         self,

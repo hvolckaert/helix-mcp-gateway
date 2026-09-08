@@ -17,6 +17,10 @@ from helix_mcp.installation.resources import (
 )
 
 _BRIDGE_FILENAME = "helix-arapi-bridge.jar"
+_KNOWN_ARAPI_ROOTS = (
+    Path("/mnt/c/Program Files/BMC Software"),
+    Path("C:/Program Files/BMC Software"),
+)
 
 
 class SetupError(RuntimeError):
@@ -94,17 +98,11 @@ def discover_arapi_lib_dir(
         validate_arapi_libraries(candidate)
         return candidate.absolute()
 
-    patterns = (
-        Path("/mnt/c/Program Files/BMC Software/ARSystem").glob(
-            "DeveloperStudio */plugins/com.bmc.arsys.studio.api_*/lib"
-        ),
-        Path("C:/Program Files/BMC Software/ARSystem").glob(
-            "DeveloperStudio */plugins/com.bmc.arsys.studio.api_*/lib"
-        ),
-    )
     candidates: list[Path] = []
-    for matches in patterns:
-        for candidate in matches:
+    for root in _KNOWN_ARAPI_ROOTS:
+        for candidate in root.glob(
+            "ARSystem*/DeveloperStudio*/plugins/com.bmc.arsys.studio.api_*/lib"
+        ):
             try:
                 validate_arapi_libraries(candidate)
             except Exception:

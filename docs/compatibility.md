@@ -20,7 +20,7 @@ been repeated in that environment.
 | --- | --- | --- |
 | Python | 3.12 | Required; 3.12.3 used for the full validation. |
 | Java JDK | 17 or later, with `jdk.compiler` and `jdk.jartool` | Required; OpenJDK 21.0.12 used for the full validation. |
-| BMC Developer Studio / AR API | 21.30.x | User-supplied proprietary dependency; validated through the authorized local manifests. |
+| BMC Developer Studio / AR System Java API | 21.30.07 and 25.1 | User-supplied proprietary dependency. Both versions passed bridge startup, authentication, and form-catalog access against the configured DEV target; other releases are accepted only when their BMC manifests and required classes validate and the bridge compiles against them. |
 | BMC Helix Client Gateway | Locally configured for the target | Required for live connectivity; not distributed by this project. |
 | MCP transport | Standard input/output | Verified with the Python MCP SDK through initialization and discovery of all 19 tools. |
 

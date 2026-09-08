@@ -67,6 +67,7 @@ def _configuration(
     arapi = configuration["arapi"]
     assert isinstance(server, dict)
     assert isinstance(arapi, dict)
+    assert arapi["client_version"] is None
     return {
         "revision": state["revision"],
         "server": {

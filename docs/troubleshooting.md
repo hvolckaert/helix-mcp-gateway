@@ -33,9 +33,11 @@ Pass the authorized directory explicitly:
   --arapi-lib-dir "/authorized/path/to/DeveloperStudio/lib"
 ```
 
-The directory must contain valid `arapi`, `arapiext`, and `arlogger` JAR
-manifests from BMC Developer Studio / AR API 21.30.x. Setup intentionally stops
-when discovery finds multiple possible installations.
+The directory must contain valid `arapi`, `arapiext`, and `arlogger` JARs from
+an authorized BMC Developer Studio / AR System Java API installation. Setup
+checks the BMC manifests and Java API classes, then compiles the bridge against
+the selected release. It intentionally stops when discovery finds multiple
+possible installations.
 
 ### The Java bridge does not build
 

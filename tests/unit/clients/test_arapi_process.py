@@ -12,7 +12,7 @@ from helix_mcp.clients.arapi import (
     ArapiBridgeProcess,
     ArapiRuntimeInvalidError,
     ArapiRuntimeMissingError,
-    ArapiRuntimeVersionError,
+    validate_arapi_libraries,
 )
 from helix_mcp.config import RuntimeSettings
 
@@ -195,11 +195,22 @@ def test_missing_primary_arapi_library_is_rejected(
     assert exc_info.value.code == "ARAPI_RUNTIME_MISSING"
 
 
-def test_unsupported_arapi_version_is_rejected(
+@pytest.mark.parametrize(
+    "arapi_version",
+    (
+        "7.6.03",
+        "21.30.07-SNAPSHOT",
+        "25.1.00-SNAPSHOT",
+        "26.1.00",
+        "99.4.00-future",
+    ),
+)
+def test_bmc_arapi_versions_are_accepted_by_capability(
     tmp_path: Path,
     monkeypatch,
+    arapi_version: str,
 ) -> None:
-    runtime = settings(tmp_path, arapi_version="22.10.00")
+    runtime = settings(tmp_path, arapi_version=arapi_version)
     monkeypatch.setattr(
         "helix_mcp.clients.arapi.process.shutil.which",
         lambda executable: "/runtime/java",
@@ -209,10 +220,11 @@ def test_unsupported_arapi_version_is_rejected(
         ("http://127.0.0.1:8090/",),
     )
 
-    with pytest.raises(ArapiRuntimeVersionError) as exc_info:
-        run(manager.check_startup_requirements())
-
-    assert exc_info.value.code == "ARAPI_RUNTIME_VERSION_UNSUPPORTED"
+    run(manager.check_startup_requirements())
+    assert runtime.arapi_lib_dir is not None
+    assert validate_arapi_libraries(runtime.arapi_lib_dir).version == (
+        arapi_version
+    )
 
 
 def test_non_bmc_arapi_manifest_is_rejected(
@@ -235,6 +247,34 @@ def test_non_bmc_arapi_manifest_is_rejected(
     assert exc_info.value.code == "ARAPI_RUNTIME_INVALID"
 
 
+def test_arapi_without_required_classes_is_rejected(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    runtime = settings(tmp_path)
+    assert runtime.arapi_lib_dir is not None
+    primary = runtime.arapi_lib_dir / "arapi2130_build007.jar"
+    with zipfile.ZipFile(primary, mode="w") as archive:
+        archive.writestr(
+            "META-INF/MANIFEST.MF",
+            "Manifest-Version: 1.0\n"
+            "Implementation-Vendor: BMC Software\n"
+            "Implementation-Version: 26.1.00\n",
+        )
+        archive.writestr("com/bmc/arsys/api/ARServerUser.class", b"test")
+    monkeypatch.setattr(
+        "helix_mcp.clients.arapi.process.shutil.which",
+        lambda executable: "/runtime/java",
+    )
+    manager = ArapiBridgeProcess(
+        runtime,
+        ("http://127.0.0.1:8090/",),
+    )
+
+    with pytest.raises(ArapiRuntimeInvalidError, match="required Java API"):
+        run(manager.check_startup_requirements())
+
+
 def _write_bmc_jar(path: Path, *, version: str, vendor: str) -> None:
     manifest = (
         "Manifest-Version: 1.0\n"
@@ -243,3 +283,26 @@ def _write_bmc_jar(path: Path, *, version: str, vendor: str) -> None:
     )
     with zipfile.ZipFile(path, mode="w") as archive:
         archive.writestr("META-INF/MANIFEST.MF", manifest)
+        if path.name.startswith("arapi") and not path.name.startswith(
+            "arapiext"
+        ):
+            for name in (
+                "ARException",
+                "ARErrors",
+                "ARServerUser",
+                "Constants",
+                "DataType",
+                "DateInfo",
+                "Entry",
+                "Field",
+                "OutputInteger",
+                "QualifierInfo",
+                "SQLResult",
+                "ServerInfoMap",
+                "SortInfo",
+                "StatusInfo",
+                "Time",
+                "Timestamp",
+                "Value",
+            ):
+                archive.writestr(f"com/bmc/arsys/api/{name}.class", b"test")
