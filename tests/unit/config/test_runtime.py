@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,8 @@ def _private(path: Path) -> Path:
 def test_credential_dotenv_rejects_access_for_other_users(
     tmp_path: Path,
 ) -> None:
+    if os.name != "posix":
+        pytest.skip("POSIX permission bits only")
     dotenv = tmp_path / ".env"
     dotenv.write_text(
         'HELIX_CREDENTIAL_DEV_ARAPI_JSON={"username":"u","password":"p"}\n',
@@ -31,6 +34,8 @@ def test_credential_dotenv_rejects_access_for_other_users(
 def test_http_token_dotenv_rejects_access_for_other_users(
     tmp_path: Path,
 ) -> None:
+    if os.name != "posix":
+        pytest.skip("POSIX permission bits only")
     dotenv = tmp_path / ".env"
     dotenv.write_text(
         f"HELIX_MCP_HTTP_BEARER_TOKEN={'x' * 32}\n",

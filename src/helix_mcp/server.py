@@ -81,6 +81,7 @@ def create_mcp_server(application: ApplicationContext) -> FastMCP:
             issuer_url=AnyHttpUrl(f"http://{url_host}:{port}/"),
             resource_server_url=AnyHttpUrl(server_url),
             required_scopes=["helix:mcp"],
+            validate_token_resource=False,
         )
         token_verifier = _StaticTokenVerifier(token.get_secret_value())
     server = FastMCP(
