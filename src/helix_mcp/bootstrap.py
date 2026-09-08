@@ -85,7 +85,7 @@ class ApplicationContext:
         self,
         runtime: RuntimeTargetContext,
         *,
-        recover_write_plans: bool = True,
+        recover_write_plans: bool = False,
     ) -> None:
         self.runtime = runtime
         if (
@@ -109,7 +109,9 @@ class ApplicationContext:
             ),
             bridge_token=bridge_token,
         )
-        form_limiter = FormRateLimiter()
+        write_plan_db = runtime.settings.write_plan_db_path
+        write_plan_key = runtime.settings.write_plan_key_path
+        form_limiter = FormRateLimiter(database_path=write_plan_db)
         self.form_queries = FormQueryService(
             self.target_resolver,
             self.arapi_clients,
@@ -126,7 +128,7 @@ class ApplicationContext:
             ),
             limiter=form_limiter,
         )
-        database_limiter = DatabaseRateLimiter()
+        database_limiter = DatabaseRateLimiter(database_path=write_plan_db)
         self.database_metadata = DatabaseMetadataService(
             self.target_resolver,
             self.arapi_clients,
@@ -137,8 +139,6 @@ class ApplicationContext:
             self.arapi_clients,
             cache_ttl_seconds=self.settings.health_cache_ttl_seconds,
         )
-        write_plan_db = runtime.settings.write_plan_db_path
-        write_plan_key = runtime.settings.write_plan_key_path
         self.write_plans = (
             PersistentWritePlanStore(
                 database_path=write_plan_db,
@@ -177,6 +177,7 @@ class ApplicationContext:
             self.target_resolver,
             self.arapi_clients,
             self.write_plans,
+            rate_limit_database_path=write_plan_db,
         )
         self.metrics = MetricsRegistry(runtime.settings.metrics_path)
         self.tool_auditor = ToolAuditor(metrics=self.metrics)
@@ -250,7 +251,7 @@ def load_application(
     dotenv_path: str | Path = ".env",
     *,
     environ: Mapping[str, str] | None = None,
-    recover_write_plans: bool = True,
+    recover_write_plans: bool = False,
 ) -> ApplicationContext:
     """Load and validate the complete local application graph."""
 

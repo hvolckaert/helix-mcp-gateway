@@ -5,6 +5,20 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.7.4 - 2026-09-08
+
+- Restore the dashboard's direct loopback URL while retaining origin checks,
+  a process-local mutation token, and a nonce-based content security policy.
+- Reject PostgreSQL custom `OPERATOR(...)` expressions in both Python and the
+  Java bridge so they cannot bypass the SQL function allowlist.
+- Share form-read, SQL-read, and write-apply rate limits across local gateway
+  processes through the private plan database.
+- Make interrupted-plan recovery explicit to prevent one MCP process from
+  changing an active plan owned by another process.
+- Upgrade `pip` in each managed runtime, pin release build tooling, and
+  normalize source archives for reproducible release artifacts.
+- Add Dependabot configuration for Python and GitHub Actions dependencies.
+
 ## 0.7.3 - 2026-09-08
 
 - Require bearer authentication for Streamable HTTP and protect dashboard

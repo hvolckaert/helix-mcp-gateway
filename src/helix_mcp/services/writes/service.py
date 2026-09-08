@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
-from collections import deque
 from collections.abc import Callable, Mapping
-from time import monotonic
+from pathlib import Path
 from typing import Protocol
 
 from helix_mcp.clients.arapi import (
@@ -17,6 +15,10 @@ from helix_mcp.clients.arapi import (
     ArapiBridgeTransportError,
 )
 from helix_mcp.config import AccessMode, BackendKind, Environment, TargetKey
+from helix_mcp.services.rate_limit import (
+    RateLimitPersistenceError,
+    SlidingWindowCounter,
+)
 from helix_mcp.services.writes.errors import (
     FormWriteConflictError,
     FormWriteDisabledError,
@@ -56,12 +58,16 @@ class FormWriteService:
         clients: ArapiClientProvider | ArapiBridgeClientPool,
         plans: WritePlanStore | PersistentWritePlanStore,
         *,
-        time_source: Callable[[], float] = monotonic,
+        time_source: Callable[[], float] | None = None,
+        rate_limit_database_path: Path | None = None,
     ) -> None:
         self._targets = targets
         self._clients = clients
         self._plans = plans
-        self._limiter = _WriteRateLimiter(time_source=time_source)
+        self._limiter = _WriteRateLimiter(
+            time_source=time_source,
+            database_path=rate_limit_database_path,
+        )
 
     async def plan_create_for_form(
         self,
@@ -259,25 +265,29 @@ class FormWriteService:
 
 
 class _WriteRateLimiter:
-    __slots__ = ("_events", "_lock", "_time")
+    __slots__ = ("_counter",)
 
-    def __init__(self, *, time_source: Callable[[], float]) -> None:
-        self._events: dict[TargetKey, deque[float]] = {}
-        self._lock = asyncio.Lock()
-        self._time = time_source
+    def __init__(
+        self,
+        *,
+        time_source: Callable[[], float] | None,
+        database_path: Path | None = None,
+    ) -> None:
+        self._counter = SlidingWindowCounter(
+            "form_write",
+            database_path=database_path,
+            time_source=time_source,
+        )
 
     async def check(self, target: TargetKey, limit: int) -> None:
-        async with self._lock:
-            now = self._time()
-            oldest_allowed = now - 60.0
-            events = self._events.setdefault(target, deque())
-            while events and events[0] <= oldest_allowed:
-                events.popleft()
-            if len(events) >= limit:
-                raise FormWriteRateLimitError(
-                    "form write rate limit was reached"
-                )
-            events.append(now)
+        try:
+            allowed = await self._counter.acquire(target, limit)
+        except RateLimitPersistenceError:
+            raise FormWriteRateLimitError(
+                "form write rate limit is unavailable"
+            ) from None
+        if not allowed:
+            raise FormWriteRateLimitError("form write rate limit was reached")
 
 
 def _enforce_write(

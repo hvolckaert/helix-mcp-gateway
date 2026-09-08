@@ -53,9 +53,9 @@ It covers all 19 tools, policies, planning, create/update application,
 idempotency, cancellation, optimistic conflicts, audit, and encrypted plan
 recovery across process restarts.
 
-The integration suite also builds two wheels from equivalent trees with
-different source modes. Their bytes must match and every wheel entry must use
-mode `0644`.
+The integration suite also builds two wheels and two source distributions from
+equivalent trees with different source modes. Each artifact pair must match
+byte for byte, and packaged regular files use mode `0644`.
 
 ## Continuous integration
 

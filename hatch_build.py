@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import gzip
+import io
 import os
 import stat
 import struct
+import tarfile
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -23,6 +26,10 @@ class WheelFormatError(ValueError):
     """Raised when a wheel cannot be normalized safely."""
 
 
+class SdistFormatError(ValueError):
+    """Raised when a source distribution cannot be normalized safely."""
+
+
 def normalize_wheel_permissions(artifact_path: str | Path) -> None:
     """Normalize ZIP entry modes without recompressing wheel contents."""
 
@@ -37,6 +44,62 @@ def normalize_wheel_permissions(artifact_path: str | Path) -> None:
         attributes = (mode << 16) | (0x10 if is_directory else 0)
         struct.pack_into("<L", archive, offset + 38, attributes)
     _atomic_replace(path, archive, stat.S_IMODE(original_stat.st_mode))
+
+
+def normalize_sdist(artifact_path: str | Path) -> None:
+    """Normalize source archive ownership, modes, and gzip metadata."""
+
+    path = Path(artifact_path)
+    original_stat = path.stat()
+    try:
+        epoch = int(os.environ.get("SOURCE_DATE_EPOCH", "0"))
+    except ValueError as exc:
+        raise SdistFormatError("SOURCE_DATE_EPOCH must be an integer") from exc
+    if epoch < 0:
+        raise SdistFormatError("SOURCE_DATE_EPOCH cannot be negative")
+
+    output = io.BytesIO()
+    try:
+        with (
+            tarfile.open(path, mode="r:gz") as source,
+            gzip.GzipFile(
+                filename="",
+                mode="wb",
+                fileobj=output,
+                mtime=epoch,
+            ) as compressed,
+            tarfile.open(
+                fileobj=compressed,
+                mode="w",
+                format=tarfile.PAX_FORMAT,
+            ) as destination,
+        ):
+            for member in source:
+                if not (
+                    member.isfile()
+                    or member.isdir()
+                    or member.issym()
+                    or member.islnk()
+                ):
+                    raise SdistFormatError(
+                        "source distribution has an unsupported entry"
+                    )
+                contents = source.extractfile(member)
+                member.uid = 0
+                member.gid = 0
+                member.uname = ""
+                member.gname = ""
+                member.mtime = epoch
+                member.mode = 0o755 if member.isdir() else 0o644
+                member.pax_headers = {}
+                destination.addfile(member, contents)
+    except (OSError, tarfile.TarError) as exc:
+        raise SdistFormatError(
+            "source distribution could not be normalized"
+        ) from exc
+    _atomic_replace(
+        path, output.getvalue(), stat.S_IMODE(original_stat.st_mode)
+    )
 
 
 def _central_directory_entries(
@@ -145,3 +208,5 @@ class CustomBuildHook(BuildHookInterface[Any]):
         del version, build_data
         if self.target_name == "wheel":
             normalize_wheel_permissions(artifact_path)
+        elif self.target_name == "sdist":
+            normalize_sdist(artifact_path)

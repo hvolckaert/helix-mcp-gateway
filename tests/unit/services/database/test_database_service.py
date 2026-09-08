@@ -171,6 +171,11 @@ def test_select_is_bounded_mapped_and_uses_policy_timeout() -> None:
             DatabaseQueryInvalidError,
         ),
         (
+            "SELECT id OPERATOR(public.===) 1 AS result "
+            "FROM public.allowed_table",
+            DatabaseQueryInvalidError,
+        ),
+        (
             "SELECT id AS id FROM public.allowed_table; SELECT 1 AS value",
             DatabaseQueryInvalidError,
         ),

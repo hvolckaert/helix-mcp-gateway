@@ -1061,6 +1061,7 @@ public final class ArapiBridge {
             "into",
             "lock",
             "merge",
+            "operator",
             "refresh",
             "reindex",
             "revoke",

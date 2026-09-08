@@ -58,8 +58,14 @@ allowed because it produces one named column. The guard also rejects multiple
 statements, comments, DML, `SELECT INTO`, row locks, and placeholders. SQL
 functions use a finite allowlist of common deterministic functions; unknown,
 volatile, locking, notification, filesystem, and custom functions are
-rejected. Objects are checked against policy before a
-plan is stored, and the Java bridge repeats a SELECT-only validation.
+rejected. PostgreSQL custom `OPERATOR(schema.operator)` expressions are also
+rejected because they can invoke user-defined behavior without a function
+node. Objects are checked against policy before a plan is stored, and the Java
+bridge repeats a SELECT-only validation.
+
+Managed installations share one SQL-read rate-limit budget across their local
+MCP processes through the private plan database. Stateless development
+configurations use a process-local budget.
 
 AR API returns positional rows. Python derives output names from approved
 aliases and rejects any row with the wrong width. The bridge requests

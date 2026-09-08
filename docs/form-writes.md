@@ -60,7 +60,8 @@ or native AR error 309, becomes `FORM_WRITE_CONFLICT` and requires a new plan.
 - Terminal plans discard payloads and reasons. Required terminal metadata
   remains encrypted for status and idempotency.
 - The bridge accepts at most 32 supported scalar fields per write.
-- Apply calls are rate-limited per target and are never retried automatically.
+- Apply calls are rate-limited per target, share one budget across local
+  managed MCP processes, and are never retried automatically.
 
 `get_write_plan` inspects a plan and `cancel_write_plan` invalidates a pending
 plan. Neither modifies Helix.

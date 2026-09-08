@@ -16,7 +16,6 @@ from typing import Any
 from helix_mcp.dashboard import (
     DEFAULT_DASHBOARD_PORT,
     DashboardProcessLauncher,
-    dashboard_browser_url,
 )
 from helix_mcp.dashboard_runtime import DashboardRuntimeManager
 from helix_mcp.installation.bridge import build_bridge
@@ -207,12 +206,7 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
             )
             dashboard["url"] = f"http://127.0.0.1:{arguments.dashboard_port}/"
             if not arguments.no_dashboard:
-                webbrowser.open(
-                    dashboard_browser_url(
-                        result.paths.state_dir / "errors",
-                        arguments.dashboard_port,
-                    )
-                )
+                webbrowser.open(str(dashboard["url"]))
         elif arguments.no_dashboard:
             dashboard = None
         else:

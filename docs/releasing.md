@@ -10,7 +10,8 @@ Releases. PyPI is not currently part of the release process.
 3. Move `Unreleased` entries into a dated changelog section.
 4. Confirm that the tree contains no secrets, client data, private topology,
    organization-specific configuration, or proprietary binaries.
-5. Run every check in `docs/development.md` and build the wheel and sdist.
+5. Export `SOURCE_DATE_EPOCH` from the release commit timestamp, run every
+   check in `docs/development.md`, and build the wheel and sdist.
 6. Install the wheel and run `helix-mcp-setup --dry-run`.
 7. Inspect the source archive and wheel independently of the working tree.
 

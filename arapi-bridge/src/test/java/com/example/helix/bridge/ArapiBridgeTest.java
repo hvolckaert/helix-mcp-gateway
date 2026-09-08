@@ -392,6 +392,14 @@ public final class ArapiBridgeTest {
             )
         );
         assertEquals(
+            false,
+            invoke(
+                "isReadOnlySql",
+                types(String.class),
+                "SELECT id OPERATOR(public.===) 1 AS result FROM sample"
+            )
+        );
+        assertEquals(
             "{\"rows\":[[1,\"two\",null]],\"truncated\":true}",
             invoke(
                 "encodeSqlRows",
