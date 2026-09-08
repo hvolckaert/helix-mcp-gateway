@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.7.3 - 2026-09-08
+
 - Require bearer authentication for Streamable HTTP and protect dashboard
   state with a private fragment-delivered token.
 - Authenticate the managed Java bridge with an installation-scoped token and
