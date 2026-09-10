@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.7.7 - 2026-09-10
+
 - Stop treating SQLGlot's structural `AND`, `OR`, `CASE`, and `CAST` nodes as
   callable SQL functions, and allow PostgreSQL `STRING_AGG` while retaining
   exact, unquoted, unqualified function-call validation and rejecting casts
