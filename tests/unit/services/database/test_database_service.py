@@ -254,6 +254,171 @@ def test_count_star_with_an_explicit_alias_is_allowed() -> None:
     assert client.calls[0]["column_count"] == 1
 
 
+def test_structural_expressions_are_not_treated_as_function_calls() -> None:
+    service, client = build_service(rows=(("7",),))
+    sql = (
+        "SELECT CASE "
+        "WHEN id > 0 AND (name = 'first' OR name = 'second') "
+        "THEN CAST(id AS TEXT) ELSE LOWER(name) END AS normalized_value "
+        "FROM public.allowed_table"
+    )
+
+    result = run(
+        service.query(
+            environment="dev",
+            query=DatabaseQuery(sql=sql, limit=1),
+        )
+    )
+
+    assert result.columns == ("normalized_value",)
+    assert result.rows == ({"normalized_value": "7"},)
+    assert len(client.calls) == 1
+
+
+def test_string_agg_with_cast_and_ordering_can_be_planned() -> None:
+    service, client = build_service()
+    sql = (
+        "SELECT STRING_AGG(id::text, ',' ORDER BY id::text) "
+        "AS aggregated_ids "
+        "FROM public.allowed_table"
+    )
+
+    plan = run(
+        service.plan(environment="dev", query=DatabaseQuery(sql=sql, limit=1))
+    )
+
+    assert plan.sql == sql
+    assert plan.status.value == "pending"
+    assert client.calls == []
+
+
+def test_quoted_relation_alias_column_list_is_not_a_function_call() -> None:
+    service, client = build_service(rows=(("7",),))
+    sql = 'SELECT "lower".id AS value FROM public.allowed_table AS "lower"(id)'
+
+    result = run(
+        service.query(
+            environment="dev",
+            query=DatabaseQuery(sql=sql, limit=1),
+        )
+    )
+
+    assert result.columns == ("value",)
+    assert result.rows == ({"value": "7"},)
+    assert len(client.calls) == 1
+
+
+def test_parenthesized_predicates_are_not_function_calls() -> None:
+    service, client = build_service(rows=((1,),))
+    sql = (
+        "SELECT CASE WHEN id IN (1, 2) "
+        "AND (id > 0 OR id < 0) "
+        "THEN 1 ELSE 0 END AS matches "
+        "FROM public.allowed_table AS outer_table"
+    )
+
+    result = run(
+        service.query(
+            environment="dev",
+            query=DatabaseQuery(sql=sql, limit=1),
+        )
+    )
+
+    assert result.columns == ("matches",)
+    assert result.rows == ({"matches": 1},)
+    assert len(client.calls) == 1
+
+
+@pytest.mark.parametrize("comparator", ["ALL", "ANY", "SOME"])
+def test_parenthesized_subquery_comparators_are_not_function_calls(
+    comparator: str,
+) -> None:
+    service, client = build_service(rows=((True,),))
+    sql = (
+        f"SELECT id = {comparator}"
+        "(SELECT child.id FROM public.allowed_table AS child) AS matches "
+        "FROM public.allowed_table"
+    )
+
+    result = run(
+        service.query(
+            environment="dev",
+            query=DatabaseQuery(sql=sql, limit=1),
+        )
+    )
+
+    assert result.columns == ("matches",)
+    assert result.rows == ({"matches": True},)
+    assert len(client.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        (
+            "SELECT CASE WHEN id > 0 THEN pg_sleep(1) ELSE 0 END AS result "
+            "FROM public.allowed_table"
+        ),
+        (
+            "SELECT STRING_AGG(CAST(custom_side_effect() AS TEXT), ',') "
+            "AS result FROM public.allowed_table"
+        ),
+        ("SELECT IF(id > 0, 1, 0) AS result FROM public.allowed_table"),
+        (
+            "SELECT CASE WHEN id > 0 THEN 1 "
+            "ELSE IF(id > 1, 2, 3) END AS result "
+            "FROM public.allowed_table"
+        ),
+        (
+            "SELECT CAST(id AS public.custom_type) AS result "
+            "FROM public.allowed_table"
+        ),
+        (
+            "SELECT CAST(id AS public.custom_type[]) AS result "
+            "FROM public.allowed_table"
+        ),
+        (
+            "SELECT id::public.custom_type[] AS result "
+            "FROM public.allowed_table"
+        ),
+        ("SELECT CONVERT(id, TEXT) AS result FROM public.allowed_table"),
+        ("SELECT CONVERT(id USING utf8) AS result FROM public.allowed_table"),
+        ("SELECT GLOB(name, '*') AS result FROM public.allowed_table"),
+        ("SELECT MOD(id, 2) AS result FROM public.allowed_table"),
+        ("SELECT LIKE(name, 'prefix%') AS result FROM public.allowed_table"),
+        ("SELECT public.lower(name) AS result FROM public.allowed_table"),
+        ("SELECT pg_catalog.lower(name) AS result FROM public.allowed_table"),
+        ('SELECT "LOWER"(name) AS result FROM public.allowed_table'),
+        ('SELECT "AND"(TRUE, FALSE) AS result FROM public.allowed_table'),
+        ('SELECT "ANY"(id) AS result FROM public.allowed_table'),
+        ('SELECT "OR"(TRUE, FALSE) AS result FROM public.allowed_table'),
+        ("SELECT LCASE(name) AS result FROM public.allowed_table"),
+        ("SELECT IFNULL(name, 'missing') AS result FROM public.allowed_table"),
+        ("SELECT GROUP_CONCAT(name) AS result FROM public.allowed_table"),
+        (
+            "SELECT \"STRING_AGG\"(name, ',') AS result "
+            "FROM public.allowed_table"
+        ),
+        ("SELECT TRY_CAST(id AS TEXT) AS result FROM public.allowed_table"),
+        ("SELECT RANDOM() AS result FROM public.allowed_table"),
+    ],
+)
+def test_structural_expressions_do_not_hide_unapproved_functions(
+    sql: str,
+) -> None:
+    service, client = build_service()
+
+    with pytest.raises(DatabaseQueryInvalidError):
+        run(
+            service.query(
+                environment="dev",
+                query=DatabaseQuery(sql=sql, limit=1),
+            )
+        )
+
+    assert client.calls == []
+
+
 def test_sql_query_requires_a_plan_before_execution() -> None:
     service, client = build_service(rows=((7,),))
     query = DatabaseQuery(

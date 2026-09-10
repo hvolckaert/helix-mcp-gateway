@@ -5,6 +5,15 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.7.7 - 2026-09-10
+
+- Stop treating SQLGlot's structural `AND`, `OR`, `CASE`, and `CAST` nodes as
+  callable SQL functions, and allow PostgreSQL `STRING_AGG` while retaining
+  exact, unquoted, unqualified function-call validation and rejecting casts
+  whose target is a user-defined type. Pin SQLGlot to the audited 30.x parser
+  contract so later major releases cannot silently change those validation
+  semantics.
+
 ## 0.7.6 - 2026-09-10
 
 - Align the Gateway dashboard with the shared IntelliAgentia visual and
