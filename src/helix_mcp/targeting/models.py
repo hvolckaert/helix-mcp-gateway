@@ -80,10 +80,16 @@ def describe_target(
         form_read=policy.allow_form_reads and form_backend_available,
         sql_read=policy.allow_sql and form_backend_available,
         form_create=writes_enabled
-        and bool(policy.creatable_fields_by_form)
+        and (
+            policy.allow_all_creatable_fields
+            or bool(policy.creatable_fields_by_form)
+        )
         and form_backend_available,
         form_update=writes_enabled
-        and bool(policy.updatable_fields_by_form)
+        and (
+            policy.allow_all_updatable_fields
+            or bool(policy.updatable_fields_by_form)
+        )
         and form_backend_available,
     )
     return TargetDescriptor(

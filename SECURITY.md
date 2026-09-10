@@ -4,8 +4,8 @@
 
 | Version | Security support |
 | --- | --- |
-| 0.7.x | Yes |
-| 0.5.x and earlier | No |
+| 0.8.x | Yes |
+| 0.7.x and earlier | No |
 
 Security fixes target the latest supported release line.
 

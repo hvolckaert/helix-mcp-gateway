@@ -16,21 +16,32 @@ allowlists:
 
 ```yaml
 access_mode: read_write
+allow_all_writable_forms: false
 writable_forms:
   - Example:Form
+allow_all_creatable_fields: false
 creatable_fields_by_form:
   Example:Form:
     - Description
+allow_all_updatable_fields: false
 updatable_fields_by_form:
   Example:Form:
     - Status
 ```
 
-`read_write` requires human approval, a non-empty write reason, and complete
-non-empty create/update allowlists.
-`read_only` requires every write allowlist to be empty. DEV, QA, and PROD use
-independent policies; all start read-only, and any of them may enable the same
-controlled write workflow explicitly.
+`read_write` requires human approval, a non-empty write reason, and a writable
+scope. Explicit lists remain the default. `allow_all_writable_forms` expands
+the write form boundary to every form in the general form scope;
+`allow_all_creatable_fields` and `allow_all_updatable_fields` independently
+allow every non-sensitive field for their operation. An allow-all flag and its
+corresponding explicit list cannot be enabled together. If both the general
+form scope and writable form scope are dynamic, both write-field allow-all
+flags are required because a complete per-form mapping cannot be enumerated.
+
+`read_only` requires every write allowlist and write allow-all flag to be
+empty or false. DEV, QA, and PROD use independent policies; all start
+read-only, and any of them may enable the same controlled write workflow
+explicitly.
 
 Legacy keys such as `create_mode`, `update_mode`, and
 `writable_fields_by_form` are rejected.

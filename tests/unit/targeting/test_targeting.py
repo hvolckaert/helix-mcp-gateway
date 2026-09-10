@@ -30,13 +30,9 @@ def build_config() -> HelixConfig:
                 {
                     "name": "qa_write",
                     "allowed_forms": ["Example:CreateForm"],
-                    "writable_forms": ["Example:CreateForm"],
-                    "creatable_fields_by_form": {
-                        "Example:CreateForm": ["Description"]
-                    },
-                    "updatable_fields_by_form": {
-                        "Example:CreateForm": ["Description"]
-                    },
+                    "allow_all_writable_forms": True,
+                    "allow_all_creatable_fields": True,
+                    "allow_all_updatable_fields": True,
                     "access_mode": "read_write",
                     "require_human_approval": True,
                 },

@@ -29,6 +29,7 @@ from helix_mcp.services.writes import (
     FormWriteConflictError,
     FormWriteDisabledError,
     FormWriteFieldNotAllowedError,
+    FormWriteFormNotAllowedError,
     FormWriteService,
     UpdateValuesRequest,
     WriteOutcomeUnknownError,
@@ -127,18 +128,34 @@ def build_service(
     *,
     creatable_fields: tuple[str, ...] = FIELDS,
     updatable_fields: tuple[str, ...] = FIELDS,
+    allow_all_forms: bool = True,
+    allow_all_writable_forms: bool = False,
+    allow_all_creatable_fields: bool = False,
+    allow_all_updatable_fields: bool = False,
+    sensitive_fields: tuple[str, ...] = (),
+    sensitive_field_markers: tuple[str, ...] = (),
 ) -> tuple[FormWriteService, FakeProvider]:
     policy = TargetPolicyConfig(
         name="dev_write",
-        allow_all_forms=True,
+        allow_all_forms=allow_all_forms,
         allow_all_fields=True,
-        writable_forms=(FORM,),
-        creatable_fields_by_form={FORM: creatable_fields},
-        updatable_fields_by_form={FORM: updatable_fields},
+        allowed_forms=() if allow_all_forms else (FORM,),
+        allow_all_writable_forms=allow_all_writable_forms,
+        writable_forms=() if allow_all_writable_forms else (FORM,),
+        allow_all_creatable_fields=allow_all_creatable_fields,
+        creatable_fields_by_form=(
+            {} if allow_all_creatable_fields else {FORM: creatable_fields}
+        ),
+        allow_all_updatable_fields=allow_all_updatable_fields,
+        updatable_fields_by_form=(
+            {} if allow_all_updatable_fields else {FORM: updatable_fields}
+        ),
         access_mode="read_write",
         require_human_approval=True,
         require_write_reason=True,
         write_rate_limit_per_minute=5,
+        sensitive_fields=sensitive_fields,
+        sensitive_field_markers=sensitive_field_markers,
     )
     target = TargetConfig(
         environment="dev",
@@ -174,6 +191,105 @@ def prepared(values: dict[str, object]) -> ArapiPreparedUpdate:
         entry=ArapiEntry(values=values),
         precondition=PRECONDITION,
     )
+
+
+def test_broad_write_scope_accepts_dynamic_forms_and_fields() -> None:
+    client = FakeClient([])
+    service, _ = build_service(
+        client,
+        allow_all_writable_forms=True,
+        allow_all_creatable_fields=True,
+        allow_all_updatable_fields=True,
+    )
+
+    plan = run(
+        service.plan_create_for_form(
+            environment="dev",
+            form="Example:FutureForm",
+            request=WriteValuesRequest(
+                values={"Future Field": "value"},
+                reason="Approved dynamic write scope test",
+            ),
+        )
+    )
+
+    assert plan.form == "Example:FutureForm"
+    assert plan.proposed_values == {"Future Field": "value"}
+    assert client.calls == []
+
+
+def test_broad_update_scope_accepts_dynamic_forms_and_fields() -> None:
+    client = FakeClient([prepared({"Future Field": "old"})])
+    service, _ = build_service(
+        client,
+        allow_all_writable_forms=True,
+        allow_all_creatable_fields=True,
+        allow_all_updatable_fields=True,
+    )
+
+    plan = run(
+        service.plan_update(
+            environment="dev",
+            form="Example:FutureForm",
+            request=UpdateValuesRequest(
+                entry_id=ENTRY_ID,
+                values={"Future Field": "new"},
+                reason="Approved dynamic update scope test",
+            ),
+        )
+    )
+
+    assert plan.form == "Example:FutureForm"
+    assert plan.proposed_values == {"Future Field": "new"}
+    assert client.calls[0][0] == "prepare_update"
+
+
+def test_broad_write_scope_still_enforces_general_form_boundary() -> None:
+    client = FakeClient([])
+    service, _ = build_service(
+        client,
+        allow_all_forms=False,
+        allow_all_writable_forms=True,
+        allow_all_creatable_fields=True,
+        allow_all_updatable_fields=True,
+    )
+
+    with pytest.raises(FormWriteFormNotAllowedError):
+        run(
+            service.plan_create_for_form(
+                environment="dev",
+                form="Example:OutsideScope",
+                request=WriteValuesRequest(
+                    values={"Description": "value"},
+                    reason="Approved boundary enforcement test",
+                ),
+            )
+        )
+
+
+@pytest.mark.parametrize("field", ["Password", "API Token Value"])
+def test_broad_write_fields_still_reject_sensitive_names(field: str) -> None:
+    client = FakeClient([])
+    service, _ = build_service(
+        client,
+        allow_all_writable_forms=True,
+        allow_all_creatable_fields=True,
+        allow_all_updatable_fields=True,
+        sensitive_fields=("Password",),
+        sensitive_field_markers=("token",),
+    )
+
+    with pytest.raises(FormWriteFieldNotAllowedError, match="sensitive"):
+        run(
+            service.plan_create_for_form(
+                environment="dev",
+                form="Example:FutureForm",
+                request=WriteValuesRequest(
+                    values={field: "do-not-write"},
+                    reason="Approved sensitive-field rejection test",
+                ),
+            )
+        )
 
 
 def test_create_plan_is_reviewable_and_apply_is_idempotent() -> None:
