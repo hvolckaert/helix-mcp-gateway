@@ -5,6 +5,19 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.7.6 - 2026-09-10
+
+- Align the Gateway dashboard with the shared IntelliAgentia visual and
+  interaction contract while preserving its DEV, QA, PROD, and Advanced
+  configuration workflow.
+- Keep credential readiness in the operational summary and move OpenClaw and
+  dashboard-service details into Advanced settings with clear managed,
+  manual, unavailable, and stopped states.
+- Keep the save bar visible, mark unsaved environment tabs, review changes
+  before saving, and confirm update checks with accessible status messages.
+- Exclude the ignored local recovery context from source distributions even
+  when it exists in a release checkout.
+
 ## 0.7.5 - 2026-09-09
 
 - Replace the AR API 21.30-only gate with BMC manifest, required-class, bridge

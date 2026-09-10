@@ -59,6 +59,24 @@ def test_sdist_is_reproducible_across_source_file_modes(
                 assert member.mode == 0o644
 
 
+@pytest.mark.integration
+def test_sdist_excludes_local_recovery_context(tmp_path: Path) -> None:
+    root = _copy_build_inputs(tmp_path / "source")
+    local_context = root / "docs/recovered-implementation-context.md"
+    local_context.parent.mkdir(parents=True)
+    local_context.write_text(
+        "/home/example/private-session\n", encoding="utf-8"
+    )
+
+    sdist = _build_sdist(root)
+
+    with tarfile.open(sdist, mode="r:gz") as archive:
+        assert not any(
+            member.name.endswith("docs/recovered-implementation-context.md")
+            for member in archive.getmembers()
+        )
+
+
 def _copy_build_inputs(destination: Path) -> Path:
     for relative in _BUILD_INPUTS:
         source = PROJECT_ROOT / relative

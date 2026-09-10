@@ -972,9 +972,31 @@ def test_http_surface_is_local_english_and_csrf_protected(
         assert 'id="tab-panel-advanced"' in html
         assert "Diagnostics" in html
         assert '<span class="metric-label">Server</span>' in html
-        assert '<span class="metric-label">Dashboard service</span>' in html
+        assert '<span class="metric-label">Credentials</span>' in html
+        assert '<span class="metric-label">MCP client</span>' not in html
+        assert (
+            '<span class="metric-label">Dashboard service</span>' not in html
+        )
+        assert "Runtime connections" in html
+        assert "Managed and running" in html
+        assert "Running manually" in html
+        assert "Automatic startup unavailable" in html
+        assert "Stopped" in html
+        assert "Dashboard service" in html
+        assert "Managed and active" not in html
+        assert "Running this session" not in html
+        assert "Managed but stopped" not in html
+        assert "OpenClaw" in html
+        assert "Not connected" in html
+        assert "status.textContent = 'Current'" not in html
+        assert "status.textContent = 'Updated'" in html
+        assert 'id="savebar" role="status" aria-live="polite">' in html
         assert '<span class="metric-label">Transport</span>' not in html
         assert "Check for updates" in html
+        assert "The server is up to date." in html
+        assert "Version ${release.latest_version} is available." in html
+        assert "Unable to check for updates" in html
+        assert "Check GitHub connectivity and try again." in html
         assert "Install update" in html
         assert "/api/update/check" in html
         assert "/api/update/install" in html
