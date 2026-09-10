@@ -68,14 +68,14 @@
     .version {
       z-index: 1; padding: 8px 12px; border: 1px solid rgba(255,255,255,.24);
       border-radius: 999px; color: #dff7fb; font-size: .82rem; background: rgba(255,255,255,.07); }
-    .summary { display: grid; grid-template-columns: 1.3fr repeat(4, minmax(140px, .7fr)); gap: 14px; margin: 18px 0; }
-    .intro, .metric, .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; }
-    .intro { padding: 20px 22px; }
+    .summary { display: grid; grid-template-columns: 1.2fr repeat(3, minmax(160px, .7fr)); gap: 14px; margin: 18px 0; }
+    .intro, .metric { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; }
+    .intro { padding: 21px 22px; }
     .intro h1 { margin: 0 0 5px; font-size: 1.34rem; line-height: 1.25; letter-spacing: -.025em; }
-    .intro p { margin: 0; color: var(--muted); line-height: 1.5; font-size: 1rem; }
-    .metric { padding: 16px 18px; display: flex; flex-direction: column; justify-content: center; }
-    .metric-label { color: var(--muted); font-size: .78rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
-    .metric-value { margin-top: 5px; font-size: 1.18rem; font-weight: 780; letter-spacing: -.02em; }
+    .intro p { margin: 0; color: var(--muted); line-height: 1.5; }
+    .metric { padding: 17px 18px; display: flex; flex-direction: column; justify-content: center; }
+    .metric-label { color: var(--muted); font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .metric-value { margin-top: 5px; font-size: 1.25rem; font-weight: 760; letter-spacing: -.02em; }
     .metric-detail { margin-top: 3px; color: var(--muted); font-size: .78rem; }
     .update-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
     .mini-button {
@@ -87,7 +87,7 @@
     .mini-button:disabled { opacity: .5; cursor: wait; }
     .status { display: inline-flex; align-items: center; gap: 7px; }
     .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-    .status.ready::before, .status.success::before, .status.current::before { background: var(--success); box-shadow: 0 0 0 4px rgba(18,122,98,.11); }
+    .status.ready::before, .status.success::before, .status.current::before, .status.updated::before { background: var(--success); box-shadow: 0 0 0 4px rgba(18,122,98,.11); }
     .status.running::before, .status.queued::before, .status.preparing::before, .status.available::before { background: var(--cyan-500); box-shadow: 0 0 0 4px rgba(8,171,200,.12); }
     .status.error::before { background: var(--danger); box-shadow: 0 0 0 4px rgba(184,56,76,.11); }
     .status.unavailable::before { background: var(--warning); box-shadow: 0 0 0 4px rgba(178,103,12,.11); }
@@ -95,10 +95,10 @@
     .status-warn { color: var(--warning); }
     .status-bad { color: var(--danger); }
     .workspace-tabs { display: grid; gap: 14px; }
-    .tab-list { display: flex; gap: 7px; padding: 6px; overflow-x: auto; border: 1px solid var(--line); border-radius: 15px; background: #eaf2f6; }
-    .workspace-tab { min-height: 44px; flex: 1 0 150px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; padding: 9px 14px; border: 1px solid transparent; border-radius: 10px; color: #486176; background: transparent; font-weight: 760; }
+    .tab-list { display: flex; gap: 5px; padding: 5px; overflow-x: auto; border: 1px solid var(--line); border-radius: 15px; background: #eaf2f7; }
+    .workspace-tab { min-height: 44px; flex: 1 0 150px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; padding: 10px 15px; border: 0; border-radius: 11px; color: var(--muted); background: transparent; font-weight: 720; }
     .workspace-tab:hover { color: var(--navy-900); background: rgba(255,255,255,.6); }
-    .workspace-tab[aria-selected="true"] { color: var(--navy-900); border-color: #cddde7; background: white; box-shadow: 0 5px 14px rgba(6,38,76,.08); }
+    .workspace-tab[aria-selected="true"] { color: var(--navy-900); background: white; box-shadow: 0 3px 12px rgba(6,38,76,.09); }
     .tab-env-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 999px; background: var(--cyan-500); box-shadow: 0 0 0 3px var(--cyan-100); }
     .workspace-tab[data-tab="qa"] .tab-env-dot { background: #d18a24; box-shadow: 0 0 0 3px #fff0d5; }
     .workspace-tab[data-tab="prod"] .tab-env-dot { background: #c84b5f; box-shadow: 0 0 0 3px #fde7eb; }
@@ -106,7 +106,7 @@
     .workspace-tab.dirty .tab-dirty { opacity: 1; transform: scale(1); }
     .tab-stage { min-width: 0; }
     .tab-panel[hidden] { display: none !important; }
-    .panel { padding: 21px 22px; box-shadow: 0 9px 28px rgba(5, 24, 45, .035); }
+    .panel { padding: 21px 22px; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; box-shadow: 0 8px 28px rgba(6,38,76,.045); }
     .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
     .panel h2 { margin: 0; font-size: 1.06rem; letter-spacing: -.015em; }
     .panel-copy { margin: 5px 0 0; color: var(--muted); font-size: .89rem; line-height: 1.48; }
@@ -119,8 +119,8 @@
     .field.wide { grid-column: 1 / -1; }
     .field label, .field-label { font-size: .84rem; font-weight: 720; color: #30495f; }
     .field input, .field select, .field textarea {
-      width: 100%; min-height: 44px; border: 1px solid #c8d8e3; border-radius: 11px;
-      padding: 9px 11px; color: var(--ink); background: white;
+      width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 9px;
+      padding: 10px 11px; color: var(--ink); background: white;
     }
     .field textarea { min-height: 112px; resize: vertical; font: 500 .78rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
     .field input:disabled, .field select:disabled, .field textarea:disabled { color: #7b8d9d; background: #f3f6f8; cursor: not-allowed; }
@@ -200,54 +200,75 @@
     .callout { padding: 13px 14px; border-radius: 13px; background: var(--cyan-100); color: #21576a; font-size: .84rem; line-height: 1.48; }
     .checks { display: grid; gap: 8px; margin-top: 13px; }
     .check { display: flex; justify-content: space-between; gap: 16px; padding: 10px 11px; border-radius: 10px; background: #f5f8fa; font-size: .82rem; }
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
-    .button { min-height: 42px; border: 0; border-radius: 11px; padding: 10px 15px; font-weight: 750; color: white;
-      background: var(--navy-800); box-shadow: 0 7px 16px rgba(10, 55, 104, .13); }
-    .button:hover { background: var(--navy-900); }
-    .button.secondary { color: var(--navy-800); background: #edf5f8; box-shadow: none; border: 1px solid #cfe0e9; }
-    .button.secondary:hover { background: #e2eff4; }
+    .connection-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 15px; }
+    .connection-card { min-width: 0; padding: 13px 14px; border: 1px solid var(--line); border-radius: 13px; background: #fbfdfe; }
+    .connection-card.connected { border-color: #b7ddcf; background: #f1fbf7; }
+    .connection-card.warning { border-color: #efd8aa; background: #fffaf0; }
+    .connection-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .connection-name { font-weight: 720; }
+    .connection-badge { flex: 0 0 auto; padding: 4px 7px; border-radius: 999px; color: var(--navy-800); background: var(--cyan-100); font-size: .68rem; font-weight: 760; text-transform: uppercase; }
+    .connection-badge.connected { color: var(--success); background: #dff5ec; }
+    .connection-badge.warning { color: var(--warning); background: var(--warning-bg); }
+    .connection-description { margin: 6px 0 0; color: var(--muted); font-size: .78rem; line-height: 1.4; }
+    .actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .button { min-height: 42px; border: 0; border-radius: 11px; padding: 10px 15px; font-weight: 720; color: white;
+      background: var(--navy-900); transition: transform .15s, opacity .15s, background .15s; }
+    .button:hover { background: var(--navy-800); transform: translateY(-1px); }
+    .button.primary { background: linear-gradient(115deg, var(--cyan-600), var(--cyan-500)); }
+    .button.secondary { color: var(--navy-900); background: var(--cyan-100); }
+    .button.secondary:hover { background: #cceff5; }
     .button.small { min-height: 36px; padding: 7px 11px; font-size: .79rem; }
-    .button:disabled { opacity: .52; cursor: not-allowed; }
-    .savebar { position: sticky; bottom: 14px; margin-top: 18px; padding: 14px 16px; border-radius: 16px;
+    .button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .savebar { position: sticky; z-index: 4; bottom: 14px; margin-top: 18px; padding: 14px 16px; border-radius: 16px;
       background: rgba(5, 24, 45, .95); color: white; display: flex; align-items: center;
-      justify-content: space-between; gap: 16px; box-shadow: 0 15px 40px rgba(5,24,45,.22); backdrop-filter: blur(10px); }
+      justify-content: space-between; gap: 20px; box-shadow: 0 15px 40px rgba(5,24,45,.22); backdrop-filter: blur(10px); }
     .savebar p { margin: 0; color: #d3e2ec; font-size: .84rem; line-height: 1.4; }
-    .savebar .button { background: var(--cyan-500); color: #032b38; box-shadow: none; white-space: nowrap; }
-    dialog { width: min(570px, calc(100% - 32px)); border: 0; border-radius: 19px; padding: 0; color: var(--ink); box-shadow: 0 28px 80px rgba(5,24,45,.28); }
-    dialog::backdrop { background: rgba(5, 24, 45, .58); backdrop-filter: blur(3px); }
-    .dialog-body { padding: 23px; }
-    .dialog-body h2 { margin: 0 0 7px; font-size: 1.2rem; }
-    .review { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 9px; }
+    .savebar .actions { flex: 0 0 auto; margin: 0; }
+    .savebar .button.primary { color: #032b38; background: var(--cyan-500); white-space: nowrap; }
+    .savebar .button.primary:hover { background: #3ac9dc; }
+    dialog { width: min(580px, calc(100% - 28px)); border: 0; border-radius: 18px; padding: 0; color: var(--ink); background: white; box-shadow: 0 25px 80px rgba(3,27,54,.28); }
+    dialog::backdrop { background: rgba(3,27,54,.54); backdrop-filter: blur(3px); }
+    .dialog-header { padding: 20px 22px 15px; border-bottom: 1px solid var(--line); }
+    .dialog-header h2 { margin: 0; font-size: 1.08rem; }
+    .dialog-header p { margin: 5px 0 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }
+    .dialog-body { padding: 19px 22px; }
+    .review { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; }
     .review li { padding: 10px 12px; border-radius: 10px; background: #f2f6f8; font-size: .84rem; }
-    .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 15px 23px; border-top: 1px solid var(--line); background: #f8fafb; }
-    .toast { position: fixed; right: 22px; bottom: 22px; max-width: min(420px, calc(100% - 44px)); padding: 13px 15px;
-      border-radius: 12px; color: white; background: var(--navy-900); box-shadow: 0 14px 38px rgba(5,24,45,.22);
-      opacity: 0; transform: translateY(10px); pointer-events: none; transition: .2s ease; z-index: 20; font-size: .86rem; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; padding: 15px 22px 20px; }
+    .toast { position: fixed; right: 22px; bottom: 22px; max-width: min(420px, calc(100% - 44px)); padding: 13px 16px;
+      border-radius: 12px; color: white; background: var(--navy-950); box-shadow: var(--shadow);
+      opacity: 0; transform: translateY(14px); pointer-events: none; transition: .2s; z-index: 20; font-size: .86rem; }
     .toast.visible { opacity: 1; transform: translateY(0); }
     .toast.error { background: var(--danger); }
-    @media (max-width: 1050px) {
-      .summary { grid-template-columns: repeat(2, 1fr); }
+    @media (max-width: 1040px) {
+      .summary { grid-template-columns: repeat(3, 1fr); }
       .intro { grid-column: 1 / -1; }
       .savebar { position: static; }
     }
-    @media (max-width: 680px) {
-      .shell { width: min(100% - 24px, 1440px); padding-top: 12px; }
-      .topbar { border-radius: 16px; padding: 15px; }
+    @media (max-width: 720px) {
+      body { overflow-x: hidden; }
+      .shell { width: calc(100% - 22px); max-width: 1440px; padding-top: 11px; }
+      .topbar { min-width: 0; flex-wrap: wrap; border-radius: 17px; padding: 15px; }
+      .brand { min-width: 0; }
+      .brand-name { font-size: 1.12rem; }
       .brand-product { display: none; }
-      .version { display: none; }
+      .version { flex: 0 0 auto; margin-left: auto; padding: 6px 9px; font-size: .74rem; }
       .summary { grid-template-columns: 1fr; }
       .intro { grid-column: auto; }
+      .intro, .metric, .panel, .connection-card { min-width: 0; }
       .tab-list { padding: 5px; }
       .workspace-tab { flex-basis: 118px; }
       .picker-toolbar { grid-template-columns: 1fr; }
-      .fields, .credential-editor, .policy-fields, .toggle-grid { grid-template-columns: 1fr; }
+      .fields, .credential-editor, .policy-fields, .toggle-grid, .connection-list { grid-template-columns: 1fr; }
       .permission-card-head { flex-direction: column; }
       .permission-badges { justify-content: flex-start; }
       .panel { padding: 18px 16px; }
       .env-head { align-items: flex-start; }
       .env-actions { align-items: flex-end; flex-direction: column; }
-      .savebar { align-items: flex-start; flex-direction: column; }
+      .savebar { align-items: stretch; flex-direction: column; }
+      .savebar .actions { width: 100%; }
       .savebar .button { width: 100%; }
+      .dialog-actions { flex-direction: column-reverse; }
     }
   </style>
 </head>
@@ -280,13 +301,8 @@
         <span class="metric-detail">DEV · QA · PROD</span>
       </div>
       <div class="metric">
-        <span class="metric-label">Dashboard service</span>
-        <span class="metric-value status" id="runtime-status">Loading</span>
-        <span class="metric-detail" id="runtime-detail">—</span>
-      </div>
-      <div class="metric">
         <span class="metric-label">Server</span>
-        <span class="metric-value status" id="update-status">Loading</span>
+        <span class="metric-value status" id="update-status" aria-live="polite">Loading</span>
         <span class="metric-detail" id="update-detail">—</span>
         <div class="update-actions">
           <button class="mini-button" type="button" id="check-update-button">Check for updates</button>
@@ -371,6 +387,26 @@
                 </div>
               </div>
               <div class="advanced-group">
+                <h3>Runtime connections</h3>
+                <p class="panel-copy">Client integration and local dashboard lifecycle. These details are secondary to environment access configuration.</p>
+                <div class="connection-list" id="runtime-connections">
+                  <article class="connection-card" id="openclaw-connection">
+                    <div class="connection-head">
+                      <span class="connection-name">OpenClaw</span>
+                      <span class="connection-badge" id="openclaw-status">Loading</span>
+                    </div>
+                    <p class="connection-description" id="openclaw-detail">Checking client integration…</p>
+                  </article>
+                  <article class="connection-card" id="dashboard-connection">
+                    <div class="connection-head">
+                      <span class="connection-name">Dashboard service</span>
+                      <span class="connection-badge" id="runtime-status">Loading</span>
+                    </div>
+                    <p class="connection-description" id="runtime-detail">Checking the local dashboard manager…</p>
+                  </article>
+                </div>
+              </div>
+              <div class="advanced-group">
                 <h3>Diagnostics</h3>
                 <p class="panel-copy">Check the saved configuration, local bridge requirements and configured credentials. Unsaved edits and remote connectivity are not tested.</p>
                 <div class="checks" id="checks"></div>
@@ -383,22 +419,26 @@
         </div>
       </div>
 
-      <div class="savebar">
+      <div class="savebar" id="savebar" role="status" aria-live="polite">
         <p id="save-note">Changes are validated before saving. Restart your MCP client afterward to apply them. Credentials are write-only and never returned to this page.</p>
-        <button class="button" type="button" id="review-button" disabled>Save changes</button>
+        <div class="actions">
+          <button class="button primary" type="button" id="review-button" disabled>Save changes</button>
+        </div>
       </div>
     </form>
   </main>
 
-  <dialog id="review-dialog">
+  <dialog id="review-dialog" aria-labelledby="review-dialog-title" aria-describedby="review-dialog-description">
+    <div class="dialog-header">
+      <h2 id="review-dialog-title">Review changes before saving</h2>
+      <p id="review-dialog-description">The candidate will be validated before both files are replaced. Any failed validation restores the previous content.</p>
+    </div>
     <div class="dialog-body">
-      <h2>Review changes before saving</h2>
-      <p class="panel-copy">The candidate will be validated before both files are replaced. Any failed validation restores the previous content.</p>
       <ul class="review" id="review-list"></ul>
     </div>
     <div class="dialog-actions">
       <button class="button secondary" type="button" id="cancel-save">Cancel</button>
-      <button class="button" type="button" id="confirm-save">Confirm save</button>
+      <button class="button primary" type="button" id="confirm-save">Confirm save</button>
     </div>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -419,6 +459,12 @@
     const catalogSearchTimers = new WeakMap();
     let currentState = null;
     let activeTab = 'dev';
+    const tabNames = tabs.map(tab => tab.dataset.tab);
+    try {
+      const savedTab = sessionStorage.getItem('helix-gateway-dashboard-tab');
+      if (tabNames.includes(savedTab)) activeTab = savedTab;
+    } catch (_) {}
+    if (tabNames.some(name => `#${name}` === location.hash)) activeTab = location.hash.slice(1);
     let catalogRequestId = 0;
     let updateReconnectRunning = false;
 
@@ -455,6 +501,8 @@
       document.querySelectorAll('[data-tab-panel]').forEach(panel => {
         panel.hidden = panel.dataset.tabPanel !== tabName;
       });
+      try { sessionStorage.setItem('helix-gateway-dashboard-tab', tabName); } catch (_) {}
+      try { history.replaceState(null, '', `#${tabName}`); } catch (_) {}
       if (tabName !== 'advanced') initializeEnvironmentCatalog(tabName);
     }
 
@@ -1210,6 +1258,7 @@
       const credentialCount = configuration.environments.filter(item => item.credential.configured).length;
       document.getElementById('credential-count').textContent = `${credentialCount} of 3`;
       document.getElementById('credential-count').className = `metric-value ${credentialCount === 3 ? 'status-good' : 'status-warn'}`;
+      renderOpenClawIntegration(state.update, state.application);
       renderDashboardRuntime(state.dashboard_runtime);
       renderUpdate(state.update);
 
@@ -1242,31 +1291,57 @@
       }
     }
 
+    function renderOpenClawIntegration(update, application) {
+      const connected = update?.client === 'openclaw';
+      const card = document.getElementById('openclaw-connection');
+      const badge = document.getElementById('openclaw-status');
+      const detail = document.getElementById('openclaw-detail');
+      card.className = `connection-card${connected ? ' connected' : ''}${application?.status === 'reload_failed' ? ' warning' : ''}`;
+      badge.textContent = connected ? 'Connected' : 'Not connected';
+      badge.className = `connection-badge${connected ? ' connected' : ''}${application?.status === 'reload_failed' ? ' warning' : ''}`;
+      if (application?.status === 'reload_failed') {
+        detail.textContent = 'Connected, but the last automatic reload failed. Reload OpenClaw manually to apply the saved configuration.';
+      } else if (application?.status === 'applied') {
+        detail.textContent = 'Configuration applied. OpenClaw will reconnect its MCP runtime on the next request.';
+      } else if (connected) {
+        detail.textContent = 'Detected during setup. Configuration saves reload its MCP runtime automatically.';
+      } else {
+        detail.textContent = 'OpenClaw was not selected during setup. Gateway remains available through the configured MCP client.';
+      }
+    }
+
     function renderDashboardRuntime(runtime) {
+      const card = document.getElementById('dashboard-connection');
       const status = document.getElementById('runtime-status');
       const detail = document.getElementById('runtime-detail');
-      if (!runtime || runtime.manager === 'unmanaged') {
-        status.textContent = 'Not managed';
-        status.className = 'metric-value status unavailable';
-        detail.textContent = 'Run setup to enable automatic startup.';
-        return;
-      }
-      if (runtime.active) {
-        status.textContent = 'Running';
-        status.className = 'metric-value status ready';
-      } else if (runtime.status === 'error') {
-        status.textContent = 'Manager error';
-        status.className = 'metric-value status error';
-      } else {
+      card.className = 'connection-card';
+      status.className = 'connection-badge';
+      if (runtime?.installed && runtime.enabled && runtime.active) {
+        card.classList.add('connected');
+        status.textContent = 'Managed and running';
+        status.classList.add('connected');
+        const manager = runtime.manager === 'systemd_user' ? 'systemd user service' : 'Windows user startup';
+        detail.textContent = `${manager} keeps the dashboard available automatically on port ${runtime.port}.`;
+      } else if (runtime?.active) {
+        card.classList.add('connected');
+        status.textContent = 'Running manually';
+        status.classList.add('connected');
+        detail.textContent = runtime.manager === 'detached'
+          ? 'Running for this session. Automatic user-session startup is unavailable on this system.'
+          : 'This page is running, but automatic startup and crash recovery are not installed. Run guided setup to enable them.';
+      } else if (runtime?.installed || runtime?.status === 'error') {
+        card.classList.add('warning');
         status.textContent = 'Stopped';
-        status.className = 'metric-value status unavailable';
+        status.classList.add('warning');
+        detail.textContent = runtime.status === 'error'
+          ? 'The dashboard manager needs attention. Run guided setup again or inspect the local diagnostics.'
+          : 'The dashboard service is installed but not active.';
+      } else {
+        card.classList.add('warning');
+        status.textContent = 'Automatic startup unavailable';
+        status.classList.add('warning');
+        detail.textContent = 'The dashboard is not managed for automatic startup. Run guided setup to install the supported per-user manager.';
       }
-      const manager = runtime.manager === 'systemd_user'
-        ? 'systemd user service'
-        : runtime.manager === 'windows_startup'
-          ? 'Windows user startup'
-          : 'detached supervisor';
-      detail.textContent = `${manager} · port ${runtime.port}`;
     }
 
     function renderUpdate(update) {
@@ -1283,33 +1358,37 @@
       installButton.textContent = release.latest_version ? `Install ${release.latest_version}` : 'Install update';
       let statusCode = 'unknown';
       if (!update?.managed) {
-        status.textContent = 'Setup required';
+        status.textContent = 'Updates unavailable';
         statusCode = 'unavailable';
         detail.textContent = 'Run the installer once to create the stable managed launcher.';
       } else if (['queued', 'preparing', 'running'].includes(operation?.status)) {
-        status.textContent = operation.status === 'queued' ? 'Queued' : 'Installing';
+        status.textContent = 'Updating';
         statusCode = operation.status;
-        detail.textContent = `Installing ${operation.target_version}. This page will reconnect automatically.`;
+        detail.textContent = operation.status === 'queued'
+          ? `Preparing update to ${operation.target_version}.`
+          : operation.status === 'preparing'
+            ? `Verifying update ${operation.target_version}.`
+            : `Installing ${operation.target_version}. This page will reconnect automatically.`;
       } else if (operation?.status === 'error') {
         status.textContent = 'Update failed';
         statusCode = 'error';
-        detail.textContent = `The previous runtime remains active (${operation.error_code || 'UPDATE_ERROR'}).`;
+        detail.textContent = `The previous runtime remains active. Check diagnostics and retry (${operation.error_code || 'UPDATE_ERROR'}).`;
       } else if (operation?.status === 'success' && operation.current_version === currentVersion) {
         status.textContent = 'Updated';
         statusCode = 'success';
         detail.textContent = `Updated to ${currentVersion}`;
       } else if (release.status === 'available') {
-        status.textContent = 'Available';
+        status.textContent = 'Update available';
         statusCode = 'available';
-        detail.textContent = `Latest release ${release.latest_version}`;
+        detail.textContent = `${release.latest_version} is available`;
       } else if (release.status === 'current') {
-        status.textContent = 'Current';
+        status.textContent = 'Updated';
         statusCode = 'current';
         detail.textContent = release.latest_version === currentVersion
-          ? `Latest release ${release.latest_version}`
+          ? `Updated to ${currentVersion}`
           : release.latest_version
-            ? `Installed ${currentVersion} · latest release ${release.latest_version}`
-            : `Installed ${currentVersion}`;
+            ? `Updated to ${currentVersion} · latest verified release ${release.latest_version}`
+            : `Updated to ${currentVersion}`;
       } else if (release.status === 'error') {
         status.textContent = 'Check failed';
         statusCode = 'error';
@@ -1329,6 +1408,17 @@
       try {
         currentState.update = await api('/api/update/check', {method: 'POST', body: '{}'});
         renderUpdate(currentState.update);
+        const release = currentState.update?.release || {};
+        if (release.status === 'current') {
+          showToast('The server is up to date.');
+        } else if (release.status === 'available' && release.latest_version) {
+          showToast(`Version ${release.latest_version} is available.`);
+        } else if (release.status === 'error') {
+          showToast(
+            `Unable to check for updates (${release.error_code || 'UPDATE_ERROR'}). Check GitHub connectivity and try again.`,
+            true
+          );
+        }
       } catch (error) {
         showToast(error.message, true);
       } finally {
