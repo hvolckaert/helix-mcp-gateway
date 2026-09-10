@@ -50,8 +50,9 @@ with writes disabled (`read_only` internally), but an administrator can enable
 the same controlled `read_write` workflow for any environment, including PROD.
 The dashboard labels this setting **Write access** because form reads are always
 enabled in dashboard-managed policies. Reviewed SQL reads remain optional.
-Human approval, a non-empty reason, and complete create/update allowlists are
-mandatory whenever writes are enabled. These guarantees are not exposed as
+Human approval and a non-empty reason are mandatory whenever writes are
+enabled. Write scopes may use exact form and field allowlists or explicit
+allow-all modes. The approval and reason guarantees are not exposed as
 optional dashboard controls.
 
 The low-level `allow_form_reads` setting remains part of the YAML contract for
@@ -79,6 +80,15 @@ Selecting an `Allow every ...` option hides its redundant allowlist or mapping
 editor. Clearing the option reveals the editor again with its unsaved selection
 still intact. Once the broad mode is saved, the corresponding explicit
 allowlist is normalized to empty as required by the configuration contract.
+
+The writable-form `Allow every form` option remains inside the general form
+boundary: it means every form already in scope, not a bypass of that boundary.
+Create and update field broad modes are independent and admit every field that
+does not match the sensitive-field protections. When the general and writable
+form scopes are both dynamic, both write-field broad modes must be enabled;
+there is no finite form list against which to build complete field mappings.
+New forms or fields can enter a broad scope automatically, so these modes are
+opt-in and are highlighted during save review.
 
 Inactive controls retain their loaded values unless the configuration contract
 requires them to be empty. Enabling controlled writes always enables and locks

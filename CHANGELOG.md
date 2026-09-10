@@ -5,6 +5,16 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.8.0 - 2026-09-10
+
+- Add opt-in broad write scopes for every in-scope form and every
+  non-sensitive create or update field while preserving exact allowlists as
+  the default.
+- Enforce sensitive-field filtering at write runtime and make the documented
+  sensitive names and markers the safe configuration defaults.
+- Expose the new write scopes in the dashboard with dependent editors,
+  validation, and an explicit broad-scope save review.
+
 ## 0.7.7 - 2026-09-10
 
 - Stop treating SQLGlot's structural `AND`, `OR`, `CASE`, and `CAST` nodes as

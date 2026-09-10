@@ -303,21 +303,40 @@ def _enforce_write(
         raise FormWriteDisabledError(
             "requested form write is disabled by target policy"
         )
-    if form not in policy.writable_forms:
+    form_in_scope = policy.allow_all_forms or form in policy.allowed_forms
+    form_is_writable = (
+        policy.allow_all_writable_forms or form in policy.writable_forms
+    )
+    if not form_in_scope or not form_is_writable:
         raise FormWriteFormNotAllowedError(
             "form is not included in the write allowlist"
         )
     if policy.require_write_reason and not reason.strip():
         raise FormWriteReasonRequiredError("write reason is required")
+    sensitive = {field.casefold() for field in policy.sensitive_fields}
+    markers = tuple(
+        marker.casefold() for marker in policy.sensitive_field_markers
+    )
+    requested = {field.casefold() for field in values}
+    if sensitive & requested or any(
+        marker in field for marker in markers for field in requested
+    ):
+        raise FormWriteFieldNotAllowedError("write requests a sensitive field")
     fields_by_form = (
         policy.creatable_fields_by_form
         if operation is WriteOperation.CREATE
         else policy.updatable_fields_by_form
     )
+    allow_all_fields = (
+        policy.allow_all_creatable_fields
+        if operation is WriteOperation.CREATE
+        else policy.allow_all_updatable_fields
+    )
+    if allow_all_fields:
+        return dict(values)
     allowed = {
         field.casefold(): field for field in fields_by_form.get(form, ())
     }
-    requested = {field.casefold() for field in values}
     if not requested.issubset(allowed):
         raise FormWriteFieldNotAllowedError(
             "write requests a field outside the write allowlist"

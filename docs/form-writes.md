@@ -14,11 +14,18 @@ Planning never modifies Helix. Applying requires the exact `plan_id` and
 Each policy declares one access mode:
 
 - `read_only`: create and update are structurally forbidden;
-- `read_write`: only explicitly allowlisted forms and fields may be written.
+- `read_write`: forms and fields must pass either their exact allowlist or an
+  explicitly enabled broad write scope.
 
 Create and update allowlists are independent. A field permitted during create
-does not become updateable automatically. PROD configuration is validated as
-`read_only` and must have empty write allowlists.
+does not become updateable automatically. `allow_all_writable_forms` permits
+every form already included in the general form scope, while
+`allow_all_creatable_fields` and `allow_all_updatable_fields` independently
+permit all non-sensitive requested fields. Sensitive-field protections are
+enforced at runtime before either exact or broad field authorization. New
+forms and fields can enter a broad scope automatically, so all broad write
+options default to false. Every environment, including PROD, starts read-only
+but may explicitly enable the same controlled write workflow.
 
 Deletion, attachments, and bulk writes are not exposed.
 

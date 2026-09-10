@@ -16,6 +16,12 @@ policies:
       Example:ReadableForm:
         - Request ID
         - Status
+    allow_all_writable_forms: false
+    writable_forms: []
+    allow_all_creatable_fields: false
+    creatable_fields_by_form: {}
+    allow_all_updatable_fields: false
+    updatable_fields_by_form: {}
     allow_all_sql_objects: false
     allow_form_reads: true
     allow_sql: false

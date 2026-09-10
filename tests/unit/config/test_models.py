@@ -56,6 +56,8 @@ def test_valid_configuration_is_immutable_and_resolves_target_key() -> None:
     config = validate_config(valid_config_data())
 
     assert isinstance(config, HelixConfig)
+    assert "Password" in config.policies[0].sensitive_fields
+    assert "token" in config.policies[0].sensitive_field_markers
     assert config.targets[0].key == TargetKey(
         environment=Environment.DEV,
     )
@@ -132,6 +134,112 @@ def test_writes_require_an_exact_field_allowlist() -> None:
     with pytest.raises(
         ConfigValidationError,
         match="creatable_fields_by_form must define every writable form",
+    ):
+        validate_config(data)
+
+
+def test_writes_allow_explicit_dynamic_non_sensitive_scopes() -> None:
+    data = valid_config_data()
+    policy = data["policies"][0]
+    policy.update(
+        {
+            "allow_all_forms": True,
+            "allowed_forms": [],
+            "allow_all_writable_forms": True,
+            "allow_all_creatable_fields": True,
+            "allow_all_updatable_fields": True,
+            "access_mode": "read_write",
+            "require_human_approval": True,
+        }
+    )
+
+    config = validate_config(data)
+
+    validated = config.policies[0]
+    assert validated.allow_all_writable_forms is True
+    assert validated.writable_forms == ()
+    assert validated.allow_all_creatable_fields is True
+    assert validated.creatable_fields_by_form == {}
+    assert validated.allow_all_updatable_fields is True
+    assert validated.updatable_fields_by_form == {}
+
+
+def test_all_writable_forms_can_use_exact_fields_for_fixed_form_scope() -> (
+    None
+):
+    data = valid_config_data()
+    policy = data["policies"][0]
+    policy.update(
+        {
+            "allow_all_writable_forms": True,
+            "creatable_fields_by_form": {"Example:ComputerSystem": ["Name"]},
+            "updatable_fields_by_form": {"Example:ComputerSystem": ["Status"]},
+            "access_mode": "read_write",
+            "require_human_approval": True,
+        }
+    )
+
+    config = validate_config(data)
+
+    assert config.policies[0].allow_all_writable_forms is True
+
+
+def test_write_allow_all_modes_cannot_mix_with_corresponding_lists() -> None:
+    data = valid_config_data()
+    policy = data["policies"][0]
+    policy.update(
+        {
+            "allow_all_writable_forms": True,
+            "writable_forms": ["Example:ComputerSystem"],
+            "allow_all_creatable_fields": True,
+            "allow_all_updatable_fields": True,
+            "access_mode": "read_write",
+            "require_human_approval": True,
+        }
+    )
+
+    with pytest.raises(
+        ConfigValidationError,
+        match="writable_forms must be empty",
+    ):
+        validate_config(data)
+
+    data = valid_config_data()
+    policy = data["policies"][0]
+    policy.update(
+        {
+            "writable_forms": ["Example:ComputerSystem"],
+            "allow_all_creatable_fields": True,
+            "creatable_fields_by_form": {"Example:ComputerSystem": ["Name"]},
+            "allow_all_updatable_fields": True,
+            "access_mode": "read_write",
+            "require_human_approval": True,
+        }
+    )
+
+    with pytest.raises(
+        ConfigValidationError,
+        match="creatable_fields_by_form must be empty",
+    ):
+        validate_config(data)
+
+
+def test_dynamic_all_form_writes_require_dynamic_field_scopes() -> None:
+    data = valid_config_data()
+    policy = data["policies"][0]
+    policy.update(
+        {
+            "allow_all_forms": True,
+            "allowed_forms": [],
+            "allow_all_writable_forms": True,
+            "access_mode": "read_write",
+            "require_human_approval": True,
+        }
+    )
+
+    with pytest.raises(
+        ConfigValidationError,
+        match="cannot enumerate a dynamic all-form scope",
     ):
         validate_config(data)
 
