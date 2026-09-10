@@ -58,10 +58,15 @@ allowed because it produces one named column. The guard also rejects multiple
 statements, comments, DML, `SELECT INTO`, row locks, and placeholders. SQL
 functions use a finite allowlist of common deterministic functions; unknown,
 volatile, locking, notification, filesystem, and custom functions are
-rejected. PostgreSQL custom `OPERATOR(schema.operator)` expressions are also
-rejected because they can invoke user-defined behavior without a function
-node. Objects are checked against policy before a plan is stored, and the Java
-bridge repeats a SELECT-only validation.
+rejected. Function calls must use an exact, unquoted, unqualified name from the
+allowlist; PostgreSQL `STRING_AGG` is included. Structural
+expressions represented internally as function nodes by SQLGlot, including
+`AND`, `OR`, `CASE`, and built-in `CAST`, are validated as syntax rather than
+callable functions. Casts that name a user-defined target type,
+schema-qualified function calls, and PostgreSQL custom
+`OPERATOR(schema.operator)` expressions are rejected because they can invoke
+user-defined code. Objects are checked against policy before a plan is stored,
+and the Java bridge repeats a SELECT-only validation.
 
 Managed installations share one SQL-read rate-limit budget across their local
 MCP processes through the private plan database. Stateless development

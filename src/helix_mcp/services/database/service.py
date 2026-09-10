@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
 import sqlglot
-from sqlglot import exp
-from sqlglot.errors import ParseError
+from sqlglot import TokenType, exp
+from sqlglot.dialects.postgres import Postgres
+from sqlglot.errors import ParseError, TokenError
+from sqlglot.parsers.postgres import PostgresParser
 
 from helix_mcp.clients.arapi import ArapiSqlResult
 from helix_mcp.config import BackendKind, Environment, TargetKey
@@ -59,12 +61,56 @@ _ALLOWED_FUNCTIONS = frozenset(
         "min",
         "nullif",
         "round",
+        "string_agg",
         "substring",
         "sum",
         "trim",
         "upper",
     }
 )
+_ALLOWED_FUNCTION_CALLS = _ALLOWED_FUNCTIONS | {"cast"}
+_ALLOWED_PARENTHESIZED_SYNTAX = frozenset({"all", "any", "some"})
+
+
+class _ValidationPostgresParser(PostgresParser):
+    """PostgreSQL parser retaining every parenthesized callable spelling."""
+
+    def _parse_function_call(
+        self,
+        functions: dict[str, Callable[..., Any]] | None = None,
+        anonymous: bool = False,
+        optional_parens: bool = True,
+        any_token: bool = False,
+    ) -> exp.Expr | None:
+        token = self._curr
+        after_dot = self._prev.token_type is TokenType.DOT
+        parenthesized = self._next.token_type is TokenType.L_PAREN
+        function_candidate = parenthesized and (
+            (any_token and token.token_type not in self.RESERVED_TOKENS)
+            or (not any_token and token.token_type in self.FUNC_TOKENS)
+        )
+        if function_candidate and (
+            after_dot
+            or token.token_type is TokenType.IDENTIFIER
+            or token.text.casefold()
+            not in (_ALLOWED_FUNCTION_CALLS | _ALLOWED_PARENTHESIZED_SYNTAX)
+        ):
+            raise DatabaseQueryInvalidError(
+                "SQL contains a function outside the read-only allowlist"
+            )
+        return super()._parse_function_call(
+            functions=functions,
+            anonymous=anonymous,
+            optional_parens=optional_parens,
+            any_token=any_token,
+        )
+
+
+class _ValidationPostgres(Postgres):
+    """PostgreSQL dialect retaining original names for allowlist checks."""
+
+    PRESERVE_ORIGINAL_NAMES = True
+    Parser = _ValidationPostgresParser
 
 
 class ArapiSqlClient(Protocol):
@@ -256,8 +302,8 @@ def _validate_read_query(
             "SQL comments, dollar quoting, and semicolons are not allowed"
         )
     try:
-        statements = sqlglot.parse(sql, read="postgres")
-    except ParseError:
+        statements = sqlglot.parse(sql, read=_ValidationPostgres)
+    except (ParseError, TokenError):
         raise DatabaseQueryInvalidError("SQL syntax is invalid") from None
     if (
         len(statements) != 1
@@ -290,11 +336,9 @@ def _validate_read_query(
     if statement.find(exp.Operator) is not None:
         raise DatabaseQueryInvalidError("SQL custom operators are not allowed")
     for function in statement.find_all(exp.Func):
-        function_name = (
-            function.name
-            if isinstance(function, exp.Anonymous)
-            else function.sql_name()
-        )
+        function_name = _sql_function_name(function)
+        if function_name is None:
+            continue
         if function_name.casefold() not in _ALLOWED_FUNCTIONS:
             raise DatabaseQueryInvalidError(
                 "SQL contains a function outside the read-only allowlist"
@@ -326,6 +370,36 @@ def _validate_read_query(
             "SQL query references an object outside the allowlist"
         )
     return columns
+
+
+def _sql_function_name(function: exp.Func) -> str | None:
+    """Return a callable SQL function name, excluding structural AST nodes."""
+    original_name = function.meta.get("name")
+    if isinstance(original_name, str):
+        return original_name
+    if type(function) in {exp.And, exp.Case, exp.Or}:
+        return None
+    if (
+        type(function) is exp.If
+        and type(function.parent) is exp.Case
+        and function.arg_key == "ifs"
+    ):
+        return None
+    if type(function) is exp.Cast:
+        target = function.args.get("to")
+        if isinstance(target, exp.DataType) and not any(
+            isinstance(node, exp.DataType)
+            and node.this is exp.DataType.Type.USERDEFINED
+            for node in target.walk()
+        ):
+            return None
+    if type(function) is exp.GroupConcat:
+        # Non-STRING_AGG spellings are rejected before AST normalization.
+        return "string_agg"
+    if isinstance(function, exp.Anonymous):
+        # Every allowlisted call has an exact spelling check and a typed node.
+        return function.sql_name()
+    return function.sql_name()
 
 
 def _output_columns(statement: exp.Query) -> tuple[str, ...]:
