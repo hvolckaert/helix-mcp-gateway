@@ -76,19 +76,22 @@ own enable switch and shows its object scope only while reviewed SQL reads are
 enabled. The form card's status badge exposes the effective write state without
 requiring the user to infer it from disabled controls.
 
-Selecting an `Allow every ...` option hides its redundant allowlist or mapping
-editor. Clearing the option reveals the editor again with its unsaved selection
-still intact. Once the broad mode is saved, the corresponding explicit
+Selecting a general `Allow every ...` option hides its redundant allowlist or
+mapping editor. Clearing it reveals the editor again with its unsaved
+selection still intact. Once a broad mode is saved, the corresponding explicit
 allowlist is normalized to empty as required by the configuration contract.
 
 The writable-form `Allow every form` option remains inside the general form
 boundary: it means every form already in scope, not a bypass of that boundary.
-Create and update field broad modes are independent and admit every field that
-does not match the sensitive-field protections. When the general and writable
-form scopes are both dynamic, both write-field broad modes must be enabled;
-there is no finite form list against which to build complete field mappings.
-New forms or fields can enter a broad scope automatically, so these modes are
-opt-in and are highlighted during save review.
+Because its effective form set may change, enabling it automatically enables
+and locks the global create and update options for every non-sensitive field.
+
+With explicit writable forms, those global field options disappear. Each form
+card instead lets the administrator choose every non-sensitive field or an
+exact field list, independently for create and update. Selecting the per-form
+broad option hides that form's redundant field picker. Sensitive-field
+protections apply in every mode. New forms or fields can enter a broad scope
+automatically, so broad modes are highlighted during save review.
 
 Inactive controls retain their loaded values unless the configuration contract
 requires them to be empty. Enabling controlled writes always enables and locks

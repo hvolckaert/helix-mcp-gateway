@@ -19,8 +19,10 @@ policies:
     allow_all_writable_forms: false
     writable_forms: []
     allow_all_creatable_fields: false
+    allow_all_creatable_fields_for_forms: []
     creatable_fields_by_form: {}
     allow_all_updatable_fields: false
+    allow_all_updatable_fields_for_forms: []
     updatable_fields_by_form: {}
     allow_all_sql_objects: false
     allow_form_reads: true

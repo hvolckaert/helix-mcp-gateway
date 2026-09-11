@@ -201,11 +201,13 @@ class TargetPolicyConfig(FrozenModel):
     allow_all_writable_forms: bool = False
     writable_forms: tuple[NonEmptyString, ...] = ()
     allow_all_creatable_fields: bool = False
+    allow_all_creatable_fields_for_forms: tuple[NonEmptyString, ...] = ()
     creatable_fields_by_form: dict[
         NonEmptyString,
         tuple[NonEmptyString, ...],
     ] = Field(default_factory=dict)
     allow_all_updatable_fields: bool = False
+    allow_all_updatable_fields_for_forms: tuple[NonEmptyString, ...] = ()
     updatable_fields_by_form: dict[
         NonEmptyString,
         tuple[NonEmptyString, ...],
@@ -282,11 +284,15 @@ class TargetPolicyConfig(FrozenModel):
                 "creatable_fields_by_form",
                 self.creatable_fields_by_form,
                 self.allow_all_creatable_fields,
+                "allow_all_creatable_fields_for_forms",
+                self.allow_all_creatable_fields_for_forms,
             ),
             (
                 "updatable_fields_by_form",
                 self.updatable_fields_by_form,
                 self.allow_all_updatable_fields,
+                "allow_all_updatable_fields_for_forms",
+                self.allow_all_updatable_fields_for_forms,
             ),
         )
         effective_writable_forms = (
@@ -294,22 +300,58 @@ class TargetPolicyConfig(FrozenModel):
             if self.allow_all_writable_forms and not self.allow_all_forms
             else self.writable_forms
         )
-        for label, mapping, allow_all_fields in write_mappings:
+        for (
+            label,
+            mapping,
+            allow_all_fields,
+            per_form_label,
+            per_form_allow_all,
+        ) in write_mappings:
             if allow_all_fields and mapping:
                 raise ValueError(
                     f"{label} must be empty when its allow-all mode is enabled"
                 )
-            if writes_enabled and not allow_all_fields:
-                if self.allow_all_writable_forms and self.allow_all_forms:
+            if allow_all_fields and per_form_allow_all:
+                raise ValueError(
+                    f"{per_form_label} must be empty when the global "
+                    "allow-all mode is enabled"
+                )
+            if writes_enabled and self.allow_all_writable_forms:
+                if not allow_all_fields:
                     raise ValueError(
-                        f"{label} cannot enumerate a dynamic all-form scope; "
-                        "enable its allow-all mode"
+                        "allow_all_writable_forms requires both global "
+                        "non-sensitive write-field scopes"
                     )
-                if set(mapping) != set(effective_writable_forms):
+            elif writes_enabled:
+                if allow_all_fields:
                     raise ValueError(
-                        f"{label} must define every writable form"
+                        "global non-sensitive write-field scopes require "
+                        "allow_all_writable_forms"
                     )
-            if not writes_enabled and (mapping or allow_all_fields):
+                per_form_set = set(per_form_allow_all)
+                if len(per_form_set) != len(per_form_allow_all):
+                    raise ValueError(f"{per_form_label} must be unique")
+                unknown_allow_all_forms = per_form_set - set(
+                    effective_writable_forms
+                )
+                if unknown_allow_all_forms:
+                    raise ValueError(
+                        f"{per_form_label} must contain only writable forms"
+                    )
+                if per_form_set & set(mapping):
+                    raise ValueError(
+                        f"{label} must omit forms listed in {per_form_label}"
+                    )
+                if set(mapping) | per_form_set != set(
+                    effective_writable_forms
+                ):
+                    raise ValueError(
+                        f"{label} and {per_form_label} must define every "
+                        "writable form"
+                    )
+            if not writes_enabled and (
+                mapping or allow_all_fields or per_form_allow_all
+            ):
                 raise ValueError(f"{label} requires access_mode read_write")
         if not writes_enabled and (
             self.writable_forms or self.allow_all_writable_forms
@@ -367,7 +409,13 @@ class TargetPolicyConfig(FrozenModel):
                 raise ValueError(
                     f"allowed fields for form {form!r} contain sensitive fields"
                 )
-        for label, mapping, _allow_all_fields in write_mappings:
+        for (
+            label,
+            mapping,
+            _allow_all_fields,
+            _per_form_label,
+            _per_form,
+        ) in write_mappings:
             for form, fields in mapping.items():
                 folded_fields = [field.casefold() for field in fields]
                 if not fields:

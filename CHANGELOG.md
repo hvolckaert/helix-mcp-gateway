@@ -5,6 +5,15 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.9.0 - 2026-09-11
+
+- Make all non-sensitive create and update fields mandatory when every
+  in-scope form is writable, and support independent per-form broad field
+  scopes when writable forms are selected explicitly.
+- Present the effective write-field dependency directly in the dashboard by
+  locking global scopes for all-form writes and moving broad field selection
+  into each explicit form card.
+
 ## 0.8.0 - 2026-09-10
 
 - Add opt-in broad write scopes for every in-scope form and every
