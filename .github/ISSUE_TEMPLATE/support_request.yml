@@ -1,0 +1,77 @@
+name: Support request
+description: Ask for installation or usage help with sanitized information.
+title: "[Support]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Public support cannot accept .env or YAML content, credentials, private
+        paths, endpoints, private form or field names, SQL, record values, raw
+        bridge output, or unredacted screenshots. Use stable error codes and
+        fictional examples. Security concerns belong in the private Security
+        channel.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Public-data confirmation
+      options:
+        - label: I removed all private Helix and organization-specific information.
+          required: true
+        - label: This request does not disclose a suspected vulnerability.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Gateway version
+      placeholder: vX.Y.Z or a commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation type
+      options:
+        - Managed wheel installation
+        - Development checkout
+        - Standalone client integration
+        - OpenClaw-managed integration
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where are you blocked?
+      options:
+        - Prerequisites
+        - Setup or bridge compilation
+        - Non-live preflight
+        - Live connectivity check
+        - MCP client registration
+        - Dashboard configuration
+        - Tool policy or permission
+        - Managed update
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Intended outcome
+      description: Explain what you are trying to achieve using fictional examples.
+    validations:
+      required: true
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What you tried
+      description: Summarize safe steps without pasting commands containing private paths or values.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized status
+      description: Provide check names, ready/not-ready state, and stable error codes only.
+    validations:
+      required: false

@@ -4,6 +4,8 @@
 [![Release](https://github.com/hvolckaert/helix-mcp-gateway/actions/workflows/release.yml/badge.svg)](https://github.com/hvolckaert/helix-mcp-gateway/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+[Español](docs/README.es.md)
+
 **Policy-controlled MCP access to BMC Helix through the AR API.**
 
 Helix MCP Gateway is an independent local MCP server that enables authorized
@@ -34,17 +36,14 @@ exposed.
 
 ## Architecture
 
-```text
-MCP client
-    |
-    v
-Python MCP gateway
-    |  policy, limits, approval, audit
-    v
-Local Java bridge
-    |
-    v
-BMC AR API -> authorized BMC Helix environment
+```mermaid
+flowchart LR
+    C[MCP client] --> G[Python MCP gateway<br/>targeting, policy, limits, approval]
+    G --> P[(Encrypted temporary plans)]
+    G --> O[(Sanitized audit and metrics)]
+    G -->|authenticated loopback| J[Local Java bridge]
+    J --> K[BMC Helix Client Gateway]
+    K --> H[Authorized BMC Helix environment]
 ```
 
 The Python process communicates with a managed Java bridge over loopback. A
@@ -56,17 +55,31 @@ bridge uses the official AR API libraries already installed on the user's
 machine. Those proprietary libraries are never copied into this repository,
 the wheel, or a GitHub release.
 
+## Why AR API instead of REST only?
+
+The gateway deliberately uses the official BMC AR System Java API as its
+integration boundary. This allows it to reuse an authorized local Developer
+Studio installation, Client Gateway routing, and the permissions of the
+selected Helix account for form metadata, bounded reads, controlled writes,
+and administrator-only SQL through AR API.
+
+This is not a claim that REST is unsuitable. It is an architectural choice for
+teams that already operate the AR API runtime and need those capabilities
+behind one policy and approval layer. The gateway never connects directly to
+the database, and the user-supplied proprietary BMC libraries remain local.
+
 ## Capabilities
 
-The server exposes 19 MCP tools covering:
+The server exposes 19 MCP tools:
 
-- target discovery and health;
-- form and field discovery;
-- bounded form queries and direct entry reads;
-- database metadata discovery through AR API;
-- two-step read-only SQL planning and execution;
-- two-step entry creation and update;
-- plan inspection and cancellation.
+| Area | Tools | External effect |
+| --- | --- | --- |
+| Targets and health | `list_targets`, `health_check` | Local catalog and bounded connectivity probes |
+| Form reads | `list_forms`, `list_form_fields`, `query_form`, `get_entry` | Policy-filtered metadata and bounded records |
+| Database metadata | `list_database_objects`, `list_database_columns`, `describe_database_object` | Administrator-only catalog reads through AR API |
+| Read-only SQL | `plan_sql_query`, `get_sql_query_plan`, `execute_sql_query`, `cancel_sql_query_plan` | Reviewable, bounded, single-use SQL execution |
+| Controlled writes | `plan_create_entry`, `apply_create_entry`, `plan_update_entry`, `apply_update_entry` | Human-approved single-entry creates and updates |
+| Write-plan lifecycle | `get_write_plan`, `cancel_write_plan` | Inspection or cancellation of temporary plans |
 
 See the complete [MCP tool catalog](docs/mcp-tools.md).
 
@@ -146,6 +159,26 @@ by setup with the client.
 The complete verified workflow is in
 [Installation](docs/installation.md).
 
+### MCP client configuration
+
+Setup returns the absolute stable launcher for the installation. A generic
+client entry looks like this:
+
+```json
+{
+  "mcpServers": {
+    "helix": {
+      "command": "/path/to/per-user/data/helix-mcp/bin/helix-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+Use the exact launcher returned by setup; native Windows uses its returned
+`.cmd` path. The stable launcher keeps client configuration unchanged across
+managed updates.
+
 For development from a checkout:
 
 ```text
@@ -158,7 +191,7 @@ sh arapi-bridge/test.sh
 Automated tests use fictional in-memory data and do not require access to BMC
 Helix. Live tests are opt-in and must use an explicitly authorized target.
 
-## Use cases
+## Demonstrations
 
 - [CMDB data-quality analysis](docs/use-cases/cmdb-data-quality.md): discover
   an authorized synthetic model, review a bounded read-only SQL plan, and
@@ -166,6 +199,40 @@ Helix. Live tests are opt-in and must use an explicitly authorized target.
 - [Controlled form update](docs/use-cases/controlled-form-update.md): stage one
   synthetic DEV update, require approval in a later turn, verify the result,
   and demonstrate a form-level PROD policy boundary.
+
+Short sanitized video versions are planned. The written cases contain the
+reproducible prompts, approval boundaries, results, and limitations today.
+
+## Limitations
+
+- Live operation requires user-supplied BMC AR API libraries, Client Gateway
+  connectivity, and authorized credentials.
+- The complete installation has been validated on Ubuntu under WSL2. Native
+  Windows is documented but not yet fully validated; macOS is not validated.
+- Database metadata and SQL require an AR System administrator account.
+- Generic stdio clients must reconnect after configuration changes. Managed
+  OpenClaw installations are reloaded automatically by the dashboard.
+- Deletion, attachments, bulk writes, direct database access, and autonomous
+  remediation are intentionally outside the exposed tool surface.
+- The current release is intended for controlled evaluation, not unattended
+  production automation.
+
+See the [compatibility matrix](docs/compatibility.md) and the detailed
+[installation limitations](docs/installation.md) before adopting the gateway.
+
+## Project status
+
+The project is under active development. The current release line is suitable
+for controlled evaluation by qualified BMC Helix professionals. Test the exact
+policy against a non-production environment before enabling any write scope.
+
+## Roadmap
+
+- complete and document a full native Windows installation validation;
+- expand public evidence for additional MCP clients and supported platforms;
+- publish sanitized recordings of the two reproducible use cases;
+- incorporate external feedback while preserving the explicit policy,
+  approval, and audit boundaries.
 
 ## Documentation
 
@@ -182,12 +249,18 @@ Helix. Live tests are opt-in and must use an explicitly authorized target.
 - [SQL through AR API](docs/sql.md)
 - [Development and testing](docs/development.md)
 
-## Project status
+## Contact and support
 
-The project is under active development. The current release line is suitable
-for controlled evaluation by qualified BMC Helix professionals, not for
-unattended production automation. Review the documented limitations and test
-the exact policy against a non-production environment first.
+- Use [GitHub Issues](https://github.com/hvolckaert/helix-mcp-gateway/issues)
+  for sanitized bug reports, feature proposals, and support requests.
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a significant
+  change.
+- Report vulnerabilities only through the private process in
+  [SECURITY.md](SECURITY.md).
+- Maintainer: [Hugo Volckaert](https://github.com/hvolckaert).
+
+Never include credentials, private endpoints, organization names, private form
+or field names, SQL, record values, or raw diagnostics in a public issue.
 
 ## License and trademarks
 
