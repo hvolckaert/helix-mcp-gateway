@@ -33,6 +33,11 @@ release lifecycle of Helix MCP Gateway. Start with the project
 - [`credentials.md`](credentials.md): secret providers and credential lifecycle;
 - [`observability.md`](observability.md): logs, audit, metrics, and public errors.
 
+## Use cases
+
+- [`use-cases/cmdb-data-quality.md`](use-cases/cmdb-data-quality.md):
+  synthetic CMDB quality analysis using bounded, human-approved read-only SQL.
+
 ## Development and release
 
 - [`development.md`](development.md): local development, validation, and CI;
