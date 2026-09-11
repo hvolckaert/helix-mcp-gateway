@@ -121,7 +121,7 @@ def test_production_policy_can_enable_controlled_writes() -> None:
     assert config.policies[0].require_human_approval is True
 
 
-def test_writes_require_an_exact_field_allowlist() -> None:
+def test_writes_require_an_exact_or_per_form_field_scope() -> None:
     data = valid_config_data()
     data["policies"][0].update(
         {
@@ -133,7 +133,11 @@ def test_writes_require_an_exact_field_allowlist() -> None:
 
     with pytest.raises(
         ConfigValidationError,
-        match="creatable_fields_by_form must define every writable form",
+        match=(
+            "creatable_fields_by_form and "
+            "allow_all_creatable_fields_for_forms must define every "
+            "writable form"
+        ),
     ):
         validate_config(data)
 
@@ -164,7 +168,7 @@ def test_writes_allow_explicit_dynamic_non_sensitive_scopes() -> None:
     assert validated.updatable_fields_by_form == {}
 
 
-def test_all_writable_forms_can_use_exact_fields_for_fixed_form_scope() -> (
+def test_all_writable_forms_require_global_non_sensitive_field_scopes() -> (
     None
 ):
     data = valid_config_data()
@@ -179,9 +183,55 @@ def test_all_writable_forms_can_use_exact_fields_for_fixed_form_scope() -> (
         }
     )
 
+    with pytest.raises(
+        ConfigValidationError,
+        match=(
+            "allow_all_writable_forms requires both global non-sensitive "
+            "write-field scopes"
+        ),
+    ):
+        validate_config(data)
+
+
+def test_explicit_writable_forms_support_mixed_per_form_field_scopes() -> None:
+    data = valid_config_data()
+    policy = data["policies"][0]
+    policy.update(
+        {
+            "allowed_forms": [
+                "Example:ComputerSystem",
+                "Example:OperatingSystem",
+            ],
+            "writable_forms": [
+                "Example:ComputerSystem",
+                "Example:OperatingSystem",
+            ],
+            "allow_all_creatable_fields_for_forms": ["Example:ComputerSystem"],
+            "creatable_fields_by_form": {"Example:OperatingSystem": ["Name"]},
+            "allow_all_updatable_fields_for_forms": [
+                "Example:OperatingSystem"
+            ],
+            "updatable_fields_by_form": {"Example:ComputerSystem": ["Status"]},
+            "access_mode": "read_write",
+        }
+    )
+
     config = validate_config(data)
 
-    assert config.policies[0].allow_all_writable_forms is True
+    validated = config.policies[0]
+    assert validated.allow_all_creatable_fields is False
+    assert validated.allow_all_creatable_fields_for_forms == (
+        "Example:ComputerSystem",
+    )
+    assert validated.creatable_fields_by_form == {
+        "Example:OperatingSystem": ("Name",)
+    }
+    assert validated.allow_all_updatable_fields_for_forms == (
+        "Example:OperatingSystem",
+    )
+    assert validated.updatable_fields_by_form == {
+        "Example:ComputerSystem": ("Status",)
+    }
 
 
 def test_write_allow_all_modes_cannot_mix_with_corresponding_lists() -> None:
@@ -239,7 +289,10 @@ def test_dynamic_all_form_writes_require_dynamic_field_scopes() -> None:
 
     with pytest.raises(
         ConfigValidationError,
-        match="cannot enumerate a dynamic all-form scope",
+        match=(
+            "allow_all_writable_forms requires both global non-sensitive "
+            "write-field scopes"
+        ),
     ):
         validate_config(data)
 
@@ -296,7 +349,54 @@ def test_read_write_access_requires_both_operation_allowlists() -> None:
 
     with pytest.raises(
         ConfigValidationError,
-        match="updatable_fields_by_form must define every writable form",
+        match=(
+            "updatable_fields_by_form and "
+            "allow_all_updatable_fields_for_forms must define every "
+            "writable form"
+        ),
+    ):
+        validate_config(data)
+
+
+def test_per_form_allow_all_scope_must_be_writable_and_disjoint() -> None:
+    data = valid_config_data()
+    policy = data["policies"][0]
+    policy.update(
+        {
+            "writable_forms": ["Example:ComputerSystem"],
+            "allow_all_creatable_fields_for_forms": ["Example:OtherForm"],
+            "updatable_fields_by_form": {"Example:ComputerSystem": ["Status"]},
+            "access_mode": "read_write",
+        }
+    )
+
+    with pytest.raises(
+        ConfigValidationError,
+        match=(
+            "allow_all_creatable_fields_for_forms must contain only "
+            "writable forms"
+        ),
+    ):
+        validate_config(data)
+
+    data = valid_config_data()
+    policy = data["policies"][0]
+    policy.update(
+        {
+            "writable_forms": ["Example:ComputerSystem"],
+            "allow_all_creatable_fields_for_forms": ["Example:ComputerSystem"],
+            "creatable_fields_by_form": {"Example:ComputerSystem": ["Name"]},
+            "updatable_fields_by_form": {"Example:ComputerSystem": ["Status"]},
+            "access_mode": "read_write",
+        }
+    )
+
+    with pytest.raises(
+        ConfigValidationError,
+        match=(
+            "creatable_fields_by_form must omit forms listed in "
+            "allow_all_creatable_fields_for_forms"
+        ),
     ):
         validate_config(data)
 

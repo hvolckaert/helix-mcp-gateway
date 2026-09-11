@@ -332,7 +332,12 @@ def _enforce_write(
         if operation is WriteOperation.CREATE
         else policy.allow_all_updatable_fields
     )
-    if allow_all_fields:
+    allow_all_fields_for_forms = (
+        policy.allow_all_creatable_fields_for_forms
+        if operation is WriteOperation.CREATE
+        else policy.allow_all_updatable_fields_for_forms
+    )
+    if allow_all_fields or form in allow_all_fields_for_forms:
         return dict(values)
     allowed = {
         field.casefold(): field for field in fields_by_form.get(form, ())

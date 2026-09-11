@@ -17,15 +17,22 @@ Each policy declares one access mode:
 - `read_write`: forms and fields must pass either their exact allowlist or an
   explicitly enabled broad write scope.
 
-Create and update allowlists are independent. A field permitted during create
-does not become updateable automatically. `allow_all_writable_forms` permits
-every form already included in the general form scope, while
-`allow_all_creatable_fields` and `allow_all_updatable_fields` independently
-permit all non-sensitive requested fields. Sensitive-field protections are
-enforced at runtime before either exact or broad field authorization. New
-forms and fields can enter a broad scope automatically, so all broad write
-options default to false. Every environment, including PROD, starts read-only
-but may explicitly enable the same controlled write workflow.
+Create and update scopes are independent. A field permitted during create does
+not become updateable automatically. With explicit `writable_forms`, each form
+must use either an exact field mapping or appear in the corresponding
+`allow_all_creatable_fields_for_forms` or
+`allow_all_updatable_fields_for_forms` list. Those lists permit every
+non-sensitive requested field only for the named operation and form.
+
+`allow_all_writable_forms` permits every form already included in the general
+form scope. That dynamic form mode requires both global
+`allow_all_creatable_fields` and `allow_all_updatable_fields`; exact or
+per-form field scopes cannot completely describe forms that may appear later.
+Sensitive-field protections are enforced at runtime before either exact or
+broad field authorization. New forms and fields can enter a broad scope
+automatically, so broad write options default to false. Every environment,
+including PROD, starts read-only but may explicitly enable the same controlled
+write workflow.
 
 Deletion, attachments, and bulk writes are not exposed.
 

@@ -153,6 +153,8 @@
     .field-card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
     .field-card-head strong { overflow-wrap: anywhere; font-size: .85rem; }
     .field-count { color: var(--muted); font-size: .76rem; white-space: nowrap; }
+    .field-card-scope { padding: 9px 10px; border-radius: 9px; background: #eef6f8; }
+    .field-exact-scope { display: grid; gap: 10px; }
     .env-list { display: block; }
     .env-card { border: 1px solid var(--line); border-radius: 15px; overflow: hidden; background: #fbfdfe; }
     .env-card.panel { padding: 0; border-radius: 18px; }
@@ -567,12 +569,17 @@
       </div>`;
     }
 
-    function fieldMappingPicker(environment, field, label, value, sourceField) {
-      return `<div class="field wide field-mapping" data-field-mapping="${field}" data-source-field="${sourceField}" data-policy-env="${environment}">
+    function fieldMappingPicker(environment, field, label, value, sourceField, allowAllFormsField = null, allowAllForms = []) {
+      const allowAllAttribute = allowAllFormsField ? ` data-allow-all-forms-field="${allowAllFormsField}"` : '';
+      const allowAllInput = allowAllFormsField
+        ? `<textarea hidden id="${allowAllFormsField}-${environment}" data-policy-input="${allowAllFormsField}" data-policy-env="${environment}">${escapeHtml((allowAllForms || []).join('\n'))}</textarea>`
+        : '';
+      return `<div class="field wide field-mapping" data-field-mapping="${field}" data-source-field="${sourceField}" data-policy-env="${environment}"${allowAllAttribute}>
         <span class="field-label">${label}</span>
-        <p class="hint">Choose fields separately for each selected form.</p>
+        <p class="hint">${allowAllFormsField ? 'Choose exact fields or allow every non-sensitive field separately for each selected form.' : 'Choose fields separately for each selected form.'}</p>
         <div class="field-card-list" data-field-card-list></div>
         <textarea hidden id="${field}-${environment}" data-policy-input="${field}" data-policy-env="${environment}">${escapeHtml(JSON.stringify(value || {}, null, 2))}</textarea>
+        ${allowAllInput}
       </div>`;
     }
 
@@ -790,6 +797,7 @@
       const environment = mappingElement.dataset.policyEnv;
       const field = mappingElement.dataset.fieldMapping;
       const sourceField = mappingElement.dataset.sourceField;
+      const allowAllFormsField = mappingElement.dataset.allowAllFormsField || null;
       const list = mappingElement.querySelector('[data-field-card-list]');
       let mapping;
       try {
@@ -806,21 +814,30 @@
       ) {
         sourceForms = policyLines(environment, 'allowed_forms');
       }
-      const forms = uniqueNames([...sourceForms, ...Object.keys(mapping)]);
+      const forms = uniqueNames([
+        ...sourceForms,
+        ...(allowAllFormsField ? [] : Object.keys(mapping))
+      ]);
       if (!forms.length) {
         list.innerHTML = '<div class="catalog-empty">Select at least one form to choose its fields.</div>';
         return;
       }
-      list.innerHTML = forms.map(formName => `<div class="field-card" data-field-card data-field-form="${escapeHtml(formName)}">
+      list.innerHTML = forms.map(formName => {
+        const allowAllFields = allowAllFormsField && policyLines(environment, allowAllFormsField).some(value => sameName(value, formName));
+        return `<div class="field-card" data-field-card data-field-form="${escapeHtml(formName)}">
         <div class="field-card-head"><strong>${escapeHtml(formName)}</strong><span class="field-count" data-field-count></span></div>
-        <div class="picker-toolbar">
-          <input type="search" data-field-search data-catalog-transient placeholder="Search available fields" aria-label="Search fields in ${escapeHtml(formName)}" autocomplete="off">
-          <button class="picker-refresh" type="button" data-field-refresh>Refresh</button>
+        ${allowAllFormsField ? `<div class="field-card-scope"><label class="toggle"><input type="checkbox" data-field-allow-all ${checked(allowAllFields)}><span>Allow every non-sensitive field</span></label></div>` : ''}
+        <div class="field-exact-scope" data-field-exact-scope ${allowAllFields ? 'hidden' : ''}>
+          <div class="picker-toolbar">
+            <input type="search" data-field-search data-catalog-transient placeholder="Search available fields" aria-label="Search fields in ${escapeHtml(formName)}" autocomplete="off">
+            <button class="picker-refresh" type="button" data-field-refresh>Refresh</button>
+          </div>
+          <div class="catalog-selected" data-field-selected></div>
+          <div class="catalog-results" data-field-results><span class="catalog-empty">Loading fields…</span></div>
+          <div class="catalog-status" data-field-status>Uses field metadata only.</div>
         </div>
-        <div class="catalog-selected" data-field-selected></div>
-        <div class="catalog-results" data-field-results><span class="catalog-empty">Loading fields…</span></div>
-        <div class="catalog-status" data-field-status>Uses field metadata only.</div>
-      </div>`).join('');
+      </div>`;
+      }).join('');
       list.querySelectorAll('[data-field-card]').forEach(card => {
         initializeFieldCard(card, mappingElement);
         if (loadCatalog && !mappingElement.classList.contains('disabled')) loadFieldCatalog(card, mappingElement);
@@ -830,6 +847,8 @@
 
     function initializeFieldCard(card, mappingElement) {
       const search = card.querySelector('[data-field-search]');
+      const allowAll = card.querySelector('[data-field-allow-all]');
+      if (allowAll) allowAll.addEventListener('change', () => updateFieldAllowAll(mappingElement, card, allowAll.checked));
       search.addEventListener('input', () => {
         clearTimeout(catalogSearchTimers.get(search));
         catalogSearchTimers.set(search, setTimeout(() => loadFieldCatalog(card, mappingElement), 250));
@@ -845,6 +864,26 @@
       } catch (_) {
         return [];
       }
+    }
+
+    function updateFieldAllowAll(mappingElement, card, selected) {
+      const environment = mappingElement.dataset.policyEnv;
+      const allowAllFormsField = mappingElement.dataset.allowAllFormsField;
+      const formName = card.dataset.fieldForm;
+      let forms = policyLines(environment, allowAllFormsField);
+      forms = forms.filter(value => !sameName(value, formName));
+      if (selected) forms.push(formName);
+      setPolicyLines(environment, allowAllFormsField, forms);
+      if (selected) {
+        const mapping = parseMappingForEditor(environment, mappingElement.dataset.fieldMapping);
+        Object.keys(mapping).forEach(key => {
+          if (sameName(key, formName)) delete mapping[key];
+        });
+        const input = policyElement(environment, 'input', mappingElement.dataset.fieldMapping);
+        input.value = JSON.stringify(mapping, null, 2);
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+      }
+      renderFieldMapping(mappingElement, activeTab === environment && !selected);
     }
 
     function fieldIsProtected(environment, fieldName) {
@@ -871,7 +910,12 @@
       const formName = card.dataset.fieldForm;
       const selected = selectedFields(mappingElement, formName);
       const disabled = mappingElement.classList.contains('disabled');
-      card.querySelector('[data-field-count]').textContent = `${selected.length} selected`;
+      const allowAll = card.querySelector('[data-field-allow-all]');
+      const allowAllFields = Boolean(allowAll?.checked);
+      card.querySelector('[data-field-count]').textContent = allowAllFields ? 'All non-sensitive' : `${selected.length} selected`;
+      if (allowAll) allowAll.disabled = disabled;
+      const exactScope = card.querySelector('[data-field-exact-scope]');
+      if (exactScope) exactScope.hidden = allowAllFields;
       const selectedContainer = card.querySelector('[data-field-selected]');
       selectedContainer.innerHTML = selected.length
         ? selected.map(name => `<span class="catalog-chip"><span>${escapeHtml(name)}</span><button class="chip-remove" type="button" data-remove-field="${escapeHtml(name)}" aria-label="Remove ${escapeHtml(name)} from ${escapeHtml(formName)}" ${disabled ? 'disabled' : ''}>×</button></span>`).join('')
@@ -1102,13 +1146,19 @@
                       </div>
                       <div class="write-scope-group">
                         <h5>Creatable fields by form</h5>
-                        <div class="toggle-grid">${policyToggle(environment, 'allow_all_creatable_fields', 'Allow every non-sensitive field', policy.allow_all_creatable_fields)}</div>
-                        <div class="policy-fields">${fieldMappingPicker(environment, 'creatable_fields_by_form', 'Selected creatable fields', policy.creatable_fields_by_form, 'writable_forms')}</div>
+                        <div data-global-write-field-scope="creatable">
+                          <div class="toggle-grid">${policyToggle(environment, 'allow_all_creatable_fields', 'Allow every non-sensitive field', policy.allow_all_creatable_fields)}</div>
+                          <p class="hint">Required while every in-scope form is writable.</p>
+                        </div>
+                        <div class="policy-fields">${fieldMappingPicker(environment, 'creatable_fields_by_form', 'Creatable fields', policy.creatable_fields_by_form, 'writable_forms', 'allow_all_creatable_fields_for_forms', policy.allow_all_creatable_fields_for_forms)}</div>
                       </div>
                       <div class="write-scope-group">
                         <h5>Updatable fields by form</h5>
-                        <div class="toggle-grid">${policyToggle(environment, 'allow_all_updatable_fields', 'Allow every non-sensitive field', policy.allow_all_updatable_fields)}</div>
-                        <div class="policy-fields">${fieldMappingPicker(environment, 'updatable_fields_by_form', 'Selected updatable fields', policy.updatable_fields_by_form, 'writable_forms')}</div>
+                        <div data-global-write-field-scope="updatable">
+                          <div class="toggle-grid">${policyToggle(environment, 'allow_all_updatable_fields', 'Allow every non-sensitive field', policy.allow_all_updatable_fields)}</div>
+                          <p class="hint">Required while every in-scope form is writable.</p>
+                        </div>
+                        <div class="policy-fields">${fieldMappingPicker(environment, 'updatable_fields_by_form', 'Updatable fields', policy.updatable_fields_by_form, 'writable_forms', 'allow_all_updatable_fields_for_forms', policy.allow_all_updatable_fields_for_forms)}</div>
                       </div>
                     </section>
                   </div>
@@ -1219,8 +1269,8 @@
       const allForms = toggle('allow_all_forms').checked;
       const allFields = toggle('allow_all_fields').checked;
       const allWritableForms = toggle('allow_all_writable_forms').checked;
-      const allCreatableFields = toggle('allow_all_creatable_fields').checked;
-      const allUpdatableFields = toggle('allow_all_updatable_fields').checked;
+      toggle('allow_all_creatable_fields').checked = writeEnabled && allWritableForms;
+      toggle('allow_all_updatable_fields').checked = writeEnabled && allWritableForms;
 
       setStatus('[data-form-write-status]', writeEnabled, 'Writes enabled', 'Writes disabled', 'warn');
       card.querySelector('[data-form-write-permissions]').hidden = !writeEnabled;
@@ -1259,23 +1309,25 @@
       card.querySelector('[data-sql-object-picker]').closest('.field').hidden = allSqlObjects;
 
       disableToggle('allow_all_writable_forms', !writeEnabled);
-      disableToggle('allow_all_creatable_fields', !writeEnabled);
-      disableToggle('allow_all_updatable_fields', !writeEnabled);
+      disableToggle('allow_all_creatable_fields', true);
+      disableToggle('allow_all_updatable_fields', true);
+      card.querySelector('[data-global-write-field-scope="creatable"]').hidden = !allWritableForms;
+      card.querySelector('[data-global-write-field-scope="updatable"]').hidden = !allWritableForms;
 
       disableInput('writable_forms', !writeEnabled || allWritableForms);
       const writablePicker = card.querySelector('[data-form-picker="writable_forms"]');
       applyCompositeDisabled(writablePicker, !writeEnabled || allWritableForms);
       writablePicker.closest('.field').hidden = allWritableForms;
 
-      disableInput('creatable_fields_by_form', !writeEnabled || allCreatableFields);
+      disableInput('creatable_fields_by_form', !writeEnabled || allWritableForms);
       const creatableMapping = fieldMappingElement(environment, 'creatable_fields_by_form');
-      applyCompositeDisabled(creatableMapping, !writeEnabled || allCreatableFields);
-      creatableMapping.hidden = allCreatableFields;
+      applyCompositeDisabled(creatableMapping, !writeEnabled || allWritableForms);
+      creatableMapping.hidden = allWritableForms;
 
-      disableInput('updatable_fields_by_form', !writeEnabled || allUpdatableFields);
+      disableInput('updatable_fields_by_form', !writeEnabled || allWritableForms);
       const updatableMapping = fieldMappingElement(environment, 'updatable_fields_by_form');
-      applyCompositeDisabled(updatableMapping, !writeEnabled || allUpdatableFields);
-      updatableMapping.hidden = allUpdatableFields;
+      applyCompositeDisabled(updatableMapping, !writeEnabled || allWritableForms);
+      updatableMapping.hidden = allWritableForms;
 
       const writeSourceRevision = JSON.stringify({
         allWritableForms,
@@ -1556,19 +1608,20 @@
       const allowAllForms = toggle('allow_all_forms').checked;
       const allowAllFields = toggle('allow_all_fields').checked;
       const allowAllWritableForms = writeEnabled && toggle('allow_all_writable_forms').checked;
-      const allowAllCreatableFields = writeEnabled && toggle('allow_all_creatable_fields').checked;
-      const allowAllUpdatableFields = writeEnabled && toggle('allow_all_updatable_fields').checked;
+      const writableForms = writeEnabled && !allowAllWritableForms ? policyLines(environment, 'writable_forms') : [];
+      const allowAllCreatableFields = writeEnabled && allowAllWritableForms;
+      const allowAllUpdatableFields = writeEnabled && allowAllWritableForms;
+      const scopedForms = values => uniqueNames(values.filter(value => writableForms.some(form => sameName(form, value))));
+      const allowAllCreatableFieldsForForms = allowAllWritableForms ? [] : scopedForms(policyLines(environment, 'allow_all_creatable_fields_for_forms'));
+      const allowAllUpdatableFieldsForForms = allowAllWritableForms ? [] : scopedForms(policyLines(environment, 'allow_all_updatable_fields_for_forms'));
+      const scopedMapping = (field, allowAllForForms) => Object.fromEntries(
+        Object.entries(policyMap(environment, field)).filter(([form]) => (
+          writableForms.some(value => sameName(value, form))
+          && !allowAllForForms.some(value => sameName(value, form))
+        ))
+      );
       const allowSql = toggle('allow_sql').checked;
       const allowAllSqlObjects = allowSql && toggle('allow_all_sql_objects').checked;
-      if (
-        allowAllForms
-        && allowAllWritableForms
-        && (!allowAllCreatableFields || !allowAllUpdatableFields)
-      ) {
-        throw new Error(
-          `${environmentLabel(environment)}: allowing every in-scope form to be writable requires both non-sensitive write-field options when the general form scope also allows every form.`
-        );
-      }
       return {
         name: environment,
         allow_all_forms: allowAllForms,
@@ -1576,11 +1629,13 @@
         allowed_forms: allowAllForms ? [] : policyLines(environment, 'allowed_forms'),
         allowed_fields_by_form: allowAllFields ? {} : policyMap(environment, 'allowed_fields_by_form'),
         allow_all_writable_forms: allowAllWritableForms,
-        writable_forms: writeEnabled && !allowAllWritableForms ? policyLines(environment, 'writable_forms') : [],
+        writable_forms: writableForms,
         allow_all_creatable_fields: allowAllCreatableFields,
-        creatable_fields_by_form: writeEnabled && !allowAllCreatableFields ? policyMap(environment, 'creatable_fields_by_form') : {},
+        allow_all_creatable_fields_for_forms: allowAllCreatableFieldsForForms,
+        creatable_fields_by_form: writeEnabled && !allowAllWritableForms ? scopedMapping('creatable_fields_by_form', allowAllCreatableFieldsForForms) : {},
         allow_all_updatable_fields: allowAllUpdatableFields,
-        updatable_fields_by_form: writeEnabled && !allowAllUpdatableFields ? policyMap(environment, 'updatable_fields_by_form') : {},
+        allow_all_updatable_fields_for_forms: allowAllUpdatableFieldsForForms,
+        updatable_fields_by_form: writeEnabled && !allowAllWritableForms ? scopedMapping('updatable_fields_by_form', allowAllUpdatableFieldsForForms) : {},
         allow_all_sql_objects: allowAllSqlObjects,
         allowed_sql_objects: allowAllSqlObjects ? [] : policyLines(environment, 'allowed_sql_objects'),
         allow_form_reads: true,
@@ -1652,6 +1707,8 @@
         if (policy.allow_all_writable_forms) scopes.push('forms');
         if (policy.allow_all_creatable_fields) scopes.push('create fields');
         if (policy.allow_all_updatable_fields) scopes.push('update fields');
+        if (policy.allow_all_creatable_fields_for_forms.length) scopes.push(`create fields on ${policy.allow_all_creatable_fields_for_forms.length} form${policy.allow_all_creatable_fields_for_forms.length === 1 ? '' : 's'}`);
+        if (policy.allow_all_updatable_fields_for_forms.length) scopes.push(`update fields on ${policy.allow_all_updatable_fields_for_forms.length} form${policy.allow_all_updatable_fields_for_forms.length === 1 ? '' : 's'}`);
         return scopes.length ? [`${environmentLabel(environment)} (${scopes.join(', ')})`] : [];
       });
       const list = document.getElementById('review-list');

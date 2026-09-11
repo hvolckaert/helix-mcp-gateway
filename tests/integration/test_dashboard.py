@@ -443,6 +443,51 @@ def test_dashboard_can_enable_broad_non_sensitive_write_scopes(
 
 
 @pytest.mark.integration
+def test_dashboard_can_mix_exact_and_per_form_broad_write_fields(
+    tmp_path: Path,
+) -> None:
+    service = DashboardService(
+        _installation(tmp_path),
+        process_environment={},
+    )
+    request = _configuration(service.state())
+    policies = request["policies"]
+    assert isinstance(policies, dict)
+    dev = policies["dev"]
+    assert isinstance(dev, dict)
+    dev.update(
+        {
+            "allow_all_fields": True,
+            "allowed_forms": ["Example:One", "Example:Two"],
+            "allowed_fields_by_form": {},
+            "writable_forms": ["Example:One", "Example:Two"],
+            "allow_all_creatable_fields_for_forms": ["Example:One"],
+            "creatable_fields_by_form": {"Example:Two": ["Description"]},
+            "allow_all_updatable_fields_for_forms": ["Example:Two"],
+            "updatable_fields_by_form": {"Example:One": ["Status"]},
+            "access_mode": "read_write",
+        }
+    )
+
+    state = service.configure(request)
+
+    config = load_single_instance_config(tmp_path / "helix.yaml")
+    policy = next(item for item in config.policies if item.name == "dev")
+    assert policy.allow_all_creatable_fields_for_forms == ("Example:One",)
+    assert policy.creatable_fields_by_form == {"Example:Two": ("Description",)}
+    assert policy.allow_all_updatable_fields_for_forms == ("Example:Two",)
+    assert policy.updatable_fields_by_form == {"Example:One": ("Status",)}
+    configured = state["configuration"]["policies"]["dev"]
+    assert isinstance(configured, dict)
+    assert configured["allow_all_creatable_fields_for_forms"] == [
+        "Example:One"
+    ]
+    assert configured["allow_all_updatable_fields_for_forms"] == [
+        "Example:Two"
+    ]
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "field",
     [
@@ -1045,11 +1090,15 @@ def test_http_surface_is_local_english_and_csrf_protected(
         assert "/api/update/install" in html
         assert "Search available forms" in html
         assert "Selected writable forms" in html
-        assert "Selected creatable fields" in html
-        assert "Selected updatable fields" in html
+        assert "Creatable fields" in html
+        assert "Updatable fields" in html
         assert "allow_all_writable_forms" in html
         assert "allow_all_creatable_fields" in html
         assert "allow_all_updatable_fields" in html
+        assert "allow_all_creatable_fields_for_forms" in html
+        assert "allow_all_updatable_fields_for_forms" in html
+        assert "data-field-allow-all" in html
+        assert "All non-sensitive" in html
         assert "Broad write scopes" in html
         assert "/api/catalog/forms" in html
         assert "/api/catalog/fields" in html

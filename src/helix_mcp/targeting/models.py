@@ -82,12 +82,14 @@ def describe_target(
         form_create=writes_enabled
         and (
             policy.allow_all_creatable_fields
+            or bool(policy.allow_all_creatable_fields_for_forms)
             or bool(policy.creatable_fields_by_form)
         )
         and form_backend_available,
         form_update=writes_enabled
         and (
             policy.allow_all_updatable_fields
+            or bool(policy.allow_all_updatable_fields_for_forms)
             or bool(policy.updatable_fields_by_form)
         )
         and form_backend_available,

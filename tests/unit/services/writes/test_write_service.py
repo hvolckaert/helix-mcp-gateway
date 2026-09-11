@@ -132,6 +132,8 @@ def build_service(
     allow_all_writable_forms: bool = False,
     allow_all_creatable_fields: bool = False,
     allow_all_updatable_fields: bool = False,
+    allow_all_creatable_fields_for_forms: tuple[str, ...] = (),
+    allow_all_updatable_fields_for_forms: tuple[str, ...] = (),
     sensitive_fields: tuple[str, ...] = (),
     sensitive_field_markers: tuple[str, ...] = (),
 ) -> tuple[FormWriteService, FakeProvider]:
@@ -143,12 +145,24 @@ def build_service(
         allow_all_writable_forms=allow_all_writable_forms,
         writable_forms=() if allow_all_writable_forms else (FORM,),
         allow_all_creatable_fields=allow_all_creatable_fields,
+        allow_all_creatable_fields_for_forms=(
+            allow_all_creatable_fields_for_forms
+        ),
         creatable_fields_by_form=(
-            {} if allow_all_creatable_fields else {FORM: creatable_fields}
+            {}
+            if allow_all_creatable_fields
+            or FORM in allow_all_creatable_fields_for_forms
+            else {FORM: creatable_fields}
         ),
         allow_all_updatable_fields=allow_all_updatable_fields,
+        allow_all_updatable_fields_for_forms=(
+            allow_all_updatable_fields_for_forms
+        ),
         updatable_fields_by_form=(
-            {} if allow_all_updatable_fields else {FORM: updatable_fields}
+            {}
+            if allow_all_updatable_fields
+            or FORM in allow_all_updatable_fields_for_forms
+            else {FORM: updatable_fields}
         ),
         access_mode="read_write",
         require_human_approval=True,
@@ -242,6 +256,63 @@ def test_broad_update_scope_accepts_dynamic_forms_and_fields() -> None:
     assert plan.form == "Example:FutureForm"
     assert plan.proposed_values == {"Future Field": "new"}
     assert client.calls[0][0] == "prepare_update"
+
+
+def test_per_form_broad_create_scope_accepts_only_non_sensitive_fields() -> (
+    None
+):
+    client = FakeClient([])
+    service, _ = build_service(
+        client,
+        allow_all_creatable_fields_for_forms=(FORM,),
+        sensitive_field_markers=("token",),
+    )
+
+    plan = run(
+        service.plan_create_for_form(
+            environment="dev",
+            form=FORM,
+            request=WriteValuesRequest(
+                values={"Future Field": "value"},
+                reason="Approved per-form broad scope test",
+            ),
+        )
+    )
+
+    assert plan.proposed_values == {"Future Field": "value"}
+    with pytest.raises(FormWriteFieldNotAllowedError, match="sensitive"):
+        run(
+            service.plan_create_for_form(
+                environment="dev",
+                form=FORM,
+                request=WriteValuesRequest(
+                    values={"API Token": "do-not-write"},
+                    reason="Approved sensitive-field rejection test",
+                ),
+            )
+        )
+
+
+def test_per_form_broad_scopes_remain_operation_specific() -> None:
+    client = FakeClient([])
+    service, _ = build_service(
+        client,
+        updatable_fields=("Status",),
+        allow_all_creatable_fields_for_forms=(FORM,),
+    )
+
+    with pytest.raises(FormWriteFieldNotAllowedError):
+        run(
+            service.plan_update(
+                environment="dev",
+                form=FORM,
+                request=UpdateValuesRequest(
+                    entry_id=ENTRY_ID,
+                    values={"Future Field": "value"},
+                    reason="Approved operation-specific scope test",
+                ),
+            )
+        )
 
 
 def test_broad_write_scope_still_enforces_general_form_boundary() -> None:

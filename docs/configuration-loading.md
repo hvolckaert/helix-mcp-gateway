@@ -19,29 +19,36 @@ access_mode: read_write
 allow_all_writable_forms: false
 writable_forms:
   - Example:Form
+  - Example:OtherForm
 allow_all_creatable_fields: false
+allow_all_creatable_fields_for_forms:
+  - Example:Form
 creatable_fields_by_form:
-  Example:Form:
-    - Description
+  Example:OtherForm:
+    - Name
 allow_all_updatable_fields: false
+allow_all_updatable_fields_for_forms:
+  - Example:OtherForm
 updatable_fields_by_form:
   Example:Form:
     - Status
 ```
 
 `read_write` requires human approval, a non-empty write reason, and a writable
-scope. Explicit lists remain the default. `allow_all_writable_forms` expands
-the write form boundary to every form in the general form scope;
-`allow_all_creatable_fields` and `allow_all_updatable_fields` independently
-allow every non-sensitive field for their operation. An allow-all flag and its
-corresponding explicit list cannot be enabled together. If both the general
-form scope and writable form scope are dynamic, both write-field allow-all
-flags are required because a complete per-form mapping cannot be enumerated.
+scope. Explicit forms remain the default. For each explicit writable form,
+create and update independently require either an exact mapping or membership
+in their `allow_all_*_fields_for_forms` list. A form cannot use both modes for
+the same operation.
 
-`read_only` requires every write allowlist and write allow-all flag to be
-empty or false. DEV, QA, and PROD use independent policies; all start
-read-only, and any of them may enable the same controlled write workflow
-explicitly.
+`allow_all_writable_forms` expands the write form boundary to every form in the
+general form scope. It requires both global `allow_all_creatable_fields` and
+`allow_all_updatable_fields`, because exact or per-form mappings cannot cover a
+dynamic set of forms. The global flags are invalid with explicit
+`writable_forms`. Every broad mode continues to reject sensitive fields.
+
+`read_only` requires every write allowlist and write allow-all scope to be empty
+or false. DEV, QA, and PROD use independent policies; all start read-only, and
+any of them may enable the same controlled write workflow explicitly.
 
 Legacy keys such as `create_mode`, `update_mode`, and
 `writable_fields_by_form` are rejected.
