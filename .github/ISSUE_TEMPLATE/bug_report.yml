@@ -1,0 +1,80 @@
+name: Bug report
+description: Report a reproducible problem without sharing private Helix data.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve Helix MCP Gateway. This is a public issue.
+        Do not include credentials, private endpoints, organization names,
+        private form or field names, SQL, record values, raw logs, or
+        unredacted screenshots.
+        Report security vulnerabilities through the repository Security tab.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Public-data confirmation
+      options:
+        - label: I removed all private Helix, organization, credential, and topology information.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Gateway version
+      description: Provide the release version or commit without private paths.
+      placeholder: vX.Y.Z or a commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Ubuntu or WSL2
+        - Native Windows
+        - macOS
+        - Other or not yet classified
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      description: Name and version only; do not include its private configuration.
+      placeholder: OpenClaw, Codex, Claude, or another client
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the observed behavior using fictional examples.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Safe reproduction steps
+      description: Use only fictional forms, fields, values, and paths.
+      placeholder: |
+        1. Start from...
+        2. Run...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Include stable error codes and check names only. Do not paste raw logs or configuration.
+      placeholder: Error code, failed check name, and whether preflight was ready
+    validations:
+      required: false

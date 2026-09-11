@@ -11,6 +11,10 @@ Semantic Versioning.
 - Add a controlled form-update case study demonstrating separate planning and
   approval turns, single-use execution, verification, sanitized audit, and a
   form-level PROD policy boundary.
+- Restructure the public repository for an international audience with a
+  clearer architecture and capability overview, an AR API design rationale,
+  realistic limitations and roadmap, a Spanish overview, and safe issue and
+  support templates.
 
 ## 0.9.0 - 2026-09-11
 

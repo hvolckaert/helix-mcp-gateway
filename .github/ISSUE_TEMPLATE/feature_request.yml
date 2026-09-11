@@ -1,0 +1,58 @@
+name: Feature request
+description: Propose a bounded capability or usability improvement.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the general problem and desired outcome. Do not include customer
+        data, private schema names, endpoints, credentials, or internal material.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Public-data confirmation
+      options:
+        - label: This proposal contains only public or fictional information.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user need independently of one private installation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain the desired workflow and user-visible result.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and permission boundaries
+      description: Explain how targeting, least privilege, approval, and audit should behave.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Primary area
+      options:
+        - Installation or updates
+        - Dashboard or configuration
+        - Form reads
+        - SQL reads
+        - Controlled writes
+        - Security or observability
+        - Documentation or examples
+        - Other
+    validations:
+      required: true

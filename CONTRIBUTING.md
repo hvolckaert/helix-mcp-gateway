@@ -5,10 +5,11 @@ open an issue first and describe the problem or use case.
 
 ## Repository rules
 
-- Do not include credentials, private endpoints, organization names, client
+- Do not include credentials, private endpoints, organization or customer
   names, or data obtained from a Helix environment.
 - Do not add BMC JARs or other proprietary binaries.
-- Keep PROD strictly read-only.
+- Keep PROD writes restricted to explicitly configured forms and fields, with
+  mandatory planning, review, and human approval.
 - Preserve planning, human review, and explicit approval for every Helix
   write.
 - Do not add tool arguments or business values to logs, audit records, or
