@@ -37,6 +37,9 @@ release lifecycle of Helix MCP Gateway. Start with the project
 
 - [`use-cases/cmdb-data-quality.md`](use-cases/cmdb-data-quality.md):
   synthetic CMDB quality analysis using bounded, human-approved read-only SQL.
+- [`use-cases/controlled-form-update.md`](use-cases/controlled-form-update.md):
+  one synthetic DEV update with separate review, approval, verification, and
+  form-level PROD rejection.
 
 ## Development and release
 

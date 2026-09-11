@@ -8,6 +8,9 @@ Semantic Versioning.
 - Add a public-safe CMDB data-quality case study demonstrating metadata
   discovery, bounded human-approved SQL, and explainable findings over an
   authorized synthetic dataset.
+- Add a controlled form-update case study demonstrating separate planning and
+  approval turns, single-use execution, verification, sanitized audit, and a
+  form-level PROD policy boundary.
 
 ## 0.9.0 - 2026-09-11
 
