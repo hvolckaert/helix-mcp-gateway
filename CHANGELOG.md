@@ -5,6 +5,10 @@ Semantic Versioning.
 
 ## Unreleased
 
+- Add a public-safe CMDB data-quality case study demonstrating metadata
+  discovery, bounded human-approved SQL, and explainable findings over an
+  authorized synthetic dataset.
+
 ## 0.9.0 - 2026-09-11
 
 - Make all non-sensitive create and update fields mandatory when every

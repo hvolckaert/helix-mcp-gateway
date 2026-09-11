@@ -158,6 +158,12 @@ sh arapi-bridge/test.sh
 Automated tests use fictional in-memory data and do not require access to BMC
 Helix. Live tests are opt-in and must use an explicitly authorized target.
 
+## Use cases
+
+- [CMDB data-quality analysis](docs/use-cases/cmdb-data-quality.md): discover
+  an authorized synthetic model, review a bounded read-only SQL plan, and
+  explain relationship and freshness findings without modifying Helix.
+
 ## Documentation
 
 - [Documentation index](docs/README.md)
