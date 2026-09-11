@@ -163,6 +163,9 @@ Helix. Live tests are opt-in and must use an explicitly authorized target.
 - [CMDB data-quality analysis](docs/use-cases/cmdb-data-quality.md): discover
   an authorized synthetic model, review a bounded read-only SQL plan, and
   explain relationship and freshness findings without modifying Helix.
+- [Controlled form update](docs/use-cases/controlled-form-update.md): stage one
+  synthetic DEV update, require approval in a later turn, verify the result,
+  and demonstrate a form-level PROD policy boundary.
 
 ## Documentation
 
