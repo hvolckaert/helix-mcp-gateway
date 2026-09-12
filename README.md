@@ -202,6 +202,9 @@ Helix. Live tests are opt-in and must use an explicitly authorized target.
 - [Controlled form update](docs/use-cases/controlled-form-update.md): stage one
   synthetic DEV update, require approval in a later turn, verify the result,
   and demonstrate a form-level PROD policy boundary.
+- [Integrated Knowledge/Gateway controlled update](https://github.com/hvolckaert/helix-mcp-knowledge/blob/main/docs/integrated-controlled-update-case.md):
+  establish the official and project authority chain before planning, approving,
+  applying, and verifying the same synthetic DEV change.
 
 Short sanitized video versions are planned. The written cases contain the
 reproducible prompts, approval boundaries, results, and limitations today.

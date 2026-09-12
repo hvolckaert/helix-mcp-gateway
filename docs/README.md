@@ -44,6 +44,8 @@ An overview in Spanish is available in
 - [`use-cases/controlled-form-update.md`](use-cases/controlled-form-update.md):
   one synthetic DEV update with separate review, approval, verification, and
   form-level PROD rejection.
+- [Integrated Knowledge/Gateway controlled update](https://github.com/hvolckaert/helix-mcp-knowledge/blob/main/docs/integrated-controlled-update-case.md):
+  official and project evidence joined to the governed synthetic DEV write.
 
 ## Development and release
 
