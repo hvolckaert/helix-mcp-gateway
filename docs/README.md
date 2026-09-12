@@ -39,6 +39,8 @@ An overview in Spanish is available in
 
 - [`use-cases/cmdb-data-quality.md`](use-cases/cmdb-data-quality.md):
   synthetic CMDB quality analysis using bounded, human-approved read-only SQL.
+- [Integrated Knowledge/Gateway CMDB case](https://github.com/hvolckaert/helix-mcp-knowledge/blob/main/docs/integrated-cmdb-data-quality-case.md):
+  versioned documentary evidence combined with the bounded synthetic DEV read.
 - [`use-cases/controlled-form-update.md`](use-cases/controlled-form-update.md):
   one synthetic DEV update with separate review, approval, verification, and
   form-level PROD rejection.
