@@ -5,6 +5,11 @@ without receiving unrestricted write access. The operation is discovered,
 planned, reviewed, approved, executed once, verified, and audited through
 Helix MCP Gateway.
 
+The
+[integrated Knowledge/Gateway case](https://github.com/hvolckaert/helix-mcp-knowledge/blob/main/docs/integrated-controlled-update-case.md)
+adds versioned official evidence, an authorised private-project runbook, and a
+common evidence-and-action ledger to this controlled write workflow.
+
 The workflow was validated with a fictional record in a DEV environment. This
 public description omits the installation's physical form name, entry
 identifier, private schema extensions, credentials, endpoints, and raw tool

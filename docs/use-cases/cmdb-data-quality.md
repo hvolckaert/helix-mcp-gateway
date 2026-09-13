@@ -4,6 +4,11 @@ This case study shows how an AI agent can investigate CMDB quality through
 Helix MCP Gateway without receiving unrestricted database access or permission
 to modify configuration items.
 
+The
+[integrated Knowledge/Gateway case](https://github.com/hvolckaert/helix-mcp-knowledge/blob/main/docs/integrated-cmdb-data-quality-case.md)
+adds versioned BMC documentary evidence, an explicit two-turn approval boundary,
+and a common evidence ledger to this live-data workflow.
+
 The workflow was validated against an authorized synthetic dataset in a DEV
 environment. The public description contains no customer records, private
 schema extensions, credentials, endpoints, entry identifiers, or raw query
