@@ -4,8 +4,6 @@
 [![Release](https://github.com/hvolckaert/helix-mcp-gateway/actions/workflows/release.yml/badge.svg)](https://github.com/hvolckaert/helix-mcp-gateway/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[Español](docs/README.es.md)
-
 **Policy-controlled MCP access to BMC Helix through the AR API.**
 
 Helix MCP Gateway is an independent local MCP server that enables authorized
@@ -109,7 +107,9 @@ a real environment.
 - an authorized BMC Developer Studio / AR System Java API installation;
 - a configured local BMC Helix Client Gateway connection to the permitted
   Helix environments;
-- authorized per-environment credentials.
+- authorized per-environment credentials;
+- for managed updates, a recent GitHub CLI with
+  `gh attestation verify` available. GitHub authentication is not required.
 
 The exact supported setup and its current limitations are documented in
 [Installation](docs/installation.md).

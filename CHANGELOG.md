@@ -5,6 +5,12 @@ Semantic Versioning.
 
 ## Unreleased
 
+- Make the unauthenticated GitHub CLI requirement for managed updates visible
+  in the main requirements and installation instructions, and document direct
+  anonymous release downloads.
+- Keep tracked project documentation in English by removing the translated
+  overview and its links.
+
 ## 0.9.1 - 2026-09-13
 
 - Allow managed updates from the public GitHub repository without a GitHub

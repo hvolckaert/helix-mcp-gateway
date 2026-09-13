@@ -18,7 +18,15 @@ GitHub release -> checksum -> virtual environment -> wheel install
 - an authorized and configured BMC Helix Client Gateway connection;
 - an authorized BMC Developer Studio / AR System Java API installation;
 - credentials authorized for the selected environments;
-- access to GitHub and the configured Python package index while installing.
+- access to GitHub and the configured Python package index while installing;
+- for managed updates, a recent GitHub CLI providing
+  `gh attestation verify`.
+
+The GitHub CLI does not need an authenticated session. The updater retrieves
+public release metadata, wheels, and attestation bundles anonymously over
+HTTPS. It invokes `gh` locally only to verify the downloaded wheel's signed
+provenance. Confirm that capability with `gh attestation verify --help`; do
+not run `gh auth login` solely for Gateway updates.
 
 Setup invokes the compiler through the Java modules, so a separate `javac`
 executable does not need to be on `PATH`. Confirm the main prerequisites before
@@ -37,13 +45,14 @@ been tested rather than inferred.
 
 Download the wheel and checksum file from the
 [GitHub release](https://github.com/hvolckaert/helix-mcp-gateway/releases) you
-intend to install. With the GitHub CLI:
+intend to install. A public release can be downloaded anonymously with a web
+browser or `curl`; no GitHub account is required. For example:
 
 ```text
-gh release download vX.Y.Z \
-  --repo hvolckaert/helix-mcp-gateway \
-  --pattern "helix_mcp_gateway-*-py3-none-any.whl" \
-  --pattern "SHA256SUMS"
+curl --fail --location --remote-name \
+  https://github.com/hvolckaert/helix-mcp-gateway/releases/download/vX.Y.Z/helix_mcp_gateway-X.Y.Z-py3-none-any.whl
+curl --fail --location --remote-name \
+  https://github.com/hvolckaert/helix-mcp-gateway/releases/download/vX.Y.Z/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
