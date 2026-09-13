@@ -15,7 +15,9 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
+
+import httpx
 
 from helix_mcp.config import (
     RuntimeSettings,
@@ -42,8 +44,115 @@ _VERSION_PATTERN = re.compile(
 )
 _REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_GITHUB_API_ROOT = "https://api.github.com"
+_GITHUB_RELEASE_ROOT = "https://github.com"
+_GITHUB_API_HEADERS = {
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "helix-mcp-gateway",
+}
+_MAX_GITHUB_JSON_BYTES = 16 * 1024 * 1024
+_MAX_RELEASE_WHEEL_BYTES = 256 * 1024 * 1024
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
+
+
+class ReleaseTransport(Protocol):
+    """Unauthenticated transport for public GitHub release resources."""
+
+    def get_json(
+        self,
+        url: str,
+        *,
+        timeout: int,
+        action: str,
+    ) -> object: ...
+
+    def download(
+        self,
+        url: str,
+        destination: Path,
+        *,
+        timeout: int,
+        action: str,
+    ) -> None: ...
+
+
+class PublicGitHubTransport:
+    """Fetch public GitHub resources without reading local credentials."""
+
+    def __init__(
+        self,
+        *,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        self._transport = transport
+
+    def get_json(
+        self,
+        url: str,
+        *,
+        timeout: int,
+        action: str,
+    ) -> object:
+        try:
+            with httpx.Client(
+                headers=_GITHUB_API_HEADERS,
+                follow_redirects=True,
+                timeout=timeout,
+                transport=self._transport,
+            ) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                if len(response.content) > _MAX_GITHUB_JSON_BYTES:
+                    raise UpdateError(f"{action} returned too much data")
+                payload: object = response.json()
+                return payload
+        except UpdateError:
+            raise
+        except (httpx.HTTPError, ValueError):
+            raise UpdateError(f"{action} could not be completed") from None
+
+    def download(
+        self,
+        url: str,
+        destination: Path,
+        *,
+        timeout: int,
+        action: str,
+    ) -> None:
+        try:
+            with (
+                httpx.Client(
+                    headers=_GITHUB_API_HEADERS,
+                    follow_redirects=True,
+                    timeout=timeout,
+                    transport=self._transport,
+                ) as client,
+                client.stream("GET", url) as response,
+            ):
+                response.raise_for_status()
+                content_length = response.headers.get("Content-Length")
+                if (
+                    content_length is not None
+                    and int(content_length) > _MAX_RELEASE_WHEEL_BYTES
+                ):
+                    raise UpdateError(f"{action} returned too much data")
+                written = 0
+                with destination.open("xb") as stream:
+                    for block in response.iter_bytes():
+                        written += len(block)
+                        if written > _MAX_RELEASE_WHEEL_BYTES:
+                            raise UpdateError(
+                                f"{action} returned too much data"
+                            )
+                        stream.write(block)
+        except UpdateError:
+            destination.unlink(missing_ok=True)
+            raise
+        except (httpx.HTTPError, OSError, ValueError):
+            destination.unlink(missing_ok=True)
+            raise UpdateError(f"{action} could not be completed") from None
 
 
 class UpdateError(RuntimeError):
@@ -116,18 +225,17 @@ def check_for_update(
     *,
     current_version: str,
     repository: str = DEFAULT_REPOSITORY,
-    gh_command: str | Path = "gh",
-    runner: CommandRunner = subprocess.run,
+    transport: ReleaseTransport | None = None,
 ) -> ReleaseStatus:
     """Return the newest stable GitHub release visible to this user."""
 
     normalized_current = _normalize_version(current_version)
+    release_transport = transport or PublicGitHubTransport()
     try:
         release = _resolve_release(
-            _resolve_command(gh_command, label="GitHub CLI"),
             repository=repository,
             requested_version=None,
-            runner=runner,
+            transport=release_transport,
         )
     except Exception as exc:
         return ReleaseStatus(
@@ -160,6 +268,7 @@ def update_installation(
     gh_command: str | Path = "gh",
     base_python: str | Path | None = None,
     runner: CommandRunner = subprocess.run,
+    transport: ReleaseTransport | None = None,
     clock: Callable[[], datetime] | None = None,
     post_activation_check: Callable[[ManagedInstallation], None] | None = None,
 ) -> UpdateResult:
@@ -167,6 +276,7 @@ def update_installation(
 
     resolved_dotenv = Path(dotenv_path).expanduser().absolute()
     resolved_workspace = Path(workspace).expanduser().absolute()
+    release_transport = transport or PublicGitHubTransport()
     if not _REPOSITORY_PATTERN.fullmatch(repository):
         raise UpdateError("GitHub repository must use OWNER/REPOSITORY syntax")
     managed = load_managed_installation(resolved_workspace)
@@ -178,10 +288,9 @@ def update_installation(
     current_version = _normalize_version(managed.active_version)
     requested = _normalize_version(target_version)
     release = _resolve_release(
-        _resolve_command(gh_command, label="GitHub CLI"),
         repository=repository,
         requested_version=requested,
-        runner=runner,
+        transport=release_transport,
     )
     if _version_tuple(release.version) <= _version_tuple(current_version):
         raise UpdateError(
@@ -205,6 +314,7 @@ def update_installation(
             repository=repository,
             release=release,
             runner=runner,
+            transport=release_transport,
         )
         selected_python = (
             Path(base_python)
@@ -312,38 +422,28 @@ def update_installation(
 
 
 def _resolve_release(
-    gh_command: Path,
     *,
     repository: str,
     requested_version: str | None,
-    runner: CommandRunner,
+    transport: ReleaseTransport,
 ) -> Release:
-    command = [str(gh_command), "release", "view"]
+    if not _REPOSITORY_PATTERN.fullmatch(repository):
+        raise UpdateError("GitHub repository must use OWNER/REPOSITORY syntax")
+    endpoint = f"{_GITHUB_API_ROOT}/repos/{repository}/releases"
     if requested_version:
-        command.append(f"v{requested_version}")
-    command.extend(
-        [
-            "--repo",
-            repository,
-            "--json",
-            "tagName,isDraft,isPrerelease,assets,url",
-        ]
-    )
-    completed = _run(
-        command,
-        runner=runner,
+        endpoint = f"{endpoint}/tags/v{requested_version}"
+    else:
+        endpoint = f"{endpoint}/latest"
+    payload = transport.get_json(
+        endpoint,
         timeout=60,
         action="GitHub release discovery",
     )
-    try:
-        payload = json.loads(completed.stdout)
-    except json.JSONDecodeError:
-        raise UpdateError("GitHub release metadata is invalid") from None
     if not isinstance(payload, dict):
         raise UpdateError("GitHub release metadata is invalid")
-    if payload.get("isDraft") or payload.get("isPrerelease"):
+    if payload.get("draft") or payload.get("prerelease"):
         raise UpdateError("only stable GitHub releases can be installed")
-    tag = str(payload.get("tagName", ""))
+    tag = str(payload.get("tag_name", ""))
     version = _normalize_version(tag)
     if requested_version and version != requested_version:
         raise UpdateError("GitHub returned an unexpected release")
@@ -369,7 +469,7 @@ def _resolve_release(
         tag=tag,
         wheel_name=wheel_name,
         sha256=sha256,
-        url=str(payload.get("url") or "") or None,
+        url=f"{_GITHUB_RELEASE_ROOT}/{repository}/releases/tag/{tag}",
     )
 
 
@@ -380,6 +480,7 @@ def _download_release(
     repository: str,
     release: Release,
     runner: CommandRunner,
+    transport: ReleaseTransport,
 ) -> Path:
     download_dir = workspace / "downloads" / release.version
     if download_dir.is_symlink():
@@ -396,30 +497,23 @@ def _download_release(
             release_tag=release.tag,
             expected_sha256=release.sha256,
             runner=runner,
+            transport=transport,
         )
         return destination
     with tempfile.TemporaryDirectory(
         prefix=".download-",
         dir=download_dir,
     ) as temporary:
-        _run(
-            [
-                str(gh_command),
-                "release",
-                "download",
-                release.tag,
-                "--repo",
-                repository,
-                "--pattern",
-                release.wheel_name,
-                "--dir",
-                temporary,
-            ],
-            runner=runner,
+        downloaded = Path(temporary) / release.wheel_name
+        transport.download(
+            (
+                f"{_GITHUB_RELEASE_ROOT}/{repository}/releases/download/"
+                f"{release.tag}/{release.wheel_name}"
+            ),
+            downloaded,
             timeout=300,
             action="GitHub release download",
         )
-        downloaded = Path(temporary) / release.wheel_name
         if not downloaded.is_file():
             raise UpdateError("GitHub did not download the expected wheel")
         _verify_release_artifact(
@@ -429,6 +523,7 @@ def _download_release(
             release_tag=release.tag,
             expected_sha256=release.sha256,
             runner=runner,
+            transport=transport,
         )
         os.replace(downloaded, destination)
     return destination
@@ -858,26 +953,62 @@ def _verify_release_artifact(
     release_tag: str,
     expected_sha256: str,
     runner: CommandRunner,
+    transport: ReleaseTransport,
 ) -> None:
     _verify_sha256(path, expected_sha256)
-    _run(
-        [
-            str(gh_command),
-            "attestation",
-            "verify",
-            str(path),
-            "--repo",
-            repository,
-            "--signer-workflow",
-            f"{repository}/.github/workflows/release.yml",
-            "--source-ref",
-            f"refs/tags/{release_tag}",
-            "--deny-self-hosted-runners",
-        ],
-        runner=runner,
-        timeout=120,
-        action="release provenance verification",
+    payload = transport.get_json(
+        (
+            f"{_GITHUB_API_ROOT}/repos/{repository}/attestations/"
+            f"sha256:{expected_sha256}"
+        ),
+        timeout=60,
+        action="release provenance lookup",
     )
+    if not isinstance(payload, dict):
+        raise UpdateError("release provenance metadata is invalid")
+    attestations = payload.get("attestations")
+    if not isinstance(attestations, list):
+        raise UpdateError("release provenance metadata is invalid")
+    bundles = [
+        attestation.get("bundle")
+        for attestation in attestations
+        if isinstance(attestation, dict)
+        and isinstance(attestation.get("bundle"), dict)
+    ]
+    if not bundles:
+        raise UpdateError("release has no verifiable provenance")
+    with tempfile.TemporaryDirectory(
+        prefix=".attestation-",
+        dir=path.parent,
+    ) as temporary:
+        bundle_path = Path(temporary) / "bundles.jsonl"
+        bundle_path.write_text(
+            "".join(
+                f"{json.dumps(bundle, separators=(',', ':'))}\n"
+                for bundle in bundles
+            ),
+            encoding="utf-8",
+        )
+        _run(
+            [
+                str(gh_command),
+                "attestation",
+                "verify",
+                str(path),
+                "--repo",
+                repository,
+                "--bundle",
+                str(bundle_path),
+                "--signer-workflow",
+                f"{repository}/.github/workflows/release.yml",
+                "--source-ref",
+                f"refs/tags/{release_tag}",
+                "--deny-self-hosted-runners",
+            ],
+            runner=runner,
+            timeout=120,
+            action="release provenance verification",
+        )
 
 
 def _write_update_manifest(path: Path, payload: Mapping[str, object]) -> None:

@@ -237,7 +237,10 @@ The dashboard's **Server updates** section follows the same managed model as
 Helix MCP Knowledge:
 
 Managed updates require a recent GitHub CLI with the `gh attestation verify`
-command available.
+command available, but they do not require `gh auth login` for this public
+repository. Release metadata, assets, and attestation bundles are retrieved
+through GitHub's anonymous public endpoints; `gh` verifies the downloaded
+bundle locally.
 
 1. the user explicitly checks for a newer stable GitHub release;
 2. the updater requires the release wheel's GitHub SHA-256 digest and verifies
