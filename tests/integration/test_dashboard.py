@@ -32,7 +32,14 @@ from helix_mcp.dashboard import (
     DashboardProcessLauncher,
     DashboardService,
 )
-from helix_mcp.installation.managed import activate_managed_installation
+from helix_mcp.dashboard_update_worker import (
+    load_update_status,
+    write_update_status,
+)
+from helix_mcp.installation.managed import (
+    ManagedInstallation,
+    activate_managed_installation,
+)
 from helix_mcp.installation.updater import ReleaseStatus
 from helix_mcp.services.database import (
     DatabaseObjectKind,
@@ -54,6 +61,33 @@ def _installation(tmp_path: Path, *, secret: str | None = None) -> Path:
     dotenv_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     dotenv_path.chmod(0o600)
     return dotenv_path
+
+
+def _managed_installation(
+    tmp_path: Path,
+    *,
+    version: str = "0.6.8",
+) -> tuple[Path, Path, ManagedInstallation]:
+    dotenv_path = _installation(tmp_path)
+    workspace = tmp_path / "data"
+    bridge = workspace / "bridge/helix-arapi-bridge.jar"
+    bridge.parent.mkdir(parents=True)
+    bridge.write_bytes(b"bridge")
+    with dotenv_path.open("a", encoding="utf-8") as stream:
+        stream.write(f"HELIX_ARAPI_BRIDGE_JAR_PATH={bridge}\n")
+    server = workspace / f"runtime/{version}/venv/bin/helix-mcp"
+    server.parent.mkdir(parents=True)
+    server.write_text("server", encoding="utf-8")
+    (
+        server.parent / ("python.exe" if os.name == "nt" else "python")
+    ).write_text("python", encoding="utf-8")
+    managed = activate_managed_installation(
+        workspace=workspace,
+        version=version,
+        server_command=server,
+        dotenv_path=dotenv_path,
+    )
+    return dotenv_path, workspace, managed
 
 
 def _configuration(
@@ -141,25 +175,7 @@ def test_managed_update_can_be_checked_and_started(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    dotenv_path = _installation(tmp_path)
-    workspace = tmp_path / "data"
-    bridge = workspace / "bridge/helix-arapi-bridge.jar"
-    bridge.parent.mkdir(parents=True)
-    bridge.write_bytes(b"bridge")
-    with dotenv_path.open("a", encoding="utf-8") as stream:
-        stream.write(f"HELIX_ARAPI_BRIDGE_JAR_PATH={bridge}\n")
-    server = workspace / "runtime/0.6.8/venv/bin/helix-mcp"
-    server.parent.mkdir(parents=True)
-    server.write_text("server", encoding="utf-8")
-    (
-        server.parent / ("python.exe" if os.name == "nt" else "python")
-    ).write_text("python", encoding="utf-8")
-    activate_managed_installation(
-        workspace=workspace,
-        version="0.6.8",
-        server_command=server,
-        dotenv_path=dotenv_path,
-    )
+    dotenv_path, workspace, _managed = _managed_installation(tmp_path)
     monkeypatch.setattr(
         dashboard_module,
         "check_for_update",
@@ -185,6 +201,20 @@ def test_managed_update_can_be_checked_and_started(
         "DashboardUpdateWorkerLauncher",
         FakeWorker,
     )
+    write_update_status(
+        workspace,
+        {
+            "status": "running",
+            "current_version": "0.6.8",
+            "target_version": "0.6.9",
+            "process_id": 99_999,
+        },
+    )
+    monkeypatch.setattr(
+        dashboard_module,
+        "dashboard_update_worker_is_active",
+        lambda _process_id: False,
+    )
     service = DashboardService(dotenv_path, process_environment={})
 
     update = service.check_update()
@@ -203,6 +233,129 @@ def test_managed_update_can_be_checked_and_started(
     assert captured["workspace"] == workspace
     assert captured["dashboard_port"] == 8_766
     assert captured["dashboard_token"] == "local-token"
+    operation = load_update_status(workspace)
+    assert operation is not None
+    assert operation["status"] == "preparing"
+    assert operation["current_version"] == "0.6.8"
+    assert operation["target_version"] == "0.7.0"
+    assert isinstance(operation["requested_at"], str)
+
+
+@pytest.mark.integration
+def test_dashboard_preserves_recent_worker_launch_race(
+    tmp_path: Path,
+) -> None:
+    _dotenv, workspace, managed = _managed_installation(tmp_path)
+    write_update_status(
+        workspace,
+        {
+            "status": "preparing",
+            "current_version": "0.6.8",
+            "target_version": "0.7.0",
+            "requested_at": dashboard_module._utc_timestamp(),
+        },
+    )
+
+    reconciled = DashboardService._reconcile_update_operation(
+        workspace,
+        managed,
+    )
+
+    assert reconciled is not None
+    assert reconciled["status"] == "preparing"
+    assert "error_code" not in reconciled
+
+
+@pytest.mark.integration
+def test_dashboard_marks_dead_or_unrelated_worker_stale(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _dotenv, workspace, managed = _managed_installation(tmp_path)
+    write_update_status(
+        workspace,
+        {
+            "status": "running",
+            "current_version": "0.6.8",
+            "target_version": "0.7.0",
+            "process_id": 1_234,
+        },
+    )
+    monkeypatch.setattr(
+        dashboard_module,
+        "dashboard_update_worker_is_active",
+        lambda _process_id: False,
+    )
+
+    reconciled = DashboardService._reconcile_update_operation(
+        workspace,
+        managed,
+    )
+
+    assert reconciled is not None
+    assert reconciled["status"] == "error"
+    assert reconciled["error_code"] == "DASHBOARD_UPDATE_WORKER_STOPPED"
+    assert reconciled["current_version"] == "0.6.8"
+    assert "process_id" not in reconciled
+    assert load_update_status(workspace) == reconciled
+
+
+@pytest.mark.integration
+def test_dashboard_preserves_verified_active_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _dotenv, workspace, managed = _managed_installation(tmp_path)
+    active = {
+        "status": "running",
+        "current_version": "0.6.8",
+        "target_version": "0.7.0",
+        "process_id": 1_234,
+    }
+    write_update_status(workspace, active)
+    monkeypatch.setattr(
+        dashboard_module,
+        "dashboard_update_worker_is_active",
+        lambda _process_id: True,
+    )
+
+    reconciled = DashboardService._reconcile_update_operation(
+        workspace,
+        managed,
+    )
+
+    assert reconciled == active
+
+
+@pytest.mark.integration
+def test_dashboard_marks_target_active_update_successful(
+    tmp_path: Path,
+) -> None:
+    _dotenv, workspace, managed = _managed_installation(
+        tmp_path,
+        version="0.7.0",
+    )
+    write_update_status(
+        workspace,
+        {
+            "status": "running",
+            "current_version": "0.6.8",
+            "target_version": "0.7.0",
+            "process_id": 1_234,
+        },
+    )
+
+    reconciled = DashboardService._reconcile_update_operation(
+        workspace,
+        managed,
+    )
+
+    assert reconciled is not None
+    assert reconciled["status"] == "success"
+    assert reconciled["current_version"] == "0.7.0"
+    assert "process_id" not in reconciled
+    assert "finished_at" in reconciled
+    assert load_update_status(workspace) == reconciled
 
 
 @pytest.mark.integration

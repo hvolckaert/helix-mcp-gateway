@@ -24,6 +24,15 @@ Helix MCP runtime on the port is rejected safely. The supervisor restarts the
 dashboard after an unexpected failure; an orderly stop is not treated as a
 crash.
 
+When a managed update starts under systemd, the updater runs in its own
+transient per-user service. Restarting the persistent dashboard service can
+therefore replace its runtime without terminating the update worker. The
+persistent service uses normal control-group cleanup, while Windows and hosts
+without a user systemd manager retain the detached-process path. The local
+request token is passed through a private, one-use file and is removed by the
+worker before the dashboard is stopped; it is never placed in the worker
+environment or in a systemd unit property.
+
 For manual operation, `helix-mcp-dashboard --dotenv /path/to/.env` starts the
 dashboard in the foreground. Use `--port` to select a different loopback port
 or `--no-browser` when it must not open a browser automatically. Setup accepts

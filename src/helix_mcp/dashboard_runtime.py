@@ -497,7 +497,7 @@ class DashboardRuntimeManager:
             f"StandardError=append:{_systemd_path(str(self.log_path))}\n"
             "Restart=on-failure\n"
             "RestartSec=5s\n"
-            "KillMode=process\n\n"
+            "KillMode=control-group\n\n"
             "[Install]\n"
             "WantedBy=default.target\n"
         )

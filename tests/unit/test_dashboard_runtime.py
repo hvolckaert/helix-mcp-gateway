@@ -91,7 +91,8 @@ def test_installs_no_admin_systemd_user_service(
     ).read_text(encoding="utf-8")
     assert "Restart=on-failure" in unit
     assert "RestartSec=5s" in unit
-    assert "KillMode=process" in unit
+    assert "KillMode=control-group" in unit
+    assert "KillMode=process" not in unit
     assert "WantedBy=default.target" in unit
     assert "StandardOutput=append:" in unit
     assert "dashboard-supervisor.log" in unit
