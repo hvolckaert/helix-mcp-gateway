@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.9.1 - 2026-09-13
+
 - Allow managed updates from the public GitHub repository without a GitHub
   login by retrieving public release metadata, assets, and attestation bundles
   anonymously while retaining local cryptographic provenance verification.
