@@ -5,6 +5,18 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.9.2 - 2026-09-13
+
+- Isolate Linux and WSL dashboard update workers in independent transient
+  systemd user services, restore control-group cleanup for the persistent
+  dashboard, and retain detached worker launches on Windows and hosts without
+  systemd.
+- Pass the dashboard update token through a private one-use file instead of
+  process arguments or environment, with safe consumption and failure cleanup.
+- Recover interrupted dashboard updates by validating the recorded worker PID,
+  tolerating the immediate launch race, recognizing an activated target
+  version, and allowing retries after stale state.
+
 ## 0.9.1 - 2026-09-13
 
 - Allow managed updates from the public GitHub repository without a GitHub
