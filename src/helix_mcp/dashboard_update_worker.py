@@ -549,7 +549,7 @@ def _write_dashboard_token(directory: Path, token: str) -> Path:
     descriptor = os.open(token_path, flags, 0o600)
     try:
         if os.name != "nt":
-            os.fchmod(descriptor, 0o600)
+            token_path.chmod(0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             descriptor = -1
             stream.write(token)
