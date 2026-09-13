@@ -122,12 +122,15 @@ class PublicGitHubTransport:
         action: str,
     ) -> None:
         try:
-            with httpx.Client(
-                headers=_GITHUB_API_HEADERS,
-                follow_redirects=True,
-                timeout=timeout,
-                transport=self._transport,
-            ) as client, client.stream("GET", url) as response:
+            with (
+                httpx.Client(
+                    headers=_GITHUB_API_HEADERS,
+                    follow_redirects=True,
+                    timeout=timeout,
+                    transport=self._transport,
+                ) as client,
+                client.stream("GET", url) as response,
+            ):
                 response.raise_for_status()
                 content_length = response.headers.get("Content-Length")
                 if (

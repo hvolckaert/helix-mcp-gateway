@@ -96,7 +96,9 @@ class FakeUpdateRunner:
     def __call__(self, command: list[str], **_kwargs: object):
         self.commands.append(command)
         if command[1:2] == ["release"]:
-            raise AssertionError("public releases must not use authenticated gh")
+            raise AssertionError(
+                "public releases must not use authenticated gh"
+            )
         if command[1:3] == ["attestation", "verify"]:
             return subprocess.CompletedProcess(
                 command,
@@ -272,9 +274,7 @@ def test_public_release_check_ignores_github_credentials(
                 "prerelease": False,
                 "assets": [
                     {
-                        "name": (
-                            "helix_mcp_gateway-0.9.0-py3-none-any.whl"
-                        ),
+                        "name": ("helix_mcp_gateway-0.9.0-py3-none-any.whl"),
                         "digest": f"sha256:{'a' * 64}",
                     }
                 ],
@@ -283,15 +283,12 @@ def test_public_release_check_ignores_github_credentials(
 
     status = check_for_update(
         current_version="0.8.0",
-        transport=PublicGitHubTransport(
-            transport=httpx.MockTransport(handle)
-        ),
+        transport=PublicGitHubTransport(transport=httpx.MockTransport(handle)),
     )
 
     assert status.status == "available"
     assert status.release_url == (
-        "https://github.com/hvolckaert/helix-mcp-gateway/"
-        "releases/tag/v0.9.0"
+        "https://github.com/hvolckaert/helix-mcp-gateway/releases/tag/v0.9.0"
     )
 
     def download_handle(request: httpx.Request) -> httpx.Response:
