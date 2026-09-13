@@ -20,6 +20,7 @@ import webbrowser
 from collections.abc import Callable, Coroutine, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import metadata
@@ -67,10 +68,12 @@ from helix_mcp.dashboard_runtime import (
 )
 from helix_mcp.dashboard_update_worker import (
     DashboardUpdateWorkerLauncher,
+    dashboard_update_worker_is_active,
     load_update_status,
     write_update_status,
 )
 from helix_mcp.installation.managed import (
+    ManagedInstallation,
     activate_managed_installation,
     load_managed_installation,
     supports_transactional_updates,
@@ -100,6 +103,7 @@ _METADATA_OPERATION_TIMEOUT_SECONDS = 330
 _METADATA_PAGE_LIMIT = 200
 _MAX_FIELD_CACHE_ENTRIES = 256
 _MAX_SQL_CATALOG_OBJECTS = 100_000
+_UPDATE_LAUNCH_GRACE_SECONDS = 60
 LOGGER = logging.getLogger(__name__)
 
 _DASHBOARD_OBJECT_CATALOG_SQL = """
@@ -1028,16 +1032,21 @@ class DashboardService:
             raise DashboardConfigurationError(
                 "check for an available update before installing"
             )
-        operation = load_update_status(workspace)
-        if operation and operation.get("status") in {"preparing", "running"}:
+        operation = self._reconcile_update_operation(workspace, managed)
+        if operation and operation.get("status") in {
+            "queued",
+            "preparing",
+            "running",
+        }:
             raise DashboardConflictError("a managed update is already running")
         state_dir = self._state_directory(runtime)
         write_update_status(
             workspace,
             {
-                "status": "queued",
+                "status": "preparing",
                 "current_version": managed.active_version,
                 "target_version": release.latest_version,
+                "requested_at": _utc_timestamp(),
             },
         )
         try:
@@ -1096,8 +1105,64 @@ class DashboardService:
             "managed": supported,
             "client": managed.client if managed is not None else None,
             "release": release,
-            "operation": load_update_status(workspace),
+            "operation": self._reconcile_update_operation(
+                workspace,
+                managed,
+            ),
         }
+
+    @staticmethod
+    def _reconcile_update_operation(
+        workspace: Path,
+        managed: ManagedInstallation | None,
+    ) -> dict[str, object] | None:
+        """Recover stale update state after dashboard or worker interruption."""
+
+        operation = load_update_status(workspace)
+        if operation is None or operation.get("status") not in {
+            "queued",
+            "preparing",
+            "running",
+        }:
+            return operation
+        current_version = (
+            managed.active_version if managed is not None else None
+        )
+        if (
+            isinstance(current_version, str)
+            and operation.get("target_version") == current_version
+        ):
+            reconciled = {
+                **operation,
+                "status": "success",
+                "current_version": current_version,
+                "finished_at": _utc_timestamp(),
+            }
+            reconciled.pop("process_id", None)
+            reconciled.pop("requested_at", None)
+            reconciled.pop("error_code", None)
+            write_update_status(workspace, reconciled)
+            return reconciled
+
+        process_id = operation.get("process_id")
+        if isinstance(process_id, int) and not isinstance(process_id, bool):
+            if dashboard_update_worker_is_active(process_id):
+                return operation
+        elif _update_request_is_recent(operation):
+            return operation
+
+        reconciled = {
+            **operation,
+            "status": "error",
+            "finished_at": _utc_timestamp(),
+            "error_code": "DASHBOARD_UPDATE_WORKER_STOPPED",
+        }
+        if isinstance(current_version, str):
+            reconciled["current_version"] = current_version
+        reconciled.pop("process_id", None)
+        reconciled.pop("requested_at", None)
+        write_update_status(workspace, reconciled)
+        return reconciled
 
     def _workspace(self, runtime: RuntimeSettings) -> Path:
         bridge = runtime.arapi_bridge_jar_path
@@ -2131,6 +2196,24 @@ def _installation_id(dotenv_path: Path) -> str:
     digest = hashlib.sha256(b"helix-mcp-dashboard\0")
     digest.update(str(dotenv_path).encode("utf-8"))
     return digest.hexdigest()
+
+
+def _utc_timestamp() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _update_request_is_recent(operation: Mapping[str, object]) -> bool:
+    requested_at = operation.get("requested_at")
+    if not isinstance(requested_at, str):
+        return False
+    try:
+        requested = datetime.fromisoformat(requested_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if requested.tzinfo is None:
+        requested = requested.replace(tzinfo=UTC)
+    age_seconds = (datetime.now(UTC) - requested).total_seconds()
+    return 0 <= age_seconds <= _UPDATE_LAUNCH_GRACE_SECONDS
 
 
 def _package_version() -> str:
