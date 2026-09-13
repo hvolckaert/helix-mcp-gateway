@@ -5,6 +5,9 @@ Semantic Versioning.
 
 ## Unreleased
 
+- Allow managed updates from the public GitHub repository without a GitHub
+  login by retrieving public release metadata, assets, and attestation bundles
+  anonymously while retaining local cryptographic provenance verification.
 - Add a public-safe CMDB data-quality case study demonstrating metadata
   discovery, bounded human-approved SQL, and explainable findings over an
   authorized synthetic dataset.

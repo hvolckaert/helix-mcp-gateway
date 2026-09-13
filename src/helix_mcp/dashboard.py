@@ -987,7 +987,6 @@ class DashboardService:
         self._release_status = check_for_update(
             current_version=managed.active_version,
             repository=self._update_repository,
-            gh_command=self._gh_command,
         )
         return self._update_state(runtime)
 

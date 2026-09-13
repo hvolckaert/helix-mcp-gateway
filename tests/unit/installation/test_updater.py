@@ -8,6 +8,7 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pytest
 
 from helix_mcp.installation.managed import (
@@ -18,6 +19,7 @@ from helix_mcp.installation.managed import (
 )
 from helix_mcp.installation.openclaw import EXPOSED_TOOLS
 from helix_mcp.installation.updater import (
+    PublicGitHubTransport,
     UpdateError,
     check_for_update,
     update_installation,
@@ -42,37 +44,59 @@ class FakeUpdateRunner:
         self.fail_attestation = fail_attestation
         self.bridge_path = bridge_path
         self.commands: list[list[str]] = []
+        self.urls: list[str] = []
+
+    def get_json(
+        self,
+        url: str,
+        *,
+        timeout: int,
+        action: str,
+    ) -> object:
+        del timeout, action
+        self.urls.append(url)
+        if "/attestations/" in url:
+            return {
+                "attestations": [
+                    {
+                        "bundle": {
+                            "mediaType": (
+                                "application/vnd.dev.sigstore.bundle.v0.3+json"
+                            )
+                        }
+                    }
+                ]
+            }
+        digest = hashlib.sha256(self.digest_content).hexdigest()
+        return {
+            "tag_name": "v0.7.0",
+            "draft": False,
+            "prerelease": False,
+            "html_url": "https://example.test/releases/v0.7.0",
+            "assets": [
+                {
+                    "name": "helix_mcp_gateway-0.7.0-py3-none-any.whl",
+                    "digest": f"sha256:{digest}",
+                }
+            ],
+        }
+
+    def download(
+        self,
+        url: str,
+        destination: Path,
+        *,
+        timeout: int,
+        action: str,
+    ) -> None:
+        del timeout, action
+        self.urls.append(url)
+        destination.write_bytes(self.wheel_content)
 
     def __call__(self, command: list[str], **_kwargs: object):
         self.commands.append(command)
-        if command[1:3] == ["release", "view"]:
-            digest = hashlib.sha256(self.digest_content).hexdigest()
-            payload = {
-                "tagName": "v0.7.0",
-                "isDraft": False,
-                "isPrerelease": False,
-                "url": "https://example.test/releases/v0.7.0",
-                "assets": [
-                    {
-                        "name": "helix_mcp_gateway-0.7.0-py3-none-any.whl",
-                        "digest": f"sha256:{digest}",
-                    }
-                ],
-            }
-            return subprocess.CompletedProcess(
-                command,
-                0,
-                stdout=json.dumps(payload),
-                stderr="",
-            )
-        if command[1:3] == ["release", "download"]:
-            destination = Path(command[command.index("--dir") + 1])
-            (
-                destination / command[command.index("--pattern") + 1]
-            ).write_bytes(self.wheel_content)
-            return subprocess.CompletedProcess(
-                command, 0, stdout="", stderr=""
-            )
+        if command[1:2] == ["release"]:
+            raise AssertionError("public releases must not use authenticated gh")
         if command[1:3] == ["attestation", "verify"]:
             return subprocess.CompletedProcess(
                 command,
@@ -212,22 +236,78 @@ def _managed_installation(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     return workspace, dotenv_path, bridge_path, base_python
 
 
-def test_release_check_requires_a_verified_gateway_wheel(
-    tmp_path: Path,
-) -> None:
-    gh = tmp_path / "gh"
-    gh.write_text("gh", encoding="utf-8")
+def test_release_check_requires_a_verified_gateway_wheel() -> None:
     runner = FakeUpdateRunner(wheel_content=b"signed wheel")
 
     status = check_for_update(
         current_version="0.6.8",
-        gh_command=gh,
-        runner=runner,
+        transport=runner,
     )
 
     assert status.status == "available"
     assert status.latest_version == "0.7.0"
     assert status.update_available is True
+    assert runner.commands == []
+    assert runner.urls == [
+        (
+            "https://api.github.com/repos/hvolckaert/"
+            "helix-mcp-gateway/releases/latest"
+        )
+    ]
+
+
+def test_public_release_check_ignores_github_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GH_TOKEN", "must-not-be-forwarded")
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert "authorization" not in request.headers
+        return httpx.Response(
+            200,
+            json={
+                "tag_name": "v0.9.0",
+                "draft": False,
+                "prerelease": False,
+                "assets": [
+                    {
+                        "name": (
+                            "helix_mcp_gateway-0.9.0-py3-none-any.whl"
+                        ),
+                        "digest": f"sha256:{'a' * 64}",
+                    }
+                ],
+            },
+        )
+
+    status = check_for_update(
+        current_version="0.8.0",
+        transport=PublicGitHubTransport(
+            transport=httpx.MockTransport(handle)
+        ),
+    )
+
+    assert status.status == "available"
+    assert status.release_url == (
+        "https://github.com/hvolckaert/helix-mcp-gateway/"
+        "releases/tag/v0.9.0"
+    )
+
+    def download_handle(request: httpx.Request) -> httpx.Response:
+        assert "authorization" not in request.headers
+        return httpx.Response(200, content=b"public release")
+
+    downloaded = tmp_path / "release.whl"
+    PublicGitHubTransport(
+        transport=httpx.MockTransport(download_handle)
+    ).download(
+        "https://github.com/example/release.whl",
+        downloaded,
+        timeout=30,
+        action="test release download",
+    )
+    assert downloaded.read_bytes() == b"public release"
 
 
 def test_update_activates_only_after_setup_and_smoke_test(
@@ -251,12 +331,28 @@ def test_update_activates_only_after_setup_and_smoke_test(
         gh_command=gh,
         base_python=base_python,
         runner=runner,
+        transport=runner,
         clock=lambda: datetime(2026, 9, 6, tzinfo=UTC),
     )
 
     managed = load_managed_installation(workspace)
     assert result.status == "updated"
     assert result.sha256 == hashlib.sha256(wheel_content).hexdigest()
+    assert runner.urls == [
+        (
+            "https://api.github.com/repos/hvolckaert/"
+            "helix-mcp-gateway/releases/tags/v0.7.0"
+        ),
+        (
+            "https://github.com/hvolckaert/helix-mcp-gateway/releases/"
+            "download/v0.7.0/"
+            "helix_mcp_gateway-0.7.0-py3-none-any.whl"
+        ),
+        (
+            "https://api.github.com/repos/hvolckaert/"
+            f"helix-mcp-gateway/attestations/sha256:{result.sha256}"
+        ),
+    ]
     assert managed is not None
     assert managed.active_version == "0.7.0"
     assert managed.server_command.is_file()
@@ -313,6 +409,7 @@ def test_update_refreshes_reloads_and_probes_openclaw_definition(
         gh_command=gh,
         base_python=base_python,
         runner=runner,
+        transport=runner,
         clock=lambda: datetime(2026, 9, 6, tzinfo=UTC),
     )
 
@@ -357,6 +454,7 @@ def test_update_rejects_a_wheel_that_does_not_match_release_digest(
             gh_command=gh,
             base_python=base_python,
             runner=runner,
+            transport=runner,
         )
 
     managed = load_managed_installation(workspace)
@@ -385,6 +483,7 @@ def test_update_rejects_a_wheel_without_trusted_provenance(
             gh_command=gh,
             base_python=base_python,
             runner=runner,
+            transport=runner,
         )
 
     managed = load_managed_installation(workspace)
@@ -399,6 +498,7 @@ def test_update_rejects_a_wheel_without_trusted_provenance(
     assert verification[verification.index("--repo") + 1] == (
         "hvolckaert/helix-mcp-gateway"
     )
+    assert "--bundle" in verification
     assert verification[verification.index("--signer-workflow") + 1] == (
         "hvolckaert/helix-mcp-gateway/.github/workflows/release.yml"
     )
@@ -432,6 +532,7 @@ def test_failed_smoke_test_restores_data_and_keeps_previous_launcher(
             gh_command=gh,
             base_python=base_python,
             runner=runner,
+            transport=runner,
             clock=lambda: datetime(2026, 9, 6, tzinfo=UTC),
         )
 
