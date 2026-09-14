@@ -33,7 +33,7 @@ def supervise_dashboard(
     dotenv_path: Path,
     workspace: Path,
     port: int,
-    gh_command: str | Path = "gh",
+    gh_command: str | Path | None = None,
     restart_seconds: float = 5.0,
 ) -> int:
     """Keep the dashboard alive and restart it after unexpected failures."""
@@ -76,10 +76,10 @@ def supervise_dashboard(
             str(dotenv_path),
             "--port",
             str(port),
-            "--gh-command",
-            str(gh_command),
-            "--no-browser",
         ]
+        if gh_command is not None:
+            command.extend(("--gh-command", str(gh_command)))
+        command.append("--no-browser")
         child = subprocess.Popen(
             command,
             cwd=resolved_workspace,
@@ -183,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=DEFAULT_DASHBOARD_PORT,
     )
-    supervise.add_argument("--gh-command", default="gh")
+    supervise.add_argument("--gh-command", default=None)
     arguments = parser.parse_args(argv)
     if not 1 <= arguments.port <= 65_535:
         parser.error("dashboard port must be between 1 and 65535")

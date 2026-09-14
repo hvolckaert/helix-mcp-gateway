@@ -857,7 +857,7 @@ class DashboardService:
         *,
         process_environment: Mapping[str, str] | None = None,
         update_repository: str = DEFAULT_REPOSITORY,
-        gh_command: str | Path = "gh",
+        gh_command: str | Path | None = None,
         command_runner: Callable[..., subprocess.CompletedProcess[str]] = (
             subprocess.run
         ),
@@ -874,7 +874,7 @@ class DashboardService:
         )
         self._sql_capabilities: dict[tuple[str, Environment], bool] = {}
         self._update_repository = update_repository
-        self._gh_command = str(gh_command)
+        self._gh_command = str(gh_command) if gh_command is not None else None
         self._command_runner = command_runner
         self._release_status: ReleaseStatus | None = None
         self.dashboard_port = dashboard_port
@@ -1898,17 +1898,18 @@ def dashboard_main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--gh-command",
-        default="gh",
-        help="GitHub CLI command used for managed release checks",
+        default=None,
+        help=argparse.SUPPRESS,
     )
     arguments = parser.parse_args(argv)
     if not 1 <= arguments.port <= 65_535:
         parser.error("--port must be between 1 and 65535")
     try:
+        # Old persistent dashboard definitions may still pass --gh-command.
+        # Accept it for compatibility, but migrate to the managed executable.
         service = DashboardService(
             arguments.dotenv,
             dashboard_port=arguments.port,
-            gh_command=arguments.gh_command,
         )
         service.state()
         server = DashboardHTTPServer(
@@ -1931,13 +1932,13 @@ def dashboard_main(argv: Sequence[str] | None = None) -> int:
     print(json.dumps({"status": "ready", "url": url}, separators=(",", ":")))
     if not arguments.no_browser:
         threading.Timer(0.2, webbrowser.open, args=(url,)).start()
-    if not os.environ.get(DASHBOARD_MODE_ENV):
+    if not os.environ.get(DASHBOARD_MODE_ENV) or arguments.gh_command:
         threading.Thread(
             target=_adopt_managed_dashboard,
             kwargs={
                 "dotenv_path": arguments.dotenv.expanduser().absolute(),
                 "port": arguments.port,
-                "gh_command": arguments.gh_command,
+                "gh_command": None,
             },
             name="helix-dashboard-runtime-adoption",
             daemon=True,
@@ -1966,7 +1967,7 @@ def _adopt_managed_dashboard(
     *,
     dotenv_path: Path,
     port: int,
-    gh_command: str | Path,
+    gh_command: str | Path | None,
 ) -> None:
     """Migrate an older managed dashboard without interrupting its port."""
 

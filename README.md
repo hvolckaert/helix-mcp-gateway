@@ -4,8 +4,6 @@
 [![Release](https://github.com/hvolckaert/helix-mcp-gateway/actions/workflows/release.yml/badge.svg)](https://github.com/hvolckaert/helix-mcp-gateway/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[Español](docs/README.es.md)
-
 **Policy-controlled MCP access to BMC Helix through the AR API.**
 
 Helix MCP Gateway is an independent local MCP server that enables authorized
@@ -111,6 +109,10 @@ a real environment.
   Helix environments;
 - authorized per-environment credentials.
 
+GitHub CLI is not a system prerequisite. Guided setup installs a private,
+pinned copy for verified managed updates without `sudo`, `gh auth login`, or
+changes to the user's `PATH`.
+
 The exact supported setup and its current limitations are documented in
 [Installation](docs/installation.md).
 
@@ -132,8 +134,10 @@ python3.12 -m venv /path/to/helix-mcp/venv
 
 The setup command generates local configuration, compiles the Java bridge
 against the user's AR API installation, and creates the encryption key when
-requested. It never overwrites existing credentials or configuration. After a
-successful installation it installs a persistent per-user dashboard service,
+requested. It also installs or validates the project-managed GitHub CLI used
+to verify release provenance. It never overwrites existing credentials or
+configuration. After a successful installation it installs a persistent
+per-user dashboard service,
 starts it, and opens it in the default browser. Setup also creates stable MCP
 and dashboard launchers; clients and the dashboard service keep those commands
 while managed updates switch the validated runtime behind them. By default,

@@ -24,6 +24,10 @@ from helix_mcp.config import (
     load_runtime_settings,
     load_single_instance_config,
 )
+from helix_mcp.installation.github_cli import (
+    ensure_managed_github_cli,
+    github_cli_environment,
+)
 from helix_mcp.installation.managed import (
     ManagedInstallation,
     activate_managed_installation,
@@ -265,7 +269,7 @@ def update_installation(
     workspace: str | Path,
     target_version: str,
     repository: str = DEFAULT_REPOSITORY,
-    gh_command: str | Path = "gh",
+    gh_command: str | Path | None = None,
     base_python: str | Path | None = None,
     runner: CommandRunner = subprocess.run,
     transport: ReleaseTransport | None = None,
@@ -308,13 +312,22 @@ def update_installation(
     )
     lock = _UpdateLock(resolved_workspace / "runtime" / ".update.lock")
     with lock:
+        resolved_gh = (
+            _resolve_command(gh_command, label="GitHub CLI")
+            if gh_command is not None
+            else ensure_managed_github_cli(
+                resolved_workspace,
+                runner=runner,
+            ).command
+        )
         wheel = _download_release(
-            _resolve_command(gh_command, label="GitHub CLI"),
+            resolved_gh,
             workspace=resolved_workspace,
             repository=repository,
             release=release,
             runner=runner,
             transport=release_transport,
+            environment=github_cli_environment(resolved_workspace),
         )
         selected_python = (
             Path(base_python)
@@ -481,6 +494,7 @@ def _download_release(
     release: Release,
     runner: CommandRunner,
     transport: ReleaseTransport,
+    environment: Mapping[str, str],
 ) -> Path:
     download_dir = workspace / "downloads" / release.version
     if download_dir.is_symlink():
@@ -498,6 +512,7 @@ def _download_release(
             expected_sha256=release.sha256,
             runner=runner,
             transport=transport,
+            environment=environment,
         )
         return destination
     with tempfile.TemporaryDirectory(
@@ -524,6 +539,7 @@ def _download_release(
             expected_sha256=release.sha256,
             runner=runner,
             transport=transport,
+            environment=environment,
         )
         os.replace(downloaded, destination)
     return destination
@@ -954,6 +970,7 @@ def _verify_release_artifact(
     expected_sha256: str,
     runner: CommandRunner,
     transport: ReleaseTransport,
+    environment: Mapping[str, str],
 ) -> None:
     _verify_sha256(path, expected_sha256)
     payload = transport.get_json(
@@ -1008,6 +1025,7 @@ def _verify_release_artifact(
             runner=runner,
             timeout=120,
             action="release provenance verification",
+            environment=environment,
         )
 
 
@@ -1046,15 +1064,18 @@ def _run(
     runner: CommandRunner,
     timeout: int,
     action: str,
+    environment: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     try:
-        completed = runner(
-            list(command),
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        options: dict[str, object] = {
+            "check": False,
+            "capture_output": True,
+            "text": True,
+            "timeout": timeout,
+        }
+        if environment is not None:
+            options["env"] = dict(environment)
+        completed = runner(list(command), **options)
     except (OSError, subprocess.SubprocessError):
         raise UpdateError(f"{action} could not be completed") from None
     if completed.returncode != 0:

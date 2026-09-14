@@ -124,6 +124,7 @@ def test_systemd_service_preserves_python_loader_path(
     unit = manager._render_unit()
 
     assert 'Environment="LD_LIBRARY_PATH=/opt/custom python/lib"' in unit
+    assert "--gh-command" not in unit
 
 
 class _FakeRegistry:

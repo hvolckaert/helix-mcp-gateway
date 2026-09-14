@@ -7,6 +7,7 @@ import sqlite3
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -100,6 +101,11 @@ class FakeUpdateRunner:
                 "public releases must not use authenticated gh"
             )
         if command[1:3] == ["attestation", "verify"]:
+            environment = _kwargs.get("env")
+            assert isinstance(environment, dict)
+            assert "GH_TOKEN" not in environment
+            assert "GITHUB_TOKEN" not in environment
+            assert environment["GH_PROMPT_DISABLED"] == "1"
             return subprocess.CompletedProcess(
                 command,
                 1 if self.fail_attestation else 0,
@@ -309,12 +315,22 @@ def test_public_release_check_ignores_github_credentials(
 
 def test_update_activates_only_after_setup_and_smoke_test(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace, dotenv_path, bridge_path, base_python = _managed_installation(
         tmp_path
     )
     gh = tmp_path / "gh"
     gh.write_text("gh", encoding="utf-8")
+    provisioned: list[Path] = []
+    monkeypatch.setenv("GH_TOKEN", "must-not-be-forwarded")
+    monkeypatch.setenv("GITHUB_TOKEN", "must-not-be-forwarded")
+    monkeypatch.setattr(
+        "helix_mcp.installation.updater.ensure_managed_github_cli",
+        lambda workspace, runner: (
+            provisioned.append(Path(workspace)) or SimpleNamespace(command=gh)
+        ),
+    )
     wheel_content = b"published gateway wheel"
     runner = FakeUpdateRunner(
         wheel_content=wheel_content,
@@ -325,7 +341,6 @@ def test_update_activates_only_after_setup_and_smoke_test(
         dotenv_path=dotenv_path,
         workspace=workspace,
         target_version="0.7.0",
-        gh_command=gh,
         base_python=base_python,
         runner=runner,
         transport=runner,
@@ -334,6 +349,7 @@ def test_update_activates_only_after_setup_and_smoke_test(
 
     managed = load_managed_installation(workspace)
     assert result.status == "updated"
+    assert provisioned == [workspace]
     assert result.sha256 == hashlib.sha256(wheel_content).hexdigest()
     assert runner.urls == [
         (

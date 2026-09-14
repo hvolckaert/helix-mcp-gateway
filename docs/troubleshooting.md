@@ -47,6 +47,19 @@ provide `jdk.compiler` and `jdk.jartool`; a standalone runtime is insufficient.
 failure. Use the explicit AR API path and keep the complete private diagnostic
 locally, because filesystem paths may identify the workstation.
 
+### Managed GitHub CLI setup fails
+
+`GITHUB_CLI_INSTALLATION_ERROR` means setup could not safely provision or
+validate the private GitHub CLI used for release attestations. Confirm that the
+host is Linux x86_64, Linux arm64, or native Windows x86_64 and can reach the
+public `github.com` release endpoints over HTTPS. A proxy may be used only when
+it preserves normal TLS certificate validation.
+
+Do not run `gh auth login`, install `gh` system-wide, or add it to `PATH` as a
+workaround. Retry `helix-mcp-setup` after restoring public HTTPS access. Setup
+will discard an incomplete download and reuse an existing managed executable
+only when its pinned digest and command capabilities validate.
+
 ## Configuration failures
 
 ### Configuration is rejected

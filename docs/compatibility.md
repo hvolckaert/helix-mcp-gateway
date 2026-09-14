@@ -22,6 +22,7 @@ been repeated in that environment.
 | Java JDK | 17 or later, with `jdk.compiler` and `jdk.jartool` | Required; OpenJDK 21.0.12 used for the full validation. |
 | BMC Developer Studio / AR System Java API | 21.30.07 and 25.1 | User-supplied proprietary dependency. Both versions passed bridge startup, authentication, and form-catalog access against the configured DEV target; other releases are accepted only when their BMC manifests and required classes validate and the bridge compiles against them. |
 | BMC Helix Client Gateway | Locally configured for the target | Required for live connectivity; not distributed by this project. |
+| GitHub CLI | Project-managed 2.100.0 | Setup provisions the pinned official executable for Linux x86_64, Linux arm64, and native Windows x86_64. It is used only for local release-attestation verification and requires no GitHub login. |
 | MCP transport | Standard input/output | Verified with the Python MCP SDK through initialization and discovery of all 19 tools. |
 
 The project does not redistribute BMC libraries, configure remote environments,

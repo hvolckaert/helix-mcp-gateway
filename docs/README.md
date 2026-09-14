@@ -3,8 +3,6 @@
 This directory documents the architecture, security model, operation, and
 release lifecycle of Helix MCP Gateway. Start with the project
 [`README.md`](../README.md) for the value proposition and requirements.
-An overview in Spanish is available in
-[`README.es.md`](README.es.md).
 
 ## Installation and operation
 
