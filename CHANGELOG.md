@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.9.3 - 2026-09-14
+
 - Provision a pinned, checksum-verified GitHub CLI inside each managed
   installation for release-attestation verification, without requiring
   administrator access, a system `gh` command, GitHub authentication, or a
