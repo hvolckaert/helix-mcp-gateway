@@ -5,6 +5,16 @@ Semantic Versioning.
 
 ## Unreleased
 
+- Provision a pinned, checksum-verified GitHub CLI inside each managed
+  installation for release-attestation verification, without requiring
+  administrator access, a system `gh` command, GitHub authentication, or a
+  `PATH` change.
+- Isolate the managed GitHub CLI from GitHub credential and configuration
+  environment variables, validate redirects and archive contents, and support
+  Linux x86_64, Linux arm64, and native Windows x86_64 assets.
+- Remove the Spanish documentation variant and document installation and
+  updates exclusively in English.
+
 ## 0.9.2 - 2026-09-13
 
 - Isolate Linux and WSL dashboard update workers in independent transient

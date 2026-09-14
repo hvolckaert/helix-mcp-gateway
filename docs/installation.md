@@ -37,13 +37,15 @@ been tested rather than inferred.
 
 Download the wheel and checksum file from the
 [GitHub release](https://github.com/hvolckaert/helix-mcp-gateway/releases) you
-intend to install. With the GitHub CLI:
+intend to install. GitHub CLI is not required for this initial download. For
+example, on Linux or WSL:
 
-```text
-gh release download vX.Y.Z \
-  --repo hvolckaert/helix-mcp-gateway \
-  --pattern "helix_mcp_gateway-*-py3-none-any.whl" \
-  --pattern "SHA256SUMS"
+```bash
+version=X.Y.Z
+curl --fail --location --remote-name \
+  "https://github.com/hvolckaert/helix-mcp-gateway/releases/download/v${version}/helix_mcp_gateway-${version}-py3-none-any.whl"
+curl --fail --location --remote-name \
+  "https://github.com/hvolckaert/helix-mcp-gateway/releases/download/v${version}/SHA256SUMS"
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
@@ -88,20 +90,22 @@ between multiple installations.
 
 The command:
 
-1. validates the BMC manifest identity and required Java API capabilities of
+1. installs or validates the pinned, project-managed GitHub CLI used for
+   release provenance verification;
+2. validates the BMC manifest identity and required Java API capabilities of
    the `arapi`, `arapiext`, and `arlogger` libraries without pinning a BMC
    release;
-2. compiles the packaged bridge source in a temporary directory;
-3. installs the bridge JAR atomically;
-4. creates `helix.yaml` and `.env` only when absent;
-5. generates a private random key for encrypted plans;
-6. installs or reuses the persistent per-user dashboard manager, starts it, and
+3. compiles the packaged bridge source in a temporary directory;
+4. installs the bridge JAR atomically;
+5. creates `helix.yaml` and `.env` only when absent;
+6. generates a private random key for encrypted plans;
+7. installs or reuses the persistent per-user dashboard manager, starts it, and
    opens it in the default browser;
-7. creates stable MCP and dashboard launchers plus managed installation
+8. creates stable MCP and dashboard launchers plus managed installation
    metadata;
-8. detects OpenClaw by default and, when available, registers the stable
+9. detects OpenClaw by default and, when available, registers the stable
    launcher, reloads its MCP catalog, and probes the resulting tool surface;
-9. returns sanitized JSON with destinations, the selected client integration,
+10. returns sanitized JSON with destinations, the selected client integration,
    the MCP client command, and the dashboard manager state and URL.
 
 `--config-dir`, `--data-dir`, and `--state-dir` override the per-user defaults.
@@ -112,6 +116,28 @@ installation; the persistent dashboard manager is still installed and started.
 Use `--client standalone` to skip automatic OpenClaw integration, or
 `--client openclaw` to require it instead of falling back to a standalone
 installation when the command is unavailable.
+
+### Managed GitHub CLI
+
+Setup downloads the official GitHub CLI `2.100.0` archive for a supported
+platform over anonymous HTTPS, verifies the pinned archive and executable
+SHA-256 digests, extracts only the expected executable, and validates its
+version and `gh attestation verify` capability. The executable is stored below
+`<data-dir>/tools/github-cli/2.100.0/bin/`; it is not installed system-wide and
+is not added to `PATH`.
+
+The managed command uses an isolated configuration directory. GitHub token,
+host, and repository environment variables are removed before it runs, prompts
+and update notices are disabled, and `gh auth login` is neither required nor
+performed. Setup reuses the executable only when its pinned digest still
+matches. Linux x86_64, Linux arm64, and native Windows x86_64 are supported;
+WSL uses the corresponding Linux asset.
+
+`--dry-run` reports the selected version, platform, digest, source, and target
+path without downloading or creating the managed tool directory. An existing
+installation that previously relied on a system `gh` command is migrated when
+the updated dashboard first starts. Running the new `helix-mcp-setup` also
+rewrites the persistent dashboard definition without that dependency.
 
 The generated `.env` contains no sample credentials. The user configures the
 required DEV, QA, and PROD credentials through the write-only dashboard fields
@@ -236,11 +262,10 @@ handling, and recovery behavior.
 The dashboard's **Server updates** section follows the same managed model as
 Helix MCP Knowledge:
 
-Managed updates require a recent GitHub CLI with the `gh attestation verify`
-command available, but they do not require `gh auth login` for this public
-repository. Release metadata, assets, and attestation bundles are retrieved
-through GitHub's anonymous public endpoints; `gh` verifies the downloaded
-bundle locally.
+Managed updates use the private GitHub CLI provisioned by setup. They do not
+require a system `gh` command or `gh auth login`. Release metadata, assets, and
+attestation bundles are retrieved through GitHub's anonymous public endpoints;
+the isolated managed command verifies the downloaded bundle locally.
 
 1. the user explicitly checks for a newer stable GitHub release;
 2. the updater requires the release wheel's GitHub SHA-256 digest and verifies

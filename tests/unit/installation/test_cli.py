@@ -15,6 +15,37 @@ from helix_mcp.installation.cli import _installed_server_command, setup_main
 from helix_mcp.installation.managed import stable_launcher_path
 
 
+@pytest.fixture(autouse=True)
+def _managed_github_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+    def result(workspace: Path) -> SimpleNamespace:
+        return SimpleNamespace(
+            to_dict=lambda: {
+                "version": "2.100.0",
+                "command": str(
+                    Path(workspace)
+                    / "tools"
+                    / "github-cli"
+                    / "2.100.0"
+                    / "bin"
+                    / ("gh.exe" if os.name == "nt" else "gh")
+                ),
+                "platform": "windows" if os.name == "nt" else "linux",
+                "architecture": "amd64",
+                "installed": True,
+                "downloaded": False,
+            }
+        )
+
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli.ensure_managed_github_cli",
+        result,
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli.managed_github_cli_plan",
+        result,
+    )
+
+
 def test_setup_dry_run_returns_machine_readable_codex_configuration(
     tmp_path,
     capsys,
@@ -35,6 +66,8 @@ def test_setup_dry_run_returns_machine_readable_codex_configuration(
     assert result == 0
     assert payload["status"] == "ready_for_configuration"
     assert payload["dry_run"] is True
+    assert payload["github_cli"]["version"] == "2.100.0"
+    assert payload["github_cli"]["downloaded"] is False
     assert payload["codex_desktop"]["args"] == [
         "--dotenv",
         str(tmp_path / "config" / ".env"),

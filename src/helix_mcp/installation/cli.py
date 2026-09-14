@@ -19,6 +19,10 @@ from helix_mcp.dashboard import (
 )
 from helix_mcp.dashboard_runtime import DashboardRuntimeManager
 from helix_mcp.installation.bridge import build_bridge
+from helix_mcp.installation.github_cli import (
+    ensure_managed_github_cli,
+    managed_github_cli_plan,
+)
 from helix_mcp.installation.managed import (
     ManagedInstallation,
     activate_managed_installation,
@@ -133,6 +137,17 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
         managed_activated = False
         managed: ManagedInstallation | None = None
         client_integration = arguments.client
+        defaults = default_install_paths()
+        github_cli_workspace = (
+            Path(arguments.data_dir or defaults.data_dir)
+            .expanduser()
+            .absolute()
+        )
+        github_cli = (
+            managed_github_cli_plan(github_cli_workspace)
+            if arguments.dry_run
+            else ensure_managed_github_cli(github_cli_workspace)
+        )
         result = setup_installation(
             arapi_lib_dir=arguments.arapi_lib_dir,
             config_dir=arguments.config_dir,
@@ -225,6 +240,7 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
     payload = _paths_to_strings(asdict(result))
     payload["status"] = "ready_for_configuration"
     payload["client_integration"] = client_integration
+    payload["github_cli"] = github_cli.to_dict()
     payload["codex_desktop"] = {
         "command": result.server_command,
         "args": (

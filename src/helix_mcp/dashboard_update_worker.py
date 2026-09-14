@@ -128,7 +128,7 @@ class DashboardUpdateWorkerLauncher:
         errors_path: Path,
         repository: str,
         target_version: str,
-        gh_command: str | Path,
+        gh_command: str | Path | None,
         dashboard_port: int,
         dashboard_token: str,
         python_executable: str | None = None,
@@ -138,7 +138,7 @@ class DashboardUpdateWorkerLauncher:
         self.errors_path = errors_path.expanduser().absolute()
         self.repository = repository
         self.target_version = target_version
-        self.gh_command = str(gh_command)
+        self.gh_command = str(gh_command) if gh_command is not None else None
         self.dashboard_port = dashboard_port
         self.dashboard_token = dashboard_token
         self.python_executable = python_executable or sys.executable
@@ -209,7 +209,7 @@ class DashboardUpdateWorkerLauncher:
         return DashboardUpdateWorkerProcess(pid=process.pid)
 
     def _worker_command(self, token_path: Path) -> list[str]:
-        return [
+        command = [
             self.python_executable,
             "-m",
             _WORKER_MODULE,
@@ -221,13 +221,14 @@ class DashboardUpdateWorkerLauncher:
             self.repository,
             "--target-version",
             self.target_version,
-            "--gh-command",
-            self.gh_command,
             "--dashboard-port",
             str(self.dashboard_port),
             "--dashboard-token-file",
             str(token_path),
         ]
+        if self.gh_command is not None:
+            command.extend(("--gh-command", self.gh_command))
+        return command
 
     def _start_systemd_worker(
         self,
@@ -382,7 +383,7 @@ def run_update(
     workspace: str | Path,
     repository: str,
     target_version: str,
-    gh_command: str | Path,
+    gh_command: str | Path | None,
     dashboard_port: int,
     dashboard_token: str,
 ) -> bool:
@@ -620,7 +621,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--repository", default=DEFAULT_REPOSITORY)
     parser.add_argument("--target-version", required=True)
-    parser.add_argument("--gh-command", default="gh")
+    parser.add_argument("--gh-command", default=None)
     parser.add_argument("--dashboard-port", type=int, required=True)
     parser.add_argument("--dashboard-token-file", type=Path, required=True)
     arguments = parser.parse_args(argv)

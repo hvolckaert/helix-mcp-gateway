@@ -134,7 +134,7 @@ class DashboardRuntimeManager:
         )
         self.log_path = self.workspace / "errors/dashboard-supervisor.log"
         self.windows_registry = windows_registry
-        self.gh_command = str(gh_command or shutil.which("gh") or "gh")
+        self.gh_command = str(gh_command) if gh_command is not None else None
 
     @property
     def port(self) -> int:
@@ -503,7 +503,7 @@ class DashboardRuntimeManager:
         )
 
     def _supervisor_arguments(self) -> list[str]:
-        return [
+        arguments = [
             "supervise",
             "--dotenv",
             str(self.installation.dotenv_path),
@@ -511,9 +511,10 @@ class DashboardRuntimeManager:
             str(self.workspace),
             "--port",
             str(self.port),
-            "--gh-command",
-            self.gh_command,
         ]
+        if self.gh_command is not None:
+            arguments.extend(("--gh-command", self.gh_command))
+        return arguments
 
     def _windows_startup_command(self) -> str:
         powershell = shutil.which("powershell.exe") or "powershell.exe"

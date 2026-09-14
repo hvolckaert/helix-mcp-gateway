@@ -211,14 +211,14 @@ launcher.
 The update runs in a detached worker because the dashboard's own Python runtime
 may be replaced. The page temporarily loses its loopback connection, polls for
 the new dashboard process, and reloads state after it returns. The worker
-verifies the GitHub release digest and signed build provenance, installs an
-isolated runtime, backs up local configuration and state, rebuilds the Java
-bridge, runs readiness checks, and switches both stable launchers only after
-validation. It restarts the persistent manager and verifies the new dashboard
-version and workspace before committing the transaction. Failed updates keep
-or restore the previous active runtime and restart its dashboard manager. See
-[Installation](installation.md) for the complete transaction and client
-restart behavior.
+uses the private GitHub CLI provisioned by setup, verifies the GitHub release
+digest and signed build provenance, installs an isolated runtime, backs up
+local configuration and state, rebuilds the Java bridge, runs readiness checks,
+and switches both stable launchers only after validation. It restarts the
+persistent manager and verifies the new dashboard version and workspace before
+committing the transaction. Failed updates keep or restore the previous active
+runtime and restart its dashboard manager. See [Installation](installation.md)
+for the complete transaction and client restart behavior.
 
 ## Save transaction
 

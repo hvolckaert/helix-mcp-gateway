@@ -36,6 +36,24 @@ def _launcher(tmp_path: Path) -> DashboardUpdateWorkerLauncher:
     )
 
 
+def test_managed_worker_omits_a_system_github_cli_command(
+    tmp_path: Path,
+) -> None:
+    launcher = DashboardUpdateWorkerLauncher(
+        dotenv_path=tmp_path / "config/.env",
+        workspace=tmp_path / "workspace",
+        errors_path=tmp_path / "errors",
+        repository="owner/repository",
+        target_version="1.2.3",
+        gh_command=None,
+        dashboard_port=8_766,
+        dashboard_token="token",
+        python_executable="/runtime/python",
+    )
+
+    assert "--gh-command" not in launcher._worker_command(tmp_path / "token")
+
+
 def test_update_status_round_trip_is_atomic(tmp_path: Path) -> None:
     write_update_status(
         tmp_path,
