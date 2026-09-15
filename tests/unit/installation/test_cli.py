@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import sys
@@ -12,7 +13,9 @@ import pytest
 
 from helix_mcp.installation import InstallPaths, SetupResult
 from helix_mcp.installation.cli import _installed_server_command, setup_main
+from helix_mcp.installation.github_cli import GitHubCliError
 from helix_mcp.installation.managed import stable_launcher_path
+from helix_mcp.installation.setup import SetupError
 
 
 @pytest.fixture(autouse=True)
@@ -83,6 +86,89 @@ def test_setup_dry_run_returns_machine_readable_codex_configuration(
         "url": "http://127.0.0.1:8766/",
         "browser_requested": True,
     }
+
+
+def test_missing_managed_github_cli_is_reported_as_pending(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli.managed_github_cli_plan",
+        lambda workspace: (_ for _ in ()).throw(GitHubCliError("offline")),
+    )
+
+    result = setup_main(["--dry-run", "--data-dir", str(tmp_path / "data")])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert payload["status"] == "needs_attention"
+    assert payload["pending"] == ["github_cli"]
+    assert payload["github_cli"] == {
+        "status": "pending",
+        "error_code": "GITHUB_CLI_INSTALLATION_ERROR",
+    }
+
+
+def test_setup_starts_dashboard_when_arapi_is_pending(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    installation_setup_module = importlib.import_module(
+        "helix_mcp.installation.setup"
+    )
+    monkeypatch.setattr(
+        installation_setup_module,
+        "discover_arapi_lib_dir",
+        lambda explicit: (_ for _ in ()).throw(SetupError("missing AR API")),
+    )
+    server = tmp_path / "venv/bin/helix-mcp"
+    server.parent.mkdir(parents=True)
+    server.write_text("server", encoding="utf-8")
+    (
+        server.parent / ("python.exe" if os.name == "nt" else "python")
+    ).write_text("python", encoding="utf-8")
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli._installed_server_command",
+        lambda: server,
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli._selected_openclaw_command",
+        lambda **kwargs: pytest.fail("OpenClaw should wait for the runtime"),
+    )
+    monkeypatch.setattr(
+        "helix_mcp.installation.cli.DashboardRuntimeManager",
+        lambda managed: SimpleNamespace(
+            install_and_start=lambda: SimpleNamespace(
+                to_dict=lambda: {"manager": "test", "active": True}
+            )
+        ),
+    )
+
+    result = setup_main(
+        [
+            "--config-dir",
+            str(tmp_path / "config"),
+            "--data-dir",
+            str(tmp_path / "data"),
+            "--state-dir",
+            str(tmp_path / "state"),
+            "--no-dashboard",
+            "--client",
+            "openclaw",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert payload["status"] == "needs_attention"
+    assert "arapi" in payload["pending"]
+    assert "openclaw_registration" in payload["pending"]
+    assert payload["client_integration"] == "standalone"
+    assert payload["dashboard"]["active"] is True
+    assert (tmp_path / "config/helix.yaml").is_file()
+    assert (tmp_path / "config/.env").is_file()
 
 
 def test_setup_failure_exposes_only_a_stable_code(monkeypatch, capsys) -> None:

@@ -20,6 +20,7 @@ from pydantic import (
 _CONFIG_PATH_VARIABLE = "HELIX_CONFIG_PATH"
 _ARAPI_BRIDGE_JAR_VARIABLE = "HELIX_ARAPI_BRIDGE_JAR_PATH"
 _ARAPI_LIB_DIRECTORY_VARIABLE = "HELIX_ARAPI_LIB_DIR"
+_JAVA_HOME_VARIABLE = "HELIX_JAVA_HOME"
 _AUDIT_LOG_PATH_VARIABLE = "HELIX_AUDIT_LOG_PATH"
 _AUDIT_LOG_MAX_BYTES_VARIABLE = "HELIX_AUDIT_LOG_MAX_BYTES"
 _AUDIT_LOG_BACKUP_COUNT_VARIABLE = "HELIX_AUDIT_LOG_BACKUP_COUNT"
@@ -36,6 +37,7 @@ _KNOWN_VARIABLES = frozenset(
         _CONFIG_PATH_VARIABLE,
         _ARAPI_BRIDGE_JAR_VARIABLE,
         _ARAPI_LIB_DIRECTORY_VARIABLE,
+        _JAVA_HOME_VARIABLE,
         _AUDIT_LOG_PATH_VARIABLE,
         _AUDIT_LOG_MAX_BYTES_VARIABLE,
         _AUDIT_LOG_BACKUP_COUNT_VARIABLE,
@@ -60,6 +62,7 @@ class RuntimeSettings(BaseModel):
     config_path: Path
     arapi_bridge_jar_path: Path | None = None
     arapi_lib_dir: Path | None = None
+    java_home: Path | None = None
     audit_log_path: Path | None = None
     audit_log_max_bytes: int = Field(
         default=10_485_760,
@@ -145,6 +148,7 @@ def load_runtime_settings(
     try:
         bridge_jar_value = values[_ARAPI_BRIDGE_JAR_VARIABLE]
         arapi_lib_value = values[_ARAPI_LIB_DIRECTORY_VARIABLE]
+        java_home_value = values[_JAVA_HOME_VARIABLE]
         audit_log_value = _optional_text(values[_AUDIT_LOG_PATH_VARIABLE])
         metrics_path_value = _optional_text(values[_METRICS_PATH_VARIABLE])
         operation_log_value = _optional_text(
@@ -175,6 +179,11 @@ def load_runtime_settings(
                         base_directory,
                     )
                     if arapi_lib_value
+                    else None
+                ),
+                "java_home": (
+                    _resolve_runtime_path(java_home_value, base_directory)
+                    if java_home_value
                     else None
                 ),
                 "audit_log_path": (

@@ -124,6 +124,20 @@
     }
     .field textarea { min-height: 112px; resize: vertical; font: 500 .78rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
     .field input:disabled, .field select:disabled, .field textarea:disabled { color: #7b8d9d; background: #f3f6f8; cursor: not-allowed; }
+    .path-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+    .path-control .button { min-height: 44px; }
+    .folder-dialog { width: min(760px, calc(100% - 28px)); }
+    .folder-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
+    .folder-toolbar input { min-height: 40px; min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
+    .folder-locations { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .folder-list { max-height: 320px; overflow: auto; margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; }
+    .folder-row { display: flex; width: 100%; align-items: center; gap: 9px; min-height: 38px; padding: 7px 11px; border: 0; border-bottom: 1px solid #edf2f5; color: var(--ink); background: white; text-align: left; font: inherit; font-size: .83rem; }
+    button.folder-row:hover { background: var(--cyan-100); }
+    .folder-row:last-child { border-bottom: 0; }
+    .folder-row .folder-icon { width: 24px; color: var(--cyan-600); font-weight: 800; }
+    .folder-status { margin-top: 12px; color: var(--muted); font-size: .83rem; }
+    .setup-notice { margin: 0 0 20px; border-color: #e6c999; background: #fffbf3; }
+    .setup-notice .actions { justify-content: flex-start; margin-top: 11px; }
     .field.control-disabled, .toggle.control-disabled { opacity: .58; }
     .hint { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.42; }
     .catalog-picker { display: grid; gap: 10px; padding: 12px; border: 1px solid #cfe0e9; border-radius: 12px; background: #f8fbfc; }
@@ -159,6 +173,9 @@
     .env-card { border: 1px solid var(--line); border-radius: 15px; overflow: hidden; background: #fbfdfe; }
     .env-card.panel { padding: 0; border-radius: 18px; }
     .env-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 15px; border-bottom: 1px solid var(--line); }
+    .env-connection-status { padding: 9px 15px; margin: 0; border-bottom: 1px solid var(--line); }
+    .env-connection-status.status-good { color: var(--success); }
+    .env-connection-status.status-bad { color: var(--danger); }
     .env-title { display: flex; align-items: center; gap: 10px; font-weight: 800; }
     .env-actions { display: flex; align-items: center; gap: 12px; }
     .env-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--cyan-500); box-shadow: 0 0 0 4px var(--cyan-100); }
@@ -315,6 +332,12 @@
       </div>
     </section>
 
+    <section class="panel setup-notice" id="setup-notice" aria-live="polite" hidden>
+      <h2 id="setup-notice-title">Setup needs attention</h2>
+      <p class="panel-copy" id="setup-notice-text"></p>
+      <div class="actions"><button class="button secondary" type="button" id="configure-folders">Configure local folders</button></div>
+    </section>
+
     <form id="configuration-form">
       <div class="workspace-tabs">
         <div class="tab-list" role="tablist" aria-label="Gateway configuration sections">
@@ -351,6 +374,22 @@
                     <label for="bridge-url">Bridge URL</label>
                     <input id="bridge-url" type="url" required placeholder="http://127.0.0.1:8090">
                     <p class="hint" id="arapi-client-version">Only loopback addresses are accepted.</p>
+                  </div>
+                  <div class="field wide">
+                    <label for="arapi-lib-dir">AR API library folder</label>
+                    <div class="path-control">
+                      <input id="arapi-lib-dir" type="text" placeholder="Path to Developer Studio lib folder" autocomplete="off">
+                      <button class="button secondary" type="button" id="browse-arapi">Browse…</button>
+                    </div>
+                    <p class="hint" id="arapi-lib-hint">Browse local folders to see the JARs and select the Developer Studio lib folder.</p>
+                  </div>
+                  <div class="field wide">
+                    <label for="java-home">Java JDK folder</label>
+                    <div class="path-control">
+                      <input id="java-home" type="text" placeholder="Path to a JDK folder with bin/java" autocomplete="off">
+                      <button class="button secondary" type="button" id="browse-java">Browse…</button>
+                    </div>
+                    <p class="hint" id="java-home-hint">Browse local folders and select a JDK 17+ with compiler and JAR modules. A compatible JDK on PATH can also be used.</p>
                   </div>
                   <div class="field">
                     <label for="request-timeout">Request timeout (seconds)</label>
@@ -413,6 +452,7 @@
               <div class="advanced-group">
                 <h3>Diagnostics</h3>
                 <p class="panel-copy">Check the saved configuration, local bridge requirements and configured credentials. Unsaved edits and remote connectivity are not tested.</p>
+                <p class="hint">Kaazing is an external gateway connection. Configure it for each environment, then use Test DEV, QA or PROD to check connectivity.</p>
                 <div class="checks" id="checks"></div>
                 <div class="actions">
                   <button class="button secondary" type="button" id="validate-button">Validate installation</button>
@@ -445,6 +485,26 @@
       <button class="button primary" type="button" id="confirm-save">Confirm save</button>
     </div>
   </dialog>
+  <dialog class="folder-dialog" id="folder-dialog" aria-labelledby="folder-dialog-title">
+    <div class="dialog-header">
+      <h2 id="folder-dialog-title">Select a folder</h2>
+      <p>Browse folders and files on the computer running the gateway.</p>
+    </div>
+    <div class="dialog-body">
+      <div class="folder-toolbar">
+        <button class="button secondary" type="button" id="folder-up">Up</button>
+        <input id="folder-path" type="text" aria-label="Folder path">
+        <button class="button secondary" type="button" id="folder-go">Go</button>
+      </div>
+      <div class="folder-locations" id="folder-locations"></div>
+      <p class="folder-status" id="folder-status">Loading…</p>
+      <div class="folder-list" id="folder-list" role="list"></div>
+    </div>
+    <div class="dialog-actions">
+      <button class="button secondary" type="button" id="folder-cancel">Cancel</button>
+      <button class="button primary" type="button" id="folder-select" disabled>Select this folder</button>
+    </div>
+  </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script nonce="__CSP_NONCE__">
@@ -452,6 +512,10 @@
     const form = document.getElementById('configuration-form');
     const reviewButton = document.getElementById('review-button');
     const reviewDialog = document.getElementById('review-dialog');
+    const folderDialog = document.getElementById('folder-dialog');
+    let folderTarget = null;
+    let folderReport = null;
+    let folderBrowseRequestId = 0;
     const confirmSave = document.getElementById('confirm-save');
     const toast = document.getElementById('toast');
     const tabs = Array.from(document.querySelectorAll('[role="tab"][data-tab]'));
@@ -1089,6 +1153,7 @@
               <button class="button secondary small" type="button" data-test="${environment}">Test ${label}</button>
             </div>
           </div>
+          <p class="hint env-connection-status" data-kaazing-status="${environment}">Kaazing connection has not been tested.</p>
           <div class="env-body">
             <section class="policy-section">
               <h3>Credentials</h3>
@@ -1368,12 +1433,25 @@
       document.getElementById('plan-ttl').value = configuration.server.write_plan_ttl_seconds;
       document.getElementById('max-plans').value = configuration.server.max_pending_write_plans;
       document.getElementById('bridge-url').value = configuration.arapi.bridge_base_url;
+      document.getElementById('arapi-lib-dir').value = configuration.arapi.lib_dir || '';
+      const detectedLibDirs = configuration.arapi.detected_lib_dirs || [];
+      document.getElementById('arapi-lib-hint').textContent = detectedLibDirs.length
+        ? `${detectedLibDirs.length} valid local folder${detectedLibDirs.length === 1 ? '' : 's'} detected. Browse to see its JARs, then select it.`
+        : 'No valid local folder detected. Browse to a folder containing arapi, arapiext and arlogger JARs.';
+      document.getElementById('java-home').value = configuration.arapi.java_home || '';
+      document.getElementById('java-home-hint').textContent = configuration.arapi.detected_java_home
+        ? `Java detected in ${configuration.arapi.detected_java_home}. Browse to select a different JDK folder.`
+        : configuration.arapi.detected_java_homes?.length
+          ? `${configuration.arapi.detected_java_homes.length} Java folder candidate(s) detected. Browse to inspect and select one.`
+          : 'Compatible JDK not detected. Browse to a JDK 17+ folder.';
+      renderLocalRequirements(state.local_requirements);
       document.getElementById('arapi-client-version').textContent = configuration.arapi.client_version
         ? `Detected BMC Java API ${configuration.arapi.client_version}. Compatibility is verified by capabilities, not a fixed release list.`
         : 'BMC Java API version unavailable. Only loopback bridge addresses are accepted.';
       document.getElementById('request-timeout').value = configuration.arapi.request_timeout_seconds;
       document.getElementById('pool-size').value = configuration.arapi.pool_size;
       renderEnvironments(configuration.environments, configuration.policies);
+      renderKaazingChecks(state.kaazing_checks || {});
       clearDirtyTabs();
       configuration.environments.forEach(item => loadSqlCapability(item.environment));
       const saveNote = document.getElementById('save-note');
@@ -1388,6 +1466,114 @@
         saveNote.textContent = 'Changes are validated before saving. Connected OpenClaw installations are reloaded automatically.';
       } else {
         saveNote.textContent = 'Changes are validated before saving. Restart a standalone MCP client afterward to apply them.';
+      }
+    }
+
+    function renderLocalRequirements(requirements) {
+      const pending = [];
+      if (requirements?.arapi !== 'ready') pending.push('AR API libraries');
+      if (requirements?.java !== 'ready') pending.push('Java JDK');
+      if (requirements?.bridge !== 'ready') pending.push('Java bridge');
+      const notice = document.getElementById('setup-notice');
+      notice.hidden = pending.length === 0 && requirements?.kaazing === 'ready';
+      document.getElementById('configure-folders').hidden = pending.length === 0;
+      if (pending.length) {
+        document.getElementById('setup-notice-text').textContent =
+          `The installation is available, but ${pending.join(', ')} need attention. Browse local folders to configure AR API and Java, then save. Configure or verify Kaazing for each environment with its Test button.`;
+      } else {
+        document.getElementById('setup-notice-text').textContent = requirements?.kaazing === 'needs_attention'
+          ? 'Local Java and AR API are ready, but a Kaazing connection needs attention. Check its result in the environment tab and update the external gateway configuration.'
+          : 'Local Java and AR API are ready. Configure or verify Kaazing for each environment with its Test button.';
+      }
+    }
+
+    function renderKaazingChecks(checks) {
+      ['dev', 'qa', 'prod'].forEach(environment => {
+        const indicator = document.querySelector(`[data-kaazing-status="${environment}"]`);
+        if (!indicator) return;
+        const status = checks[environment];
+        indicator.textContent = status === 'ready' ? 'Kaazing connection passed.'
+          : status === 'needs_attention' ? 'Kaazing connection needs attention. Run Test again for details.'
+          : 'Kaazing connection has not been tested.';
+        indicator.className = `hint env-connection-status${status === 'ready' ? ' status-good' : status === 'needs_attention' ? ' status-bad' : ''}`;
+      });
+    }
+
+    async function browseFolder(path) {
+      const requestId = ++folderBrowseRequestId;
+      const status = document.getElementById('folder-status');
+      const select = document.getElementById('folder-select');
+      select.disabled = true;
+      status.textContent = 'Loading folder…';
+      try {
+        const report = await api('/api/local/folders', {method: 'POST', body: JSON.stringify({path})});
+        if (requestId !== folderBrowseRequestId) return false;
+        folderReport = report;
+        document.getElementById('folder-path').value = report.path;
+        document.getElementById('folder-up').disabled = !report.parent;
+        const list = document.getElementById('folder-list');
+        list.replaceChildren(...report.items.map(item => {
+          const row = document.createElement(item.kind === 'folder' ? 'button' : 'div');
+          row.className = 'folder-row';
+          if (item.kind === 'folder') {
+            row.type = 'button';
+            row.addEventListener('click', () => browseFolder(item.path));
+          }
+          const icon = document.createElement('span');
+          icon.className = 'folder-icon';
+          icon.textContent = item.kind === 'folder' ? '▣' : '·';
+          const name = document.createElement('span');
+          name.textContent = item.name;
+          row.append(icon, name);
+          return row;
+        }));
+        const valid = folderTarget === 'arapi' ? Boolean(report.arapi_version) : report.java_available;
+        select.disabled = !valid;
+        status.textContent = valid
+          ? (folderTarget === 'arapi' ? `Valid BMC AR API ${report.arapi_version} library folder.` : 'Compatible JDK 17+ with compiler and JAR modules.')
+          : (folderTarget === 'arapi' ? 'Select a folder containing valid arapi, arapiext and arlogger JARs.' : 'Select a JDK 17+ folder with compiler and JAR modules.');
+        if (report.truncated) status.textContent += ' Only the first 1000 entries are shown; enter a full path to jump further.';
+        return true;
+      } catch (error) {
+        if (requestId !== folderBrowseRequestId) return false;
+        folderReport = null;
+        status.textContent = error.message;
+        document.getElementById('folder-list').replaceChildren();
+        return false;
+      }
+    }
+
+    async function openFolderPicker(target) {
+      folderTarget = target;
+      folderReport = null;
+      document.getElementById('folder-dialog-title').textContent = target === 'arapi' ? 'Select AR API library folder' : 'Select Java JDK folder';
+      const arapi = currentState.configuration.arapi;
+      const locations = [
+        ['Home', currentState.folder_picker_home],
+        ['AR API', arapi.lib_dir],
+        ...((arapi.detected_lib_dirs || []).slice(0, 5).map((path, index) => [`Detected AR API ${index + 1}`, path])),
+        ['Java', arapi.java_home || arapi.detected_java_home],
+        ...((arapi.detected_java_homes || []).slice(0, 5).map((path, index) => [`Detected Java ${index + 1}`, path]))
+      ].filter(([, path]) => path);
+      const seen = new Set();
+      document.getElementById('folder-locations').replaceChildren(...locations.filter(([, path]) => {
+        if (seen.has(path)) return false;
+        seen.add(path);
+        return true;
+      }).map(([label, path]) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'button secondary small';
+        button.textContent = label;
+        button.addEventListener('click', () => browseFolder(path));
+        return button;
+      }));
+      folderDialog.showModal();
+      const input = document.getElementById(target === 'arapi' ? 'arapi-lib-dir' : 'java-home');
+      const initial = input.value.trim() || (target === 'arapi' ? arapi.detected_lib_dirs?.[0] : (arapi.detected_java_home || arapi.detected_java_homes?.[0])) || currentState.folder_picker_home;
+      const initialRequestId = folderBrowseRequestId + 1;
+      if (!await browseFolder(initial) && folderBrowseRequestId === initialRequestId) {
+        await browseFolder(currentState.folder_picker_home);
       }
     }
 
@@ -1678,6 +1864,8 @@
           request_timeout_seconds: numberValue('request-timeout'),
           pool_size: numberValue('pool-size')
         },
+        arapi_lib_dir: document.getElementById('arapi-lib-dir').value.trim() || null,
+        java_home: document.getElementById('java-home').value.trim() || null,
         policies,
         credentials
       };
@@ -1715,6 +1903,8 @@
       list.innerHTML = `
         <li>Sections changed: <strong>${escapeHtml(changedTabs.join(', '))}</strong></li>
         <li>Bridge: <strong>${escapeHtml(payload.arapi.bridge_base_url)}</strong></li>
+        <li>AR API libraries: <strong>${escapeHtml(payload.arapi_lib_dir || 'Not configured')}</strong></li>
+        <li>Java JDK: <strong>${escapeHtml(payload.java_home || currentState.configuration.arapi.detected_java_home || 'Not configured')}</strong></li>
         <li>Write access: DEV <strong>${payload.policies.dev.access_mode === 'read_write' ? 'enabled' : 'disabled'}</strong>, QA <strong>${payload.policies.qa.access_mode === 'read_write' ? 'enabled' : 'disabled'}</strong>, PROD <strong>${payload.policies.prod.access_mode === 'read_write' ? 'enabled' : 'disabled'}</strong></li>
         <li>Broad write scopes: <strong>${escapeHtml(broadWrites.length ? broadWrites.join('; ') : 'none')}</strong></li>
         <li>Credentials replaced: <strong>${replacements.length ? replacements.map(environmentLabel).join(', ') : 'none'}</strong></li>
@@ -1750,7 +1940,35 @@
         const report = await api('/api/preflight', {method: 'POST', body: JSON.stringify({live, environments})});
         document.getElementById('checks').innerHTML = report.checks.map(check => `
           <div class="check"><span>${escapeHtml(check.name)}</span><strong class="${check.status === 'passed' ? 'status-good' : 'status-bad'}">${check.status === 'passed' ? 'Passed' : escapeHtml(check.error_code || 'Failed')}</strong></div>`).join('');
-        showToast(report.status === 'ready' ? 'Installation is ready.' : 'Some checks need attention.', report.status !== 'ready');
+        const kaazingFailures = [];
+        if (live) environments.forEach(environment => {
+          const check = report.checks.find(item => item.name === `live.${environment}.kaazing`);
+          const indicator = document.querySelector(`[data-kaazing-status="${environment}"]`);
+          if (!indicator) return;
+          if (!check) {
+            indicator.textContent = 'Kaazing connection could not be tested. Review local requirements in Diagnostics.';
+            indicator.className = 'hint env-connection-status status-bad';
+          } else if (check.status === 'passed') {
+            indicator.textContent = 'Kaazing connection passed.';
+            indicator.className = 'hint env-connection-status status-good';
+          } else {
+            indicator.textContent = `Kaazing connection needs attention (${check.error_code || 'HEALTH_CHECK_FAILED'}).`;
+            indicator.className = 'hint env-connection-status status-bad';
+            kaazingFailures.push(environmentLabel(environment));
+          }
+        });
+        if (live) {
+          try {
+            const updatedState = await api('/api/state');
+            currentState.local_requirements = updatedState.local_requirements;
+            renderLocalRequirements(updatedState.local_requirements);
+            currentState.kaazing_checks = updatedState.kaazing_checks;
+          } catch (_) {}
+        }
+        showToast(
+          kaazingFailures.length ? `Kaazing connection needs attention for ${kaazingFailures.join(', ')}.` : report.status === 'ready' ? 'Installation is ready.' : 'Some checks need attention.',
+          report.status !== 'ready'
+        );
       } catch (error) {
         showToast(error.message, true);
       } finally {
@@ -1791,6 +2009,31 @@
     document.getElementById('cancel-save').addEventListener('click', () => reviewDialog.close());
     confirmSave.addEventListener('click', save);
     document.getElementById('validate-button').addEventListener('click', () => runChecks(false));
+    document.getElementById('configure-folders').addEventListener('click', () => {
+      activateTab('advanced');
+      document.getElementById('tab-panel-advanced').scrollIntoView({behavior: 'smooth'});
+    });
+    document.getElementById('browse-arapi').addEventListener('click', () => openFolderPicker('arapi'));
+    document.getElementById('browse-java').addEventListener('click', () => openFolderPicker('java'));
+    document.getElementById('folder-cancel').addEventListener('click', () => folderDialog.close());
+    folderDialog.addEventListener('close', () => { folderBrowseRequestId++; });
+    document.getElementById('folder-up').addEventListener('click', () => {
+      if (folderReport?.parent) browseFolder(folderReport.parent);
+    });
+    document.getElementById('folder-go').addEventListener('click', () => browseFolder(document.getElementById('folder-path').value.trim()));
+    document.getElementById('folder-path').addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        browseFolder(event.currentTarget.value.trim());
+      }
+    });
+    document.getElementById('folder-select').addEventListener('click', () => {
+      if (!folderReport || !folderTarget) return;
+      const input = document.getElementById(folderTarget === 'arapi' ? 'arapi-lib-dir' : 'java-home');
+      input.value = folderReport.path;
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+      folderDialog.close();
+    });
     document.getElementById('check-update-button').addEventListener('click', checkForUpdate);
     document.getElementById('install-update-button').addEventListener('click', installUpdate);
 

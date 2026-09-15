@@ -24,7 +24,7 @@ local or live.
 
 Do not install into a system Python or reuse an unrelated virtual environment.
 
-### Setup cannot find the AR API libraries
+### Setup reports AR API as pending
 
 Pass the authorized directory explicitly:
 
@@ -36,12 +36,14 @@ Pass the authorized directory explicitly:
 The directory must contain valid `arapi`, `arapiext`, and `arlogger` JARs from
 an authorized BMC Developer Studio / AR System Java API installation. Setup
 checks the BMC manifests and Java API classes, then compiles the bridge against
-the selected release. It intentionally stops when discovery finds multiple
-possible installations.
+the selected release. When discovery finds none or several installations, setup
+leaves AR API pending and opens the dashboard. Use **Advanced settings → Local
+AR API bridge → Browse** to inspect files and choose the correct folder.
 
 ### The Java bridge does not build
 
-Run `java --version` and `java --list-modules`. A Java 17 or later JDK must
+Run `java --version` and `java --list-modules`, or use the dashboard's Java JDK
+folder browser. A Java 17 or later JDK must
 provide `jdk.compiler` and `jdk.jartool`; a standalone runtime is insufficient.
 `ARAPI_BRIDGE_BUILD_ERROR` indicates a local build or library validation
 failure. Use the explicit AR API path and keep the complete private diagnostic
@@ -56,7 +58,8 @@ public `github.com` release endpoints over HTTPS. A proxy may be used only when
 it preserves normal TLS certificate validation.
 
 Do not run `gh auth login`, install `gh` system-wide, or add it to `PATH` as a
-workaround. Retry `helix-mcp-setup` after restoring public HTTPS access. Setup
+workaround. Setup can leave GitHub CLI pending and still open the dashboard;
+verified managed updates need it. Retry `helix-mcp-setup` after restoring public HTTPS access. Setup
 will discard an incomplete download and reuse an existing managed executable
 only when its pinned digest and command capabilities validate.
 

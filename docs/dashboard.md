@@ -47,10 +47,28 @@ The dashboard can:
   policies;
 - browse the forms and fields visible to each saved environment credential;
 - configure the loopback AR API bridge URL, timeout, and pool size;
+- browse local folders and files to choose an AR API library folder or a Java
+  JDK folder;
 - configure bounded cache and write-plan settings;
 - replace a DEV, QA, or PROD credential;
 - run sanitized installation and live environment checks;
 - check for and explicitly install verified stable server releases.
+
+The folder controls are under **Advanced settings → Local AR API bridge**. The
+folder explorer lists local subfolders and files, offers detected BMC library
+folders and the user's home as shortcuts, and accepts a full path for direct
+navigation. It enables AR API selection only for a folder with the required
+`arapi`, `arapiext`, and `arlogger` JARs, BMC manifest identity, and Java API
+classes. Java selection requires a JDK 17 or later with `jdk.compiler` and
+`jdk.jartool`; older JDKs and standalone runtimes are excluded. Saving
+updates `HELIX_ARAPI_LIB_DIR` and `HELIX_JAVA_HOME` in the installation `.env`;
+when both are available, changing either folder rebuilds the local bridge JAR.
+The save review shows both paths. A missing dependency can remain pending while
+the other folder is saved. Restart a standalone MCP client after saving, or
+allow the connected OpenClaw runtime to reload. Initial setup can open the
+dashboard even when Java or AR API is missing; a notice directs the user to
+these folder controls. Kaazing is an external connection and is checked with
+the environment Test buttons.
 
 Each environment owns exactly one policy with the canonical internal name
 `dev`, `qa`, or `prod`; the assignment cannot be changed. Older policy names are

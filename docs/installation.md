@@ -11,18 +11,22 @@ GitHub release -> checksum -> virtual environment -> wheel install
     -> MCP client registration
 ```
 
-## Prerequisites
+## Installation and runtime requirements
 
 - Python 3.12;
-- a Java 17 or later JDK with the `jdk.compiler` and `jdk.jartool` modules;
-- an authorized and configured BMC Helix Client Gateway connection;
-- an authorized BMC Developer Studio / AR System Java API installation;
+- a Java 17 or later JDK with the `jdk.compiler` and `jdk.jartool` modules for
+  building and running the bridge;
+- an authorized and configured BMC Helix Client Gateway / Kaazing connection
+  for live environment access;
+- an authorized BMC Developer Studio / AR System Java API installation for
+  AR API operations;
 - credentials authorized for the selected environments;
 - access to GitHub and the configured Python package index while installing.
 
-Setup invokes the compiler through the Java modules, so a separate `javac`
-executable does not need to be on `PATH`. Confirm the main prerequisites before
-downloading:
+Python is required for the wheel installation. Setup can create the dashboard
+and local configuration before Java, AR API, or Kaazing is ready. Setup invokes
+the compiler through the Java modules, so a separate `javac` executable does
+not need to be on `PATH`. Check the runtime requirements when available:
 
 ```text
 python3.12 --version
@@ -86,17 +90,25 @@ Use `Scripts\helix-mcp-setup.exe` on native Windows. Run
 
 If the option is omitted, setup uses `HELIX_ARAPI_LIB_DIR` or accepts one
 unambiguous installation in a supported local location. It never chooses
-between multiple installations.
+between multiple installations. If none is available, setup still creates the
+dashboard and reports `needs_attention` with `arapi` in `pending`. The dashboard
+folder explorer can then show local files and select the correct `lib` folder.
+Java is searched on `PATH`, through `JAVA_HOME` or `HELIX_JAVA_HOME`, and in
+common local JDK locations. When several candidates exist, the dashboard JDK
+folder explorer lets the user choose. Missing Java also leaves setup in
+`needs_attention`; Kaazing connectivity is checked later by the environment
+Test buttons.
 
 The command:
 
-1. installs or validates the pinned, project-managed GitHub CLI used for
-   release provenance verification;
-2. validates the BMC manifest identity and required Java API capabilities of
+1. attempts to install or validate the pinned, project-managed GitHub CLI used
+   for release provenance verification;
+2. attempts to validate the BMC manifest identity and required Java API capabilities of
    the `arapi`, `arapiext`, and `arlogger` libraries without pinning a BMC
    release;
-3. compiles the packaged bridge source in a temporary directory;
-4. installs the bridge JAR atomically;
+3. compiles the packaged bridge source in a temporary directory when Java and
+   AR API are available;
+4. installs the bridge JAR atomically when compilation succeeds;
 5. creates `helix.yaml` and `.env` only when absent;
 6. generates a private random key for encrypted plans;
 7. installs or reuses the persistent per-user dashboard manager, starts it, and
@@ -106,7 +118,10 @@ The command:
 9. detects OpenClaw by default and, when available, registers the stable
    launcher, reloads its MCP catalog, and probes the resulting tool surface;
 10. returns sanitized JSON with destinations, the selected client integration,
-   the MCP client command, and the dashboard manager state and URL.
+   the MCP client command, the dashboard manager state and URL, and any pending
+   runtime requirements. Missing Java, AR API, bridge compilation, or managed
+   GitHub CLI is reported as `needs_attention` without preventing the dashboard
+   from starting.
 
 `--config-dir`, `--data-dir`, and `--state-dir` override the per-user defaults.
 `--dry-run` validates packaged resources and reports destinations without
@@ -114,8 +129,10 @@ creating directories, compiling, changing files, or launching the dashboard.
 Use `--no-dashboard` to avoid opening a browser during headless or unattended
 installation; the persistent dashboard manager is still installed and started.
 Use `--client standalone` to skip automatic OpenClaw integration, or
-`--client openclaw` to require it instead of falling back to a standalone
-installation when the command is unavailable.
+`--client openclaw` to require it when the local runtime is ready. If Java or
+AR API is pending on a new installation, OpenClaw registration is deferred so
+the dashboard can start; the result lists `openclaw_registration` as pending
+when that client was explicitly requested.
 
 ### Managed GitHub CLI
 
@@ -250,9 +267,15 @@ foreground launch with `helix-mcp-dashboard --dotenv /path/to/.env` adopts an
 older managed installation into this persistent model without interrupting the
 current port.
 
-The dashboard does not configure the external connectivity layer or hot-reload
-a running MCP process. Restart the MCP client after saving, then run the live
-preflight before normal use.
+The dashboard has a local folder explorer for AR API libraries and Java JDKs.
+It shows the files in each folder and only enables selection when the expected
+library set or `bin/java` is present. The dashboard does not configure the
+external Kaazing connectivity layer; it reminds you to configure it and use
+the environment Test buttons. Restart the MCP client after saving, then run
+the live preflight before normal use.
+If automatic OpenClaw registration was deferred because the first setup had
+pending Java or AR API requirements, rerun `helix-mcp-setup` after repairing
+them in the dashboard.
 
 See [`dashboard.md`](dashboard.md) for the editable fields, credential
 handling, and recovery behavior.

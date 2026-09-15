@@ -72,6 +72,7 @@ from helix_mcp.dashboard_update_worker import (
     load_update_status,
     write_update_status,
 )
+from helix_mcp.installation.bridge import build_bridge
 from helix_mcp.installation.managed import (
     ManagedInstallation,
     activate_managed_installation,
@@ -80,11 +81,13 @@ from helix_mcp.installation.managed import (
     versioned_runtime_paths,
 )
 from helix_mcp.installation.openclaw import reload_managed_openclaw
+from helix_mcp.installation.setup import find_arapi_lib_dirs
 from helix_mcp.installation.updater import (
     DEFAULT_REPOSITORY,
     ReleaseStatus,
     check_for_update,
 )
+from helix_mcp.java_runtime import find_java_homes, jdk_executable
 from helix_mcp.observability import public_error_code
 from helix_mcp.operations.preflight import check_readiness
 from helix_mcp.services.database import (
@@ -95,6 +98,7 @@ from helix_mcp.services.database import (
 LOOPBACK_HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 8766
 MAX_REQUEST_BYTES = 65_536
+MAX_FOLDER_ENTRIES = 1_000
 _CREDENTIAL_PREFIX = "HELIX_CREDENTIAL_"
 _REVISION_LENGTH = 64
 _WINDOWS_CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -387,6 +391,8 @@ class DashboardConfiguration(_StrictModel):
     revision: _Revision
     server: DashboardServerSettings
     arapi: DashboardArapiSettings
+    arapi_lib_dir: _BoundedText | None = None
+    java_home: _BoundedText | None = None
     policies: dict[Environment, TargetPolicyConfig]
     credentials: dict[Environment, DashboardCredentialUpdate] = Field(
         default_factory=dict
@@ -418,6 +424,12 @@ class DashboardConfiguration(_StrictModel):
                 "dashboard-managed policies must require a write reason"
             )
         return value
+
+
+class DashboardFolderRequest(_StrictModel):
+    """One local directory to inspect with the folder picker."""
+
+    path: _BoundedText
 
 
 class DashboardPreflightRequest(_StrictModel):
@@ -873,6 +885,7 @@ class DashboardService:
             self._process_environment,
         )
         self._sql_capabilities: dict[tuple[str, Environment], bool] = {}
+        self._kaazing_status: dict[Environment, str] = {}
         self._update_repository = update_repository
         self._gh_command = str(gh_command) if gh_command is not None else None
         self._command_runner = command_runner
@@ -880,14 +893,82 @@ class DashboardService:
         self.dashboard_port = dashboard_port
 
     def state(self) -> dict[str, object]:
-        """Return configuration state without paths or secret material."""
+        """Return configuration state with local AR API paths, without secrets."""
 
         with self._mutex:
             return self._state()
 
+    def browse_local_folders(self, raw_payload: object) -> dict[str, object]:
+        """List local folder names and files without reading file contents."""
+
+        request = _validate_request(DashboardFolderRequest, raw_payload)
+        directory = Path(request.path).expanduser()
+        if not directory.is_absolute():
+            raise DashboardConfigurationError("folder is unavailable")
+        try:
+            if not directory.is_dir():
+                raise DashboardConfigurationError("folder is unavailable")
+            directory = directory.resolve()
+        except OSError:
+            raise DashboardConfigurationError(
+                "folder is unavailable"
+            ) from None
+        try:
+            with os.scandir(directory) as entries:
+                listed: list[dict[str, str]] = []
+                truncated = False
+                for entry in entries:
+                    if len(listed) >= MAX_FOLDER_ENTRIES:
+                        truncated = True
+                        break
+                    if entry.is_dir(follow_symlinks=False):
+                        kind = "folder"
+                    elif entry.is_file(follow_symlinks=False):
+                        kind = "file"
+                    else:
+                        continue
+                    listed.append(
+                        {
+                            "name": entry.name,
+                            "kind": kind,
+                            "path": str(directory / entry.name),
+                        }
+                    )
+        except OSError:
+            raise DashboardConfigurationError(
+                "folder cannot be inspected"
+            ) from None
+        listed.sort(
+            key=lambda item: (
+                item["kind"] != "folder",
+                item["name"].casefold(),
+            )
+        )
+        try:
+            version = validate_arapi_libraries(directory).version
+        except ArapiBridgeProcessError:
+            version = None
+        return {
+            "path": str(directory),
+            "parent": str(directory.parent)
+            if directory.parent != directory
+            else None,
+            "items": listed,
+            "truncated": truncated,
+            "arapi_version": version,
+            "java_available": jdk_executable(directory) is not None,
+        }
+
     def _state(self) -> dict[str, object]:
         runtime = load_runtime_settings(self.dotenv_path, environ={})
         configuration = load_single_instance_config(runtime.config_path)
+        arapi_version = self._arapi_client_version(runtime)
+        java_command = jdk_executable(runtime.java_home)
+        detected_java_home = (
+            str(Path(java_command).resolve().parent.parent)
+            if java_command is not None
+            else None
+        )
         dotenv = self._dotenv_values()
         policy_by_name = {
             policy.name: policy for policy in configuration.policies
@@ -947,7 +1028,20 @@ class DashboardService:
                     "bridge_base_url": str(
                         configuration.arapi.bridge_base_url
                     ),
-                    "client_version": self._arapi_client_version(runtime),
+                    "client_version": arapi_version,
+                    "lib_dir": str(runtime.arapi_lib_dir)
+                    if runtime.arapi_lib_dir
+                    else None,
+                    "detected_lib_dirs": [
+                        str(path) for path in find_arapi_lib_dirs()
+                    ],
+                    "java_home": str(runtime.java_home)
+                    if runtime.java_home
+                    else None,
+                    "detected_java_home": detected_java_home,
+                    "detected_java_homes": [
+                        str(path) for path in find_java_homes()
+                    ],
                     "request_timeout_seconds": (
                         configuration.arapi.request_timeout_seconds
                     ),
@@ -961,6 +1055,35 @@ class DashboardService:
                 "dotenv": self.dotenv_path.name,
             },
             "restart_required": False,
+            "local_requirements": {
+                "arapi": "ready" if arapi_version else "needs_attention",
+                "java": "ready" if java_command else "needs_attention",
+                "bridge": (
+                    "ready"
+                    if runtime.arapi_bridge_jar_path is not None
+                    and runtime.arapi_bridge_jar_path.is_file()
+                    else "needs_attention"
+                ),
+                "kaazing": (
+                    "ready"
+                    if len(self._kaazing_status) == len(Environment)
+                    and all(
+                        status == "ready"
+                        for status in self._kaazing_status.values()
+                    )
+                    else "needs_attention"
+                    if any(
+                        status == "needs_attention"
+                        for status in self._kaazing_status.values()
+                    )
+                    else "not_checked"
+                ),
+            },
+            "kaazing_checks": {
+                environment.value: status
+                for environment, status in self._kaazing_status.items()
+            },
+            "folder_picker_home": str(Path.home()),
             "update": self._update_state(runtime),
             "dashboard_runtime": self._dashboard_runtime(runtime),
         }
@@ -1265,6 +1388,63 @@ class DashboardService:
 
             original_config = config_path.read_bytes()
             original_dotenv = self.dotenv_path.read_bytes()
+            selected_lib_dir = runtime.arapi_lib_dir
+            selected_java_home = runtime.java_home
+            library_changed = False
+            java_changed = False
+            bridge_path = runtime.arapi_bridge_jar_path
+            original_bridge: bytes | None = None
+            bridge_rebuild = False
+            if request.arapi_lib_dir is not None:
+                selected_lib_dir = (
+                    Path(request.arapi_lib_dir).expanduser().absolute()
+                )
+                try:
+                    validate_arapi_libraries(selected_lib_dir)
+                except ArapiBridgeProcessError as exc:
+                    raise DashboardConfigurationError(
+                        f"AR API library directory is invalid ({public_error_code(exc)})"
+                    ) from None
+                library_changed = selected_lib_dir != runtime.arapi_lib_dir
+            if request.java_home is not None:
+                selected_java_home = (
+                    Path(request.java_home).expanduser().absolute()
+                )
+                if jdk_executable(selected_java_home) is None:
+                    raise DashboardConfigurationError(
+                        "selected Java folder must be a JDK 17+ with compiler and JAR modules"
+                    )
+                java_changed = selected_java_home != runtime.java_home
+            if (
+                request.arapi_lib_dir is not None
+                or request.java_home is not None
+            ):
+                if (
+                    bridge_path is None
+                    or bridge_path.is_symlink()
+                    or (bridge_path.exists() and not bridge_path.is_file())
+                ):
+                    raise DashboardConfigurationError(
+                        "AR API bridge JAR path is invalid"
+                    )
+                bridge_rebuild = (
+                    selected_lib_dir is not None
+                    and jdk_executable(selected_java_home) is not None
+                    and (
+                        library_changed
+                        or java_changed
+                        or not bridge_path.is_file()
+                    )
+                )
+                if bridge_rebuild:
+                    assert selected_lib_dir is not None
+                    try:
+                        validate_arapi_libraries(selected_lib_dir)
+                    except ArapiBridgeProcessError:
+                        bridge_rebuild = False
+                    else:
+                        if bridge_path.is_file():
+                            original_bridge = bridge_path.read_bytes()
             candidate: dict[str, Any] = deepcopy(
                 dict(ConfigLoader().load_mapping(config_path))
             )
@@ -1303,8 +1483,21 @@ class DashboardService:
             serialized_dotenv = self._updated_dotenv(
                 original_dotenv,
                 request.credentials,
+                selected_lib_dir if library_changed else None,
+                selected_java_home if java_changed else None,
             )
             try:
+                if bridge_rebuild:
+                    assert (
+                        bridge_path is not None
+                        and selected_lib_dir is not None
+                    )
+                    self._metadata_session.reset()
+                    build_bridge(
+                        selected_lib_dir,
+                        bridge_path,
+                        java_home=selected_java_home,
+                    )
                 _atomic_write(config_path, serialized_config)
                 _atomic_write(
                     self.dotenv_path,
@@ -1320,6 +1513,20 @@ class DashboardService:
                         "configuration path changed during save"
                     )
                 load_single_instance_config(config_path)
+                if (
+                    library_changed
+                    and verified_runtime.arapi_lib_dir != selected_lib_dir
+                ):
+                    raise DashboardConfigurationError(
+                        "AR API library path changed during save"
+                    )
+                if (
+                    java_changed
+                    and verified_runtime.java_home != selected_java_home
+                ):
+                    raise DashboardConfigurationError(
+                        "Java folder changed during save"
+                    )
             except Exception as exc:
                 try:
                     _atomic_write(config_path, original_config)
@@ -1328,6 +1535,10 @@ class DashboardService:
                         original_dotenv,
                         force_private=True,
                     )
+                    if original_bridge is not None and bridge_path is not None:
+                        _atomic_write(bridge_path, original_bridge)
+                    elif bridge_rebuild and bridge_path is not None:
+                        bridge_path.unlink(missing_ok=True)
                 except Exception:
                     raise DashboardConfigurationError(
                         "configuration save failed and rollback could not be "
@@ -1339,6 +1550,7 @@ class DashboardService:
                     "configuration save failed; previous files were restored"
                 ) from None
             self._sql_capabilities.clear()
+            self._kaazing_status.clear()
 
         application = self._apply_saved_configuration()
         response = self.state()
@@ -1393,7 +1605,27 @@ class DashboardService:
                     environments=environments,
                 )
             )
-        return report.model_dump(mode="json")
+            payload = report.model_dump(mode="json")
+            if request.live:
+                for check in payload.get("checks", []):
+                    name = check.get("name", "")
+                    parts = name.split(".")
+                    if (
+                        len(parts) != 3
+                        or parts[0] != "live"
+                        or parts[2] != "kaazing"
+                    ):
+                        continue
+                    try:
+                        environment = Environment(parts[1])
+                    except ValueError:
+                        continue
+                    self._kaazing_status[environment] = (
+                        "ready"
+                        if check.get("status") == "passed"
+                        else "needs_attention"
+                    )
+        return payload
 
     def form_catalog(self, raw_payload: object) -> dict[str, object]:
         """List forms visible to the saved credential, independent of policy."""
@@ -1562,8 +1794,10 @@ class DashboardService:
         self,
         original: bytes,
         credentials: Mapping[Environment, DashboardCredentialUpdate],
+        arapi_lib_dir: Path | None = None,
+        java_home: Path | None = None,
     ) -> bytes:
-        if not credentials:
+        if not credentials and arapi_lib_dir is None and java_home is None:
             return original
         try:
             text = original.decode("utf-8")
@@ -1572,6 +1806,28 @@ class DashboardService:
                 "dotenv file is not valid UTF-8"
             ) from None
         lines = text.splitlines()
+        for variable, folder in (
+            ("HELIX_ARAPI_LIB_DIR", arapi_lib_dir),
+            ("HELIX_JAVA_HOME", java_home),
+        ):
+            if folder is None:
+                continue
+            matching = [
+                index
+                for index, line in enumerate(lines)
+                if _dotenv_key(line) == variable
+            ]
+            if len(matching) > 1:
+                raise DashboardConfigurationError(
+                    f"{variable} is defined more than once"
+                )
+            rendered = (
+                f"{variable}={json.dumps(str(folder), ensure_ascii=False)}"
+            )
+            if matching:
+                lines[matching[0]] = rendered
+            else:
+                lines.append(rendered)
         for environment, credential in credentials.items():
             variable = _credential_variable(environment)
             matching = [
@@ -1702,6 +1958,14 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._json(
                     HTTPStatus.OK,
                     self.server.service.configure(self._read_json()),
+                )
+                return
+            if path == "/api/local/folders":
+                self._json(
+                    HTTPStatus.OK,
+                    self.server.service.browse_local_folders(
+                        self._read_json()
+                    ),
                 )
                 return
             if path == "/api/preflight":
