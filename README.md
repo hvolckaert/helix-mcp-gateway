@@ -15,6 +15,11 @@ The gateway is designed for BMC Helix professionals who already have an
 authorized local runtime. It is not a hosted service and does not bypass the
 permissions of the Helix account.
 
+For one agent using both servers, see the
+[Knowledge + Gateway agent architecture](https://github.com/hvolckaert/helix-mcp-knowledge/blob/main/docs/agent-architecture.md).
+Knowledge supplies documentary evidence; Gateway supplies authorized live
+observation and governed actions. They remain separate MCP servers.
+
 ## Why it exists
 
 Giving an AI agent direct, unrestricted access to an enterprise service
