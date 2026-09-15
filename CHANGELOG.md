@@ -5,6 +5,17 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.10.0 - 2026-09-15
+
+- Allow a new installation to finish when AR API libraries, a compatible Java
+  JDK, or the bridge build need attention, and report the pending requirements
+  for guided setup.
+- Detect local AR API and Java folder candidates, show their paths and status in
+  the Dashboard, and provide a file-visible folder picker to select and validate
+  either dependency before rebuilding the bridge.
+- Show Kaazing configuration and connectivity status per environment, with
+  separate DEV, QA, and PROD checks.
+
 ## 0.9.3 - 2026-09-14
 
 - Provision a pinned, checksum-verified GitHub CLI inside each managed
