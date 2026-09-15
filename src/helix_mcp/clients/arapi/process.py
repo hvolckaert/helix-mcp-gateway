@@ -127,6 +127,7 @@ class ArapiBridgeProcess:
             self._settings.arapi_lib_dir,
             "ARAPI library directory",
         )
+        working_directory = self._private_working_directory(jar.parent)
         classpath = os.pathsep.join((str(jar), str(libraries / "*")))
         bridge_url = urlsplit(self._base_url)
         bridge_host = bridge_url.hostname
@@ -159,6 +160,7 @@ class ArapiBridgeProcess:
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
                 env=process_environment,
+                cwd=str(working_directory),
             )
         except OSError:
             raise ArapiBridgeProcessError(
@@ -262,6 +264,27 @@ class ArapiBridgeProcess:
         if path is None or not path.is_dir():
             raise ArapiRuntimeMissingError(f"{label} is not configured")
         return path.resolve()
+
+    @staticmethod
+    def _private_working_directory(bridge_directory: Path) -> Path:
+        working_directory = bridge_directory / "runtime"
+        try:
+            working_directory.mkdir(mode=0o700, exist_ok=True)
+            if (
+                working_directory.is_symlink()
+                or working_directory.is_junction()
+                or not working_directory.is_dir()
+            ):
+                raise ArapiBridgeProcessError(
+                    "ARAPI bridge working directory is invalid"
+                )
+            if os.name != "nt":
+                working_directory.chmod(0o700)
+        except OSError:
+            raise ArapiBridgeProcessError(
+                "ARAPI bridge working directory is unavailable"
+            ) from None
+        return working_directory
 
 
 def validate_arapi_libraries(directory: Path) -> ArapiLibraries:
