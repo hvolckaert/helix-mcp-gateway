@@ -115,7 +115,9 @@ def test_setup_starts_dashboard_when_arapi_is_pending(
     monkeypatch,
     capsys,
 ) -> None:
-    installation_setup_module = importlib.import_module("helix_mcp.installation.setup")
+    installation_setup_module = importlib.import_module(
+        "helix_mcp.installation.setup"
+    )
     monkeypatch.setattr(
         installation_setup_module,
         "discover_arapi_lib_dir",
@@ -124,9 +126,9 @@ def test_setup_starts_dashboard_when_arapi_is_pending(
     server = tmp_path / "venv/bin/helix-mcp"
     server.parent.mkdir(parents=True)
     server.write_text("server", encoding="utf-8")
-    (server.parent / ("python.exe" if os.name == "nt" else "python")).write_text(
-        "python", encoding="utf-8"
-    )
+    (
+        server.parent / ("python.exe" if os.name == "nt" else "python")
+    ).write_text("python", encoding="utf-8")
     monkeypatch.setattr(
         "helix_mcp.installation.cli._installed_server_command",
         lambda: server,
@@ -144,13 +146,19 @@ def test_setup_starts_dashboard_when_arapi_is_pending(
         ),
     )
 
-    result = setup_main([
-        "--config-dir", str(tmp_path / "config"),
-        "--data-dir", str(tmp_path / "data"),
-        "--state-dir", str(tmp_path / "state"),
-        "--no-dashboard",
-        "--client", "openclaw",
-    ])
+    result = setup_main(
+        [
+            "--config-dir",
+            str(tmp_path / "config"),
+            "--data-dir",
+            str(tmp_path / "data"),
+            "--state-dir",
+            str(tmp_path / "state"),
+            "--no-dashboard",
+            "--client",
+            "openclaw",
+        ]
+    )
 
     payload = json.loads(capsys.readouterr().out)
     assert result == 0

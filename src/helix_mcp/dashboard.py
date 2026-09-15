@@ -910,7 +910,9 @@ class DashboardService:
                 raise DashboardConfigurationError("folder is unavailable")
             directory = directory.resolve()
         except OSError:
-            raise DashboardConfigurationError("folder is unavailable") from None
+            raise DashboardConfigurationError(
+                "folder is unavailable"
+            ) from None
         try:
             with os.scandir(directory) as entries:
                 listed: list[dict[str, str]] = []
@@ -925,21 +927,32 @@ class DashboardService:
                         kind = "file"
                     else:
                         continue
-                    listed.append({
-                        "name": entry.name,
-                        "kind": kind,
-                        "path": str(directory / entry.name),
-                    })
+                    listed.append(
+                        {
+                            "name": entry.name,
+                            "kind": kind,
+                            "path": str(directory / entry.name),
+                        }
+                    )
         except OSError:
-            raise DashboardConfigurationError("folder cannot be inspected") from None
-        listed.sort(key=lambda item: (item["kind"] != "folder", item["name"].casefold()))
+            raise DashboardConfigurationError(
+                "folder cannot be inspected"
+            ) from None
+        listed.sort(
+            key=lambda item: (
+                item["kind"] != "folder",
+                item["name"].casefold(),
+            )
+        )
         try:
             version = validate_arapi_libraries(directory).version
         except ArapiBridgeProcessError:
             version = None
         return {
             "path": str(directory),
-            "parent": str(directory.parent) if directory.parent != directory else None,
+            "parent": str(directory.parent)
+            if directory.parent != directory
+            else None,
             "items": listed,
             "truncated": truncated,
             "arapi_version": version,
@@ -1016,11 +1029,19 @@ class DashboardService:
                         configuration.arapi.bridge_base_url
                     ),
                     "client_version": arapi_version,
-                    "lib_dir": str(runtime.arapi_lib_dir) if runtime.arapi_lib_dir else None,
-                    "detected_lib_dirs": [str(path) for path in find_arapi_lib_dirs()],
-                    "java_home": str(runtime.java_home) if runtime.java_home else None,
+                    "lib_dir": str(runtime.arapi_lib_dir)
+                    if runtime.arapi_lib_dir
+                    else None,
+                    "detected_lib_dirs": [
+                        str(path) for path in find_arapi_lib_dirs()
+                    ],
+                    "java_home": str(runtime.java_home)
+                    if runtime.java_home
+                    else None,
                     "detected_java_home": detected_java_home,
-                    "detected_java_homes": [str(path) for path in find_java_homes()],
+                    "detected_java_homes": [
+                        str(path) for path in find_java_homes()
+                    ],
                     "request_timeout_seconds": (
                         configuration.arapi.request_timeout_seconds
                     ),
@@ -1046,9 +1067,15 @@ class DashboardService:
                 "kaazing": (
                     "ready"
                     if len(self._kaazing_status) == len(Environment)
-                    and all(status == "ready" for status in self._kaazing_status.values())
+                    and all(
+                        status == "ready"
+                        for status in self._kaazing_status.values()
+                    )
                     else "needs_attention"
-                    if any(status == "needs_attention" for status in self._kaazing_status.values())
+                    if any(
+                        status == "needs_attention"
+                        for status in self._kaazing_status.values()
+                    )
                     else "not_checked"
                 ),
             },
@@ -1369,7 +1396,9 @@ class DashboardService:
             original_bridge: bytes | None = None
             bridge_rebuild = False
             if request.arapi_lib_dir is not None:
-                selected_lib_dir = Path(request.arapi_lib_dir).expanduser().absolute()
+                selected_lib_dir = (
+                    Path(request.arapi_lib_dir).expanduser().absolute()
+                )
                 try:
                     validate_arapi_libraries(selected_lib_dir)
                 except ArapiBridgeProcessError as exc:
@@ -1378,21 +1407,34 @@ class DashboardService:
                     ) from None
                 library_changed = selected_lib_dir != runtime.arapi_lib_dir
             if request.java_home is not None:
-                selected_java_home = Path(request.java_home).expanduser().absolute()
+                selected_java_home = (
+                    Path(request.java_home).expanduser().absolute()
+                )
                 if jdk_executable(selected_java_home) is None:
                     raise DashboardConfigurationError(
                         "selected Java folder must be a JDK 17+ with compiler and JAR modules"
                     )
                 java_changed = selected_java_home != runtime.java_home
-            if request.arapi_lib_dir is not None or request.java_home is not None:
-                if bridge_path is None or bridge_path.is_symlink() or (
-                    bridge_path.exists() and not bridge_path.is_file()
+            if (
+                request.arapi_lib_dir is not None
+                or request.java_home is not None
+            ):
+                if (
+                    bridge_path is None
+                    or bridge_path.is_symlink()
+                    or (bridge_path.exists() and not bridge_path.is_file())
                 ):
-                    raise DashboardConfigurationError("AR API bridge JAR path is invalid")
+                    raise DashboardConfigurationError(
+                        "AR API bridge JAR path is invalid"
+                    )
                 bridge_rebuild = (
                     selected_lib_dir is not None
                     and jdk_executable(selected_java_home) is not None
-                    and (library_changed or java_changed or not bridge_path.is_file())
+                    and (
+                        library_changed
+                        or java_changed
+                        or not bridge_path.is_file()
+                    )
                 )
                 if bridge_rebuild:
                     assert selected_lib_dir is not None
@@ -1446,7 +1488,10 @@ class DashboardService:
             )
             try:
                 if bridge_rebuild:
-                    assert bridge_path is not None and selected_lib_dir is not None
+                    assert (
+                        bridge_path is not None
+                        and selected_lib_dir is not None
+                    )
                     self._metadata_session.reset()
                     build_bridge(
                         selected_lib_dir,
@@ -1468,10 +1513,20 @@ class DashboardService:
                         "configuration path changed during save"
                     )
                 load_single_instance_config(config_path)
-                if library_changed and verified_runtime.arapi_lib_dir != selected_lib_dir:
-                    raise DashboardConfigurationError("AR API library path changed during save")
-                if java_changed and verified_runtime.java_home != selected_java_home:
-                    raise DashboardConfigurationError("Java folder changed during save")
+                if (
+                    library_changed
+                    and verified_runtime.arapi_lib_dir != selected_lib_dir
+                ):
+                    raise DashboardConfigurationError(
+                        "AR API library path changed during save"
+                    )
+                if (
+                    java_changed
+                    and verified_runtime.java_home != selected_java_home
+                ):
+                    raise DashboardConfigurationError(
+                        "Java folder changed during save"
+                    )
             except Exception as exc:
                 try:
                     _atomic_write(config_path, original_config)
@@ -1555,14 +1610,20 @@ class DashboardService:
                 for check in payload.get("checks", []):
                     name = check.get("name", "")
                     parts = name.split(".")
-                    if len(parts) != 3 or parts[0] != "live" or parts[2] != "kaazing":
+                    if (
+                        len(parts) != 3
+                        or parts[0] != "live"
+                        or parts[2] != "kaazing"
+                    ):
                         continue
                     try:
                         environment = Environment(parts[1])
                     except ValueError:
                         continue
                     self._kaazing_status[environment] = (
-                        "ready" if check.get("status") == "passed" else "needs_attention"
+                        "ready"
+                        if check.get("status") == "passed"
+                        else "needs_attention"
                     )
         return payload
 
@@ -1751,10 +1812,18 @@ class DashboardService:
         ):
             if folder is None:
                 continue
-            matching = [index for index, line in enumerate(lines) if _dotenv_key(line) == variable]
+            matching = [
+                index
+                for index, line in enumerate(lines)
+                if _dotenv_key(line) == variable
+            ]
             if len(matching) > 1:
-                raise DashboardConfigurationError(f"{variable} is defined more than once")
-            rendered = f"{variable}={json.dumps(str(folder), ensure_ascii=False)}"
+                raise DashboardConfigurationError(
+                    f"{variable} is defined more than once"
+                )
+            rendered = (
+                f"{variable}={json.dumps(str(folder), ensure_ascii=False)}"
+            )
             if matching:
                 lines[matching[0]] = rendered
             else:
@@ -1894,7 +1963,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             if path == "/api/local/folders":
                 self._json(
                     HTTPStatus.OK,
-                    self.server.service.browse_local_folders(self._read_json()),
+                    self.server.service.browse_local_folders(
+                        self._read_json()
+                    ),
                 )
                 return
             if path == "/api/preflight":

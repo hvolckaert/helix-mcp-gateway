@@ -150,7 +150,8 @@ class ArapiBridgeProcess:
                     java_executable(self._settings.java_home)
                     if self._settings.java_home is not None
                     else "java"
-                ) or "java",
+                )
+                or "java",
                 "-cp",
                 classpath,
                 _MAIN_CLASS,

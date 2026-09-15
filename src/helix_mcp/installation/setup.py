@@ -118,9 +118,11 @@ def find_arapi_lib_dirs() -> tuple[Path, ...]:
     candidates: list[Path] = []
     for root in _KNOWN_ARAPI_ROOTS:
         try:
-            discovered = tuple(root.glob(
-                "ARSystem*/DeveloperStudio*/plugins/com.bmc.arsys.studio.api_*/lib"
-            ))
+            discovered = tuple(
+                root.glob(
+                    "ARSystem*/DeveloperStudio*/plugins/com.bmc.arsys.studio.api_*/lib"
+                )
+            )
         except OSError:
             continue
         for candidate in discovered:
@@ -166,7 +168,9 @@ def setup_installation(
             pending.append("arapi")
     configured_java_home = os.environ.get("HELIX_JAVA_HOME")
     environment_java_home = os.environ.get("JAVA_HOME")
-    selected_java_home = _absolute(configured_java_home) if configured_java_home else None
+    selected_java_home = (
+        _absolute(configured_java_home) if configured_java_home else None
+    )
     if selected_java_home is None and environment_java_home:
         candidate = _absolute(environment_java_home)
         if jdk_executable(candidate) is not None:
@@ -201,7 +205,11 @@ def setup_installation(
         else:
             try:
                 build_result: BridgeBuildResult = (
-                    build_bridge(selected_libraries, bridge_path, java_home=selected_java_home)
+                    build_bridge(
+                        selected_libraries,
+                        bridge_path,
+                        java_home=selected_java_home,
+                    )
                     if selected_java_home is not None
                     else build_bridge(selected_libraries, bridge_path)
                 )

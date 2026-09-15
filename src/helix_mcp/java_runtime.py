@@ -21,7 +21,9 @@ def java_executable(java_home: Path | None = None) -> str | None:
 
     if java_home is None:
         return shutil.which("java")
-    executable = java_home / "bin" / ("java.exe" if os.name == "nt" else "java")
+    executable = (
+        java_home / "bin" / ("java.exe" if os.name == "nt" else "java")
+    )
     try:
         is_file = executable.is_file()
     except OSError:
@@ -39,7 +41,11 @@ def jdk_executable(java_home: Path | None = None) -> str | None:
     java = java_executable(java_home)
     if java is None:
         return None
-    home = java_home if java_home is not None else Path(java).resolve().parent.parent
+    home = (
+        java_home
+        if java_home is not None
+        else Path(java).resolve().parent.parent
+    )
     try:
         with (home / "release").open("rb") as stream:
             payload = stream.read(65_537)
@@ -49,9 +55,7 @@ def jdk_executable(java_home: Path | None = None) -> str | None:
     except (OSError, UnicodeDecodeError):
         return None
     values = dict(
-        line.split("=", 1)
-        for line in release.splitlines()
-        if "=" in line
+        line.split("=", 1) for line in release.splitlines() if "=" in line
     )
     version = values.get("JAVA_VERSION", "").strip('"')
     match = re.match(r"^(\d+)", version)

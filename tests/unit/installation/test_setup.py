@@ -82,7 +82,9 @@ def test_discovery_skips_inaccessible_root(
         lambda directory: None,
     )
 
-    assert setup_implementation.find_arapi_lib_dirs() == (candidate.absolute(),)
+    assert setup_implementation.find_arapi_lib_dirs() == (
+        candidate.absolute(),
+    )
 
 
 def test_dry_run_validates_resources_without_writing(tmp_path) -> None:
@@ -110,12 +112,16 @@ def test_setup_creates_dashboard_files_when_arapi_and_java_are_missing(
             SetupError("ARAPI library directory must be specified")
         ),
     )
-    monkeypatch.setattr(setup_implementation, "jdk_executable", lambda home: None)
+    monkeypatch.setattr(
+        setup_implementation, "jdk_executable", lambda home: None
+    )
     monkeypatch.setattr(setup_implementation, "find_java_homes", lambda: ())
     monkeypatch.setattr(
         setup_implementation,
         "build_bridge",
-        lambda *args, **kwargs: pytest.fail("bridge must not build without ARAPI"),
+        lambda *args, **kwargs: pytest.fail(
+            "bridge must not build without ARAPI"
+        ),
     )
 
     result = setup_installation(
@@ -150,7 +156,9 @@ def test_setup_detects_one_local_jdk_when_java_is_not_on_path(
         "jdk_executable",
         lambda home: str(jdk / "bin/java") if home == jdk else None,
     )
-    monkeypatch.setattr(setup_implementation, "find_java_homes", lambda: (jdk,))
+    monkeypatch.setattr(
+        setup_implementation, "find_java_homes", lambda: (jdk,)
+    )
 
     result = setup_installation(
         config_dir=tmp_path / "config",
@@ -160,7 +168,9 @@ def test_setup_detects_one_local_jdk_when_java_is_not_on_path(
 
     assert result.pending == ("arapi",)
     assert result.java_home == jdk
-    assert dotenv_values(result.dotenv_path, interpolate=False)["HELIX_JAVA_HOME"] == str(jdk)
+    assert dotenv_values(result.dotenv_path, interpolate=False)[
+        "HELIX_JAVA_HOME"
+    ] == str(jdk)
 
 
 def test_setup_builds_bridge_and_never_overwrites_configuration(
