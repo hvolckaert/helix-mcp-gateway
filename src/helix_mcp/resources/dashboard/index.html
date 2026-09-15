@@ -516,6 +516,7 @@
     let folderTarget = null;
     let folderReport = null;
     let folderBrowseRequestId = 0;
+    let javaHomeEdited = false;
     const confirmSave = document.getElementById('confirm-save');
     const toast = document.getElementById('toast');
     const tabs = Array.from(document.querySelectorAll('[role="tab"][data-tab]'));
@@ -1438,9 +1439,12 @@
       document.getElementById('arapi-lib-hint').textContent = detectedLibDirs.length
         ? `${detectedLibDirs.length} valid local folder${detectedLibDirs.length === 1 ? '' : 's'} detected. Browse to see its JARs, then select it.`
         : 'No valid local folder detected. Browse to a folder containing arapi, arapiext and arlogger JARs.';
-      document.getElementById('java-home').value = configuration.arapi.java_home || '';
-      document.getElementById('java-home-hint').textContent = configuration.arapi.detected_java_home
-        ? `Java detected in ${configuration.arapi.detected_java_home}. Browse to select a different JDK folder.`
+      document.getElementById('java-home').value = configuration.arapi.java_home || configuration.arapi.detected_java_home || '';
+      javaHomeEdited = false;
+      document.getElementById('java-home-hint').textContent = configuration.arapi.java_home
+        ? 'Saved JDK folder. Browse or edit the path to select a different one.'
+        : configuration.arapi.detected_java_home
+          ? 'Detected automatically. Browse or edit the path to save an explicit JDK folder.'
         : configuration.arapi.detected_java_homes?.length
           ? `${configuration.arapi.detected_java_homes.length} Java folder candidate(s) detected. Browse to inspect and select one.`
           : 'Compatible JDK not detected. Browse to a JDK 17+ folder.';
@@ -1865,7 +1869,9 @@
           pool_size: numberValue('pool-size')
         },
         arapi_lib_dir: document.getElementById('arapi-lib-dir').value.trim() || null,
-        java_home: document.getElementById('java-home').value.trim() || null,
+        java_home: (javaHomeEdited || currentState.configuration.arapi.java_home)
+          ? document.getElementById('java-home').value.trim() || null
+          : null,
         policies,
         credentials
       };
@@ -2004,6 +2010,7 @@
       if (panel) markTabDirty(panel.dataset.tabPanel);
     };
     form.addEventListener('input', markChangedPanel);
+    document.getElementById('java-home').addEventListener('input', () => { javaHomeEdited = true; });
     form.addEventListener('change', markChangedPanel);
     reviewButton.addEventListener('click', openReview);
     document.getElementById('cancel-save').addEventListener('click', () => reviewDialog.close());
