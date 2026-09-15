@@ -5,6 +5,12 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.10.1 - 2026-09-15
+
+- Show the compatible JDK detected on PATH directly in the Dashboard's Java
+  folder field. It remains an automatic selection until the operator edits or
+  chooses the folder, so unrelated saves do not pin Java or rebuild the bridge.
+
 ## 0.10.0 - 2026-09-15
 
 - Allow a new installation to finish when AR API libraries, a compatible Java
