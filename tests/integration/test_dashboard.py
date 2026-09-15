@@ -1094,25 +1094,41 @@ def test_dashboard_tracks_kaazing_live_checks_for_setup_notice(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class Report:
+        def __init__(self, environments: tuple[object, ...]) -> None:
+            self.environments = environments
+
         def model_dump(self, *, mode: str) -> dict[str, object]:
             return {
                 "status": "ready",
                 "checks": [
                     {"name": f"live.{environment}.kaazing", "status": "passed"}
-                    for environment in ("dev", "qa", "prod")
+                    for environment in self.environments
                 ],
             }
 
     async def fake_check_readiness(*args: object, **kwargs: object) -> Report:
-        return Report()
+        return Report(kwargs["environments"])
 
     monkeypatch.setattr(
         dashboard_module, "check_readiness", fake_check_readiness
     )
-    service = DashboardService(_installation(tmp_path), process_environment={})
+    dotenv_path = _installation(tmp_path)
+    service = DashboardService(dotenv_path, process_environment={})
     assert service.state()["local_requirements"]["kaazing"] == "not_checked"
 
-    service.preflight({"live": True, "environments": []})
+    for index, environment in enumerate(("dev", "qa", "prod")):
+        report = service.preflight(
+            {"live": True, "environments": [environment]}
+        )
+        assert report["kaazing_status_persisted"] is True
+        restarted = DashboardService(dotenv_path, process_environment={})
+        assert restarted.state()["kaazing_checks"] == {
+            name: "ready" for name in ("dev", "qa", "prod")[: index + 1]
+        }
+        assert restarted.state()["local_requirements"]["kaazing"] == (
+            "ready" if index == 2 else "not_checked"
+        )
+        service = restarted
 
     assert service.state()["local_requirements"]["kaazing"] == "ready"
     assert service.state()["kaazing_checks"] == {
@@ -1120,6 +1136,18 @@ def test_dashboard_tracks_kaazing_live_checks_for_setup_notice(
         "qa": "ready",
         "prod": "ready",
     }
+    status_file = tmp_path / "state" / "dashboard-kaazing-checks.json"
+    assert status_file.is_file()
+    if os.name != "nt":
+        assert status_file.stat().st_mode & 0o077 == 0
+    saved = service.configure(_configuration(service.state()))
+    assert saved["local_requirements"]["kaazing"] == "ready"
+    assert (
+        DashboardService(dotenv_path, process_environment={}).state()[
+            "local_requirements"
+        ]["kaazing"]
+        == "ready"
+    )
 
 
 @pytest.mark.integration

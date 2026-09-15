@@ -108,6 +108,8 @@ _METADATA_PAGE_LIMIT = 200
 _MAX_FIELD_CACHE_ENTRIES = 256
 _MAX_SQL_CATALOG_OBJECTS = 100_000
 _UPDATE_LAUNCH_GRACE_SECONDS = 60
+_KAAZING_STATUS_FILENAME = "dashboard-kaazing-checks.json"
+_MAX_KAAZING_STATUS_BYTES = 4096
 LOGGER = logging.getLogger(__name__)
 
 _DASHBOARD_OBJECT_CATALOG_SQL = """
@@ -885,12 +887,90 @@ class DashboardService:
             self._process_environment,
         )
         self._sql_capabilities: dict[tuple[str, Environment], bool] = {}
-        self._kaazing_status: dict[Environment, str] = {}
+        self._kaazing_status = self._load_kaazing_status()
         self._update_repository = update_repository
         self._gh_command = str(gh_command) if gh_command is not None else None
         self._command_runner = command_runner
         self._release_status: ReleaseStatus | None = None
         self.dashboard_port = dashboard_port
+
+    def _kaazing_status_path(self) -> Path:
+        runtime = load_runtime_settings(self.dotenv_path, environ={})
+        return self._state_directory(runtime) / _KAAZING_STATUS_FILENAME
+
+    def _load_kaazing_status(self) -> dict[Environment, str]:
+        try:
+            path = self._kaazing_status_path()
+            if path.is_symlink() or path.is_junction() or not path.is_file():
+                return {}
+            if path.stat().st_size > _MAX_KAAZING_STATUS_BYTES:
+                return {}
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return {}
+        if not isinstance(payload, dict) or (
+            payload.get("schema_version") != 1
+            or payload.get("installation_id")
+            != _installation_id(self.dotenv_path)
+        ):
+            return {}
+        checks = payload.get("checks")
+        if not isinstance(checks, dict):
+            return {}
+        return {
+            environment: status
+            for environment in Environment
+            if (status := checks.get(environment.value))
+            in {"ready", "needs_attention"}
+        }
+
+    def _save_kaazing_status(self) -> bool:
+        temporary: Path | None = None
+        try:
+            path = self._kaazing_status_path()
+            directory = path.parent
+            directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+            if (
+                directory.is_symlink()
+                or directory.is_junction()
+                or not directory.is_dir()
+                or path.is_symlink()
+                or path.is_junction()
+                or (path.exists() and not path.is_file())
+            ):
+                return False
+            if os.name != "nt":
+                directory.chmod(0o700)
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{path.name}.", dir=directory
+            )
+            temporary = Path(temporary_name)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                json.dump(
+                    {
+                        "schema_version": 1,
+                        "installation_id": _installation_id(self.dotenv_path),
+                        "checks": {
+                            environment.value: status
+                            for environment, status in self._kaazing_status.items()
+                        },
+                    },
+                    stream,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            temporary.chmod(0o600)
+            os.replace(temporary, path)
+            return True
+        except (OSError, ValueError):
+            LOGGER.warning("Kaazing check status could not be saved")
+            return False
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     def state(self) -> dict[str, object]:
         """Return configuration state with local AR API paths, without secrets."""
@@ -1550,7 +1630,6 @@ class DashboardService:
                     "configuration save failed; previous files were restored"
                 ) from None
             self._sql_capabilities.clear()
-            self._kaazing_status.clear()
 
         application = self._apply_saved_configuration()
         response = self.state()
@@ -1607,6 +1686,7 @@ class DashboardService:
             )
             payload = report.model_dump(mode="json")
             if request.live:
+                kaazing_updated = False
                 for check in payload.get("checks", []):
                     name = check.get("name", "")
                     parts = name.split(".")
@@ -1624,6 +1704,11 @@ class DashboardService:
                         "ready"
                         if check.get("status") == "passed"
                         else "needs_attention"
+                    )
+                    kaazing_updated = True
+                if kaazing_updated:
+                    payload["kaazing_status_persisted"] = (
+                        self._save_kaazing_status()
                     )
         return payload
 
