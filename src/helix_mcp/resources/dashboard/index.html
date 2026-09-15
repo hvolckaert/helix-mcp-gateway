@@ -1496,8 +1496,8 @@
         const indicator = document.querySelector(`[data-kaazing-status="${environment}"]`);
         if (!indicator) return;
         const status = checks[environment];
-        indicator.textContent = status === 'ready' ? 'Kaazing connection passed.'
-          : status === 'needs_attention' ? 'Kaazing connection needs attention. Run Test again for details.'
+        indicator.textContent = status === 'ready' ? 'Last Kaazing test passed.'
+          : status === 'needs_attention' ? 'Last Kaazing test needs attention. Run Test again for details.'
           : 'Kaazing connection has not been tested.';
         indicator.className = `hint env-connection-status${status === 'ready' ? ' status-good' : status === 'needs_attention' ? ' status-bad' : ''}`;
       });
@@ -1955,10 +1955,10 @@
             indicator.textContent = 'Kaazing connection could not be tested. Review local requirements in Diagnostics.';
             indicator.className = 'hint env-connection-status status-bad';
           } else if (check.status === 'passed') {
-            indicator.textContent = 'Kaazing connection passed.';
+            indicator.textContent = 'Last Kaazing test passed.';
             indicator.className = 'hint env-connection-status status-good';
           } else {
-            indicator.textContent = `Kaazing connection needs attention (${check.error_code || 'HEALTH_CHECK_FAILED'}).`;
+            indicator.textContent = `Last Kaazing test needs attention (${check.error_code || 'HEALTH_CHECK_FAILED'}).`;
             indicator.className = 'hint env-connection-status status-bad';
             kaazingFailures.push(environmentLabel(environment));
           }
@@ -1971,10 +1971,14 @@
             currentState.kaazing_checks = updatedState.kaazing_checks;
           } catch (_) {}
         }
-        showToast(
-          kaazingFailures.length ? `Kaazing connection needs attention for ${kaazingFailures.join(', ')}.` : report.status === 'ready' ? 'Installation is ready.' : 'Some checks need attention.',
-          report.status !== 'ready'
-        );
+        if (report.kaazing_status_persisted === false) {
+          showToast('Kaazing was tested, but the Dashboard could not save the result. It may appear untested after a restart.', true);
+        } else {
+          showToast(
+            kaazingFailures.length ? `Kaazing connection needs attention for ${kaazingFailures.join(', ')}.` : report.status === 'ready' ? 'Installation is ready.' : 'Some checks need attention.',
+            report.status !== 'ready'
+          );
+        }
       } catch (error) {
         showToast(error.message, true);
       } finally {

@@ -69,6 +69,11 @@ allow the connected OpenClaw runtime to reload. Initial setup can open the
 dashboard even when Java or AR API is missing; a notice directs the user to
 these folder controls. Kaazing is an external connection and is checked with
 the environment Test buttons.
+The Dashboard keeps the last Kaazing Test result for each environment in its
+private state directory, so refreshing the page, restarting the Dashboard, or
+saving unrelated settings does not mark a successful test as untested. The
+environment tab labels this as the last test; run Test again after changing the
+external gateway or when current connectivity matters.
 
 Each environment owns exactly one policy with the canonical internal name
 `dev`, `qa`, or `prod`; the assignment cannot be changed. Older policy names are
