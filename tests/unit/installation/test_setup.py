@@ -48,6 +48,43 @@ def test_discovery_supports_versioned_arsystem_directories(
     assert validated == [candidate]
 
 
+def test_discovery_skips_inaccessible_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inaccessible = tmp_path / "inaccessible"
+    available = tmp_path / "available"
+    candidate = (
+        available
+        / "ARSystem25"
+        / "DeveloperStudio"
+        / "plugins"
+        / "com.bmc.arsys.studio.api_25.1.0.build000"
+        / "lib"
+    )
+    candidate.mkdir(parents=True)
+    monkeypatch.setattr(
+        setup_implementation,
+        "_KNOWN_ARAPI_ROOTS",
+        (inaccessible, available),
+    )
+    original_glob = Path.glob
+
+    def glob_with_inaccessible_root(path: Path, pattern: str):
+        if path == inaccessible:
+            raise PermissionError("root is inaccessible")
+        return original_glob(path, pattern)
+
+    monkeypatch.setattr(Path, "glob", glob_with_inaccessible_root)
+    monkeypatch.setattr(
+        setup_implementation,
+        "validate_arapi_libraries",
+        lambda directory: None,
+    )
+
+    assert setup_implementation.find_arapi_lib_dirs() == (candidate.absolute(),)
+
+
 def test_dry_run_validates_resources_without_writing(tmp_path) -> None:
     result = setup_installation(
         config_dir=tmp_path / "config",
@@ -60,6 +97,70 @@ def test_dry_run_validates_resources_without_writing(tmp_path) -> None:
     assert result.bridge_built is False
     assert result.arapi_lib_dir is None
     assert list(tmp_path.iterdir()) == []
+
+
+def test_setup_creates_dashboard_files_when_arapi_and_java_are_missing(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        setup_implementation,
+        "discover_arapi_lib_dir",
+        lambda explicit: (_ for _ in ()).throw(
+            SetupError("ARAPI library directory must be specified")
+        ),
+    )
+    monkeypatch.setattr(setup_implementation, "jdk_executable", lambda home: None)
+    monkeypatch.setattr(setup_implementation, "find_java_homes", lambda: ())
+    monkeypatch.setattr(
+        setup_implementation,
+        "build_bridge",
+        lambda *args, **kwargs: pytest.fail("bridge must not build without ARAPI"),
+    )
+
+    result = setup_installation(
+        config_dir=tmp_path / "config",
+        data_dir=tmp_path / "data",
+        state_dir=tmp_path / "state",
+    )
+
+    assert result.pending == ("arapi", "java")
+    assert result.bridge_built is False
+    assert result.config_path.is_file()
+    assert result.dotenv_path.is_file()
+    assert not result.bridge_path.exists()
+    assert (tmp_path / "state" / "write-plans.key").is_file()
+    values = dotenv_values(result.dotenv_path, interpolate=False)
+    assert values["HELIX_ARAPI_LIB_DIR"] == ""
+    assert values["HELIX_JAVA_HOME"] == ""
+
+
+def test_setup_detects_one_local_jdk_when_java_is_not_on_path(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    jdk = tmp_path / "jdk-17"
+    monkeypatch.setattr(
+        setup_implementation,
+        "discover_arapi_lib_dir",
+        lambda explicit: (_ for _ in ()).throw(SetupError("AR API pending")),
+    )
+    monkeypatch.setattr(
+        setup_implementation,
+        "jdk_executable",
+        lambda home: str(jdk / "bin/java") if home == jdk else None,
+    )
+    monkeypatch.setattr(setup_implementation, "find_java_homes", lambda: (jdk,))
+
+    result = setup_installation(
+        config_dir=tmp_path / "config",
+        data_dir=tmp_path / "data",
+        state_dir=tmp_path / "state",
+    )
+
+    assert result.pending == ("arapi",)
+    assert result.java_home == jdk
+    assert dotenv_values(result.dotenv_path, interpolate=False)["HELIX_JAVA_HOME"] == str(jdk)
 
 
 def test_setup_builds_bridge_and_never_overwrites_configuration(

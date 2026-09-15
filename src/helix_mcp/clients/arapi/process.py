@@ -9,7 +9,6 @@ import hmac
 import os
 import re
 import secrets
-import shutil
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +17,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from helix_mcp.config import RuntimeSettings
+from helix_mcp.java_runtime import java_executable, jdk_executable
 
 _MAIN_CLASS = "com.example.helix.bridge.ArapiBridge"
 _MAX_MANIFEST_BYTES = 65_536
@@ -146,7 +146,11 @@ class ArapiBridgeProcess:
             )
         try:
             self._process = await asyncio.create_subprocess_exec(
-                "java",
+                (
+                    java_executable(self._settings.java_home)
+                    if self._settings.java_home is not None
+                    else "java"
+                ) or "java",
                 "-cp",
                 classpath,
                 _MAIN_CLASS,
@@ -177,8 +181,9 @@ class ArapiBridgeProcess:
         self._validate_startup_requirements()
 
     def _validate_startup_requirements(self) -> None:
-        if shutil.which("java") is None:
-            raise ArapiRuntimeMissingError("Java runtime is not available")
+        java = jdk_executable(self._settings.java_home)
+        if java is None:
+            raise ArapiRuntimeMissingError("JDK 17+ is not available")
         self._required_file(
             self._settings.arapi_bridge_jar_path,
             "ARAPI bridge JAR",

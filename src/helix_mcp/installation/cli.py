@@ -20,6 +20,7 @@ from helix_mcp.dashboard import (
 from helix_mcp.dashboard_runtime import DashboardRuntimeManager
 from helix_mcp.installation.bridge import build_bridge
 from helix_mcp.installation.github_cli import (
+    GitHubCliError,
     ensure_managed_github_cli,
     managed_github_cli_plan,
 )
@@ -135,6 +136,7 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     try:
         managed_activated = False
+        deferred_openclaw = False
         managed: ManagedInstallation | None = None
         client_integration = arguments.client
         defaults = default_install_paths()
@@ -143,11 +145,19 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
             .expanduser()
             .absolute()
         )
-        github_cli = (
-            managed_github_cli_plan(github_cli_workspace)
-            if arguments.dry_run
-            else ensure_managed_github_cli(github_cli_workspace)
-        )
+        github_cli_pending = False
+        try:
+            github_cli = (
+                managed_github_cli_plan(github_cli_workspace)
+                if arguments.dry_run
+                else ensure_managed_github_cli(github_cli_workspace)
+            ).to_dict()
+        except GitHubCliError as exc:
+            github_cli_pending = True
+            github_cli = {
+                "status": "pending",
+                "error_code": public_error_code(exc),
+            }
         result = setup_installation(
             arapi_lib_dir=arguments.arapi_lib_dir,
             config_dir=arguments.config_dir,
@@ -158,10 +168,19 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
         if not arguments.dry_run and not arguments.no_managed:
             server_command = _installed_server_command()
             previous = load_managed_installation(result.paths.data_dir)
-            openclaw_command = _selected_openclaw_command(
-                requested_client=arguments.client,
-                requested_command=arguments.openclaw_command,
-                previous=previous,
+            deferred_openclaw = (
+                bool(result.pending)
+                and previous is None
+                and arguments.client == "openclaw"
+            )
+            openclaw_command = (
+                None
+                if result.pending and previous is None
+                else _selected_openclaw_command(
+                    requested_client=arguments.client,
+                    requested_command=arguments.openclaw_command,
+                    previous=previous,
+                )
             )
             client_integration = (
                 "openclaw" if openclaw_command is not None else "standalone"
@@ -238,9 +257,17 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
         _print_json({"status": "failed", "error_code": public_error_code(exc)})
         return 1
     payload = _paths_to_strings(asdict(result))
-    payload["status"] = "ready_for_configuration"
+    pending = list(result.pending)
+    if github_cli_pending:
+        pending.append("github_cli")
+    if deferred_openclaw:
+        pending.append("openclaw_registration")
+    payload["pending"] = pending
+    payload["status"] = (
+        "needs_attention" if pending else "ready_for_configuration"
+    )
     payload["client_integration"] = client_integration
-    payload["github_cli"] = github_cli.to_dict()
+    payload["github_cli"] = github_cli
     payload["codex_desktop"] = {
         "command": result.server_command,
         "args": (

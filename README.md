@@ -109,6 +109,9 @@ a real environment.
   Helix environments;
 - authorized per-environment credentials.
 
+Only Python is required to create the installation. Guided setup can open the
+dashboard while the other runtime requirements remain pending.
+
 GitHub CLI is not a system prerequisite. Guided setup installs a private,
 pinned copy for verified managed updates without `sudo`, `gh auth login`, or
 changes to the user's `PATH`.
@@ -132,11 +135,15 @@ python3.12 -m venv /path/to/helix-mcp/venv
   --environment dev
 ```
 
-The setup command generates local configuration, compiles the Java bridge
-against the user's AR API installation, and creates the encryption key when
-requested. It also installs or validates the project-managed GitHub CLI used
-to verify release provenance. It never overwrites existing credentials or
-configuration. After a successful installation it installs a persistent
+The setup command generates local configuration and creates the encryption key.
+The `--arapi-lib-dir` option may be omitted; setup then attempts discovery and
+the dashboard folder explorer can resolve any ambiguous or missing path.
+When Java and AR API are available, it compiles the Java bridge against the
+user's AR API installation. It also attempts to install the project-managed
+GitHub CLI used to verify release provenance. Missing runtime dependencies are
+reported as `needs_attention`; the dashboard still opens so their folders can
+be selected later. It never overwrites existing credentials or configuration.
+After setup it installs a persistent
 per-user dashboard service,
 starts it, and opens it in the default browser. Setup also creates stable MCP
 and dashboard launchers; clients and the dashboard service keep those commands

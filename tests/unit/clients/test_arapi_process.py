@@ -76,7 +76,7 @@ def test_healthy_external_bridge_is_not_owned(
     monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
     monkeypatch.setattr(asyncio, "create_subprocess_exec", forbidden)
     monkeypatch.setattr(
-        "helix_mcp.clients.arapi.process.shutil.which",
+        "helix_mcp.clients.arapi.process.jdk_executable",
         lambda executable: "/runtime/java",
     )
     manager = ArapiBridgeProcess(
@@ -120,7 +120,7 @@ def test_owned_bridge_is_terminated_on_close(
     monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
     monkeypatch.setattr(asyncio, "create_subprocess_exec", create)
     monkeypatch.setattr(
-        "helix_mcp.clients.arapi.process.shutil.which",
+        "helix_mcp.clients.arapi.process.jdk_executable",
         lambda executable: "/runtime/java",
     )
     manager = ArapiBridgeProcess(
@@ -142,6 +142,52 @@ def test_owned_bridge_is_terminated_on_close(
     assert environment["HELIX_ARAPI_BRIDGE_TOKEN"] == "bridge-test-token"
 
 
+def test_owned_bridge_uses_selected_jdk_folder(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    jdk = tmp_path / "jdk"
+    executable = jdk / "bin/java"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("java", encoding="utf-8")
+    executable.chmod(0o700)
+    (jdk / "release").write_text(
+        'JAVA_VERSION="17.0.1"\n'
+        'MODULES="java.base jdk.compiler jdk.jartool"\n',
+        encoding="utf-8",
+    )
+    runtime = settings(tmp_path).model_copy(update={"java_home": jdk})
+    health_checks = iter((False, True))
+
+    class FakeProcess:
+        returncode = None
+
+        def terminate(self) -> None:
+            return None
+
+        async def wait(self) -> int:
+            self.returncode = 0
+            return 0
+
+    captured: list[str] = []
+
+    async def create(*args, **kwargs):
+        captured.append(args[0])
+        return FakeProcess()
+
+    async def healthy(self) -> bool:
+        return next(health_checks)
+
+    monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create)
+    manager = ArapiBridgeProcess(runtime, ("http://127.0.0.1:8097/",))
+
+    run(manager.start())
+    run(manager.aclose())
+
+    assert captured == [str(executable)]
+
+
 def test_unavailable_java_fails_before_process_creation(
     tmp_path: Path,
     monkeypatch,
@@ -155,7 +201,7 @@ def test_unavailable_java_fails_before_process_creation(
     monkeypatch.setattr(ArapiBridgeProcess, "_healthy", unhealthy)
     monkeypatch.setattr(asyncio, "create_subprocess_exec", forbidden)
     monkeypatch.setattr(
-        "helix_mcp.clients.arapi.process.shutil.which",
+        "helix_mcp.clients.arapi.process.jdk_executable",
         lambda executable: None,
     )
     manager = ArapiBridgeProcess(
@@ -163,7 +209,7 @@ def test_unavailable_java_fails_before_process_creation(
         ("http://127.0.0.1:8090/",),
     )
 
-    with pytest.raises(ArapiRuntimeMissingError, match="Java runtime"):
+    with pytest.raises(ArapiRuntimeMissingError, match="JDK 17"):
         run(manager.start())
 
     assert manager.owned is False
@@ -181,7 +227,7 @@ def test_missing_primary_arapi_library_is_rejected(
     (runtime.arapi_lib_dir / "arapiext2130_build007.jar").unlink()
     monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
     monkeypatch.setattr(
-        "helix_mcp.clients.arapi.process.shutil.which",
+        "helix_mcp.clients.arapi.process.jdk_executable",
         lambda executable: "/runtime/java",
     )
     manager = ArapiBridgeProcess(
@@ -212,7 +258,7 @@ def test_bmc_arapi_versions_are_accepted_by_capability(
 ) -> None:
     runtime = settings(tmp_path, arapi_version=arapi_version)
     monkeypatch.setattr(
-        "helix_mcp.clients.arapi.process.shutil.which",
+        "helix_mcp.clients.arapi.process.jdk_executable",
         lambda executable: "/runtime/java",
     )
     manager = ArapiBridgeProcess(
@@ -233,7 +279,7 @@ def test_non_bmc_arapi_manifest_is_rejected(
 ) -> None:
     runtime = settings(tmp_path, arapi_vendor="Unknown vendor")
     monkeypatch.setattr(
-        "helix_mcp.clients.arapi.process.shutil.which",
+        "helix_mcp.clients.arapi.process.jdk_executable",
         lambda executable: "/runtime/java",
     )
     manager = ArapiBridgeProcess(
@@ -263,7 +309,7 @@ def test_arapi_without_required_classes_is_rejected(
         )
         archive.writestr("com/bmc/arsys/api/ARServerUser.class", b"test")
     monkeypatch.setattr(
-        "helix_mcp.clients.arapi.process.shutil.which",
+        "helix_mcp.clients.arapi.process.jdk_executable",
         lambda executable: "/runtime/java",
     )
     manager = ArapiBridgeProcess(

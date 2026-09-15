@@ -14,6 +14,7 @@ from pathlib import Path
 
 from helix_mcp.clients.arapi import validate_arapi_libraries
 from helix_mcp.installation.resources import bridge_source_path
+from helix_mcp.java_runtime import java_executable
 
 _MAIN_CLASS_FILE = Path("com/example/helix/bridge/ArapiBridge.class")
 _BUILD_TIMEOUT_SECONDS = 120
@@ -47,6 +48,8 @@ class BridgeBuildResult:
 def build_bridge(
     arapi_lib_dir: str | Path,
     output_path: str | Path,
+    *,
+    java_home: str | Path | None = None,
 ) -> BridgeBuildResult:
     """Compile the packaged bridge and atomically install its JAR."""
 
@@ -61,7 +64,11 @@ def build_bridge(
             "bridge output directory is unavailable"
         ) from None
 
-    java = shutil.which("java")
+    java = (
+        java_executable(Path(java_home))
+        if java_home is not None
+        else shutil.which("java")
+    )
     if java is None:
         raise BridgeBuildError("Java runtime is unavailable")
     package_version = version("helix-mcp-gateway")

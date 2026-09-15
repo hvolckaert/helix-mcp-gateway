@@ -10,16 +10,22 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from helix_mcp.clients.arapi import validate_arapi_libraries
-from helix_mcp.installation.bridge import BridgeBuildResult, build_bridge
+from helix_mcp.installation.bridge import (
+    BridgeBuildError,
+    BridgeBuildResult,
+    build_bridge,
+)
 from helix_mcp.installation.resources import (
     read_config_template,
     validate_packaged_resources,
 )
+from helix_mcp.java_runtime import find_java_homes, jdk_executable
 
 _BRIDGE_FILENAME = "helix-arapi-bridge.jar"
 _KNOWN_ARAPI_ROOTS = (
-    Path("/mnt/c/Program Files/BMC Software"),
-    Path("C:/Program Files/BMC Software"),
+    (Path("C:/Program Files/BMC Software"),)
+    if os.name == "nt"
+    else (Path("/mnt/c/Program Files/BMC Software"),)
 )
 
 
@@ -52,6 +58,8 @@ class SetupResult:
     bridge_built: bool
     dry_run: bool
     server_command: str
+    pending: tuple[str, ...] = ()
+    java_home: Path | None = None
 
 
 def default_install_paths() -> InstallPaths:
@@ -98,20 +106,30 @@ def discover_arapi_lib_dir(
         validate_arapi_libraries(candidate)
         return candidate.absolute()
 
+    unique = find_arapi_lib_dirs()
+    if len(unique) != 1:
+        raise SetupError("ARAPI library directory must be specified")
+    return unique[0]
+
+
+def find_arapi_lib_dirs() -> tuple[Path, ...]:
+    """List valid AR API library directories in supported local locations."""
+
     candidates: list[Path] = []
     for root in _KNOWN_ARAPI_ROOTS:
-        for candidate in root.glob(
-            "ARSystem*/DeveloperStudio*/plugins/com.bmc.arsys.studio.api_*/lib"
-        ):
+        try:
+            discovered = tuple(root.glob(
+                "ARSystem*/DeveloperStudio*/plugins/com.bmc.arsys.studio.api_*/lib"
+            ))
+        except OSError:
+            continue
+        for candidate in discovered:
             try:
                 validate_arapi_libraries(candidate)
             except Exception:
                 continue
             candidates.append(candidate.absolute())
-    unique = tuple(dict.fromkeys(candidates))
-    if len(unique) != 1:
-        raise SetupError("ARAPI library directory must be specified")
-    return unique[0]
+    return tuple(dict.fromkeys(candidates))
 
 
 def setup_installation(
@@ -122,7 +140,7 @@ def setup_installation(
     state_dir: str | Path | None = None,
     dry_run: bool = False,
 ) -> SetupResult:
-    """Build the bridge and initialize missing configuration files."""
+    """Initialize files even when optional runtime dependencies are missing."""
 
     validate_packaged_resources()
     defaults = default_install_paths()
@@ -134,11 +152,31 @@ def setup_installation(
     dotenv_path = paths.config_dir / ".env"
     config_path = paths.config_dir / "helix.yaml"
     bridge_path = paths.data_dir / "bridge" / _BRIDGE_FILENAME
-    selected_libraries = (
-        None
-        if dry_run and arapi_lib_dir is None
-        else discover_arapi_lib_dir(arapi_lib_dir)
-    )
+    selected_libraries: Path | None = None
+    libraries_valid = False
+    pending: list[str] = []
+    if not dry_run or arapi_lib_dir is not None:
+        configured = arapi_lib_dir or os.environ.get("HELIX_ARAPI_LIB_DIR")
+        try:
+            selected_libraries = discover_arapi_lib_dir(arapi_lib_dir)
+            libraries_valid = True
+        except Exception:
+            if configured:
+                selected_libraries = _absolute(configured)
+            pending.append("arapi")
+    configured_java_home = os.environ.get("HELIX_JAVA_HOME")
+    environment_java_home = os.environ.get("JAVA_HOME")
+    selected_java_home = _absolute(configured_java_home) if configured_java_home else None
+    if selected_java_home is None and environment_java_home:
+        candidate = _absolute(environment_java_home)
+        if jdk_executable(candidate) is not None:
+            selected_java_home = candidate
+    java_command = jdk_executable(selected_java_home)
+    if selected_java_home is None and java_command is None:
+        candidates = find_java_homes()
+        if len(candidates) == 1:
+            selected_java_home = candidates[0]
+            java_command = jdk_executable(selected_java_home)
     server_command = shutil.which("helix-mcp") or "helix-mcp"
     if dry_run:
         return SetupResult(
@@ -152,15 +190,29 @@ def setup_installation(
             bridge_built=False,
             dry_run=True,
             server_command=server_command,
+            pending=tuple(pending),
+            java_home=selected_java_home,
         )
 
-    assert selected_libraries is not None
-    build_result: BridgeBuildResult = build_bridge(
-        selected_libraries,
-        bridge_path,
-    )
-    if build_result.output_path != bridge_path:
-        raise SetupError("bridge installation path mismatch")
+    bridge_built = False
+    if libraries_valid and selected_libraries is not None:
+        if java_command is None:
+            pending.append("java")
+        else:
+            try:
+                build_result: BridgeBuildResult = (
+                    build_bridge(selected_libraries, bridge_path, java_home=selected_java_home)
+                    if selected_java_home is not None
+                    else build_bridge(selected_libraries, bridge_path)
+                )
+            except BridgeBuildError:
+                pending.append("bridge")
+            else:
+                if build_result.output_path != bridge_path:
+                    raise SetupError("bridge installation path mismatch")
+                bridge_built = True
+    elif java_command is None:
+        pending.append("java")
     config_created = _create_file(
         config_path,
         read_config_template(),
@@ -175,6 +227,7 @@ def setup_installation(
             config_path=config_path,
             bridge_path=bridge_path,
             arapi_lib_dir=selected_libraries,
+            java_home=selected_java_home,
             audit_path=paths.state_dir / "audit.jsonl",
             metrics_path=paths.state_dir / "metrics.json",
             operation_log_path=paths.state_dir / "operations.jsonl",
@@ -191,9 +244,11 @@ def setup_installation(
         arapi_lib_dir=selected_libraries,
         dotenv_created=dotenv_created,
         config_created=config_created,
-        bridge_built=True,
+        bridge_built=bridge_built,
         dry_run=False,
         server_command=server_command,
+        pending=tuple(pending),
+        java_home=selected_java_home,
     )
 
 
@@ -255,7 +310,8 @@ def _render_dotenv(
     *,
     config_path: Path,
     bridge_path: Path,
-    arapi_lib_dir: Path,
+    arapi_lib_dir: Path | None,
+    java_home: Path | None,
     audit_path: Path,
     metrics_path: Path,
     operation_log_path: Path,
@@ -270,7 +326,8 @@ def _render_dotenv(
         f"HELIX_CONFIG_PATH={quote(config_path)}\n\n"
         "# Local AR API runtime.\n"
         f"HELIX_ARAPI_BRIDGE_JAR_PATH={quote(bridge_path)}\n"
-        f"HELIX_ARAPI_LIB_DIR={quote(arapi_lib_dir)}\n\n"
+        f"HELIX_ARAPI_LIB_DIR={quote(arapi_lib_dir) if arapi_lib_dir else ''}\n\n"
+        f"HELIX_JAVA_HOME={quote(java_home) if java_home else ''}\n\n"
         "# Local audit output.\n"
         f"HELIX_AUDIT_LOG_PATH={quote(audit_path)}\n"
         "HELIX_AUDIT_LOG_MAX_BYTES=10485760\n"

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import http.client
+import importlib
 import json
 import os
+import shutil
 import socket
 import subprocess
 import threading
@@ -40,13 +42,16 @@ from helix_mcp.installation.managed import (
     ManagedInstallation,
     activate_managed_installation,
 )
+from helix_mcp.installation.setup import SetupError, setup_installation
 from helix_mcp.installation.updater import ReleaseStatus
 from helix_mcp.services.database import (
     DatabaseObjectKind,
     DatabaseObjectMetadata,
 )
+from tests.support.java_bridge import build_test_runtime
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+installation_setup_module = importlib.import_module("helix_mcp.installation.setup")
 
 
 def _installation(tmp_path: Path, *, secret: str | None = None) -> Path:
@@ -101,7 +106,6 @@ def _configuration(
     arapi = configuration["arapi"]
     assert isinstance(server, dict)
     assert isinstance(arapi, dict)
-    assert arapi["client_version"] is None
     return {
         "revision": state["revision"],
         "server": {
@@ -168,6 +172,38 @@ def test_state_is_sanitized_and_describes_fixed_environments(
     assert isinstance(update, dict)
     assert update["managed"] is False
     assert update["release"]["status"] == "unavailable"
+
+
+@pytest.mark.integration
+def test_new_installation_opens_dashboard_with_missing_runtime_requirements(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        installation_setup_module,
+        "discover_arapi_lib_dir",
+        lambda explicit: (_ for _ in ()).throw(SetupError("not found")),
+    )
+    monkeypatch.setattr(installation_setup_module, "jdk_executable", lambda home: None)
+    monkeypatch.setattr(installation_setup_module, "find_java_homes", lambda: ())
+    monkeypatch.setattr(dashboard_module, "jdk_executable", lambda home: None)
+    result = setup_installation(
+        config_dir=tmp_path / "config",
+        data_dir=tmp_path / "data",
+        state_dir=tmp_path / "state",
+    )
+
+    state = DashboardService(result.dotenv_path, process_environment={}).state()
+
+    assert result.pending == ("arapi", "java")
+    assert state["local_requirements"] == {
+        "arapi": "needs_attention",
+        "java": "needs_attention",
+        "bridge": "needs_attention",
+        "kaazing": "not_checked",
+    }
+    assert state["configuration"]["arapi"]["lib_dir"] is None
+    assert state["folder_picker_home"] == str(Path.home())
 
 
 @pytest.mark.integration
@@ -404,6 +440,253 @@ def test_configure_updates_yaml_and_write_only_credential(
     assert "dashboard-password" not in serialized_result
     if os.name != "nt":
         assert dotenv_path.stat().st_mode & 0o077 == 0
+
+
+@pytest.mark.integration
+def test_dashboard_selects_valid_arapi_folder_and_rebuilds_bridge(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("java") is None:
+        pytest.skip("Java is required")
+    java_dir = tmp_path / "java"
+    java_dir.mkdir()
+    bridge, libraries = build_test_runtime(java_dir)
+    replacement = tmp_path / "other-lib"
+    shutil.copytree(libraries, replacement)
+    dotenv_path = _installation(tmp_path)
+    with dotenv_path.open("a", encoding="utf-8") as stream:
+        stream.write(f"HELIX_ARAPI_BRIDGE_JAR_PATH={json.dumps(str(bridge))}\n")
+        stream.write(f"HELIX_ARAPI_LIB_DIR={json.dumps(str(libraries))}\n")
+    service = DashboardService(dotenv_path, process_environment={})
+    state = service.state()
+    assert state["configuration"]["arapi"]["lib_dir"] == str(libraries)
+    browsed = service.browse_local_folders({"path": str(libraries)})
+    assert browsed["arapi_version"] == "21.30.07-SNAPSHOT"
+    assert {item["name"] for item in browsed["items"]} >= {
+        "arapi2130_build007.jar",
+        "arapiext2130_build007.jar",
+    }
+    request = _configuration(state)
+    request["arapi_lib_dir"] = str(replacement)
+
+    result = service.configure(request)
+
+    assert result["configuration"]["arapi"]["lib_dir"] == str(replacement)
+    assert dotenv_values(dotenv_path, interpolate=False)["HELIX_ARAPI_LIB_DIR"] == str(replacement)
+    assert bridge.is_file()
+    assert bridge.read_bytes() != b""
+
+
+@pytest.mark.integration
+def test_dashboard_rejects_invalid_arapi_folder_without_changing_files(
+    tmp_path: Path,
+) -> None:
+    dotenv_path = _installation(tmp_path)
+    service = DashboardService(dotenv_path, process_environment={})
+    request = _configuration(service.state())
+    request["arapi_lib_dir"] = str(tmp_path / "missing-lib")
+    before_dotenv = dotenv_path.read_bytes()
+    before_config = (tmp_path / "helix.yaml").read_bytes()
+
+    with pytest.raises(DashboardConfigurationError, match="AR API library directory is invalid"):
+        service.configure(request)
+
+    assert dotenv_path.read_bytes() == before_dotenv
+    assert (tmp_path / "helix.yaml").read_bytes() == before_config
+
+
+@pytest.mark.integration
+def test_dashboard_folder_browser_reports_inaccessible_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = DashboardService(_installation(tmp_path), process_environment={})
+    blocked = tmp_path / "blocked"
+    blocked.mkdir()
+    original_is_dir = Path.is_dir
+
+    def is_dir_with_denied_path(path: Path) -> bool:
+        if path == blocked:
+            raise PermissionError("access denied")
+        return original_is_dir(path)
+
+    monkeypatch.setattr(Path, "is_dir", is_dir_with_denied_path)
+    with pytest.raises(DashboardConfigurationError, match="folder is unavailable"):
+        service.browse_local_folders({"path": str(blocked)})
+    service.close()
+
+
+@pytest.mark.integration
+def test_dashboard_can_save_java_folder_while_arapi_is_pending(
+    tmp_path: Path,
+) -> None:
+    dotenv_path = _installation(tmp_path)
+    bridge = tmp_path / "data/bridge/helix-arapi-bridge.jar"
+    with dotenv_path.open("a", encoding="utf-8") as stream:
+        stream.write(f"HELIX_ARAPI_BRIDGE_JAR_PATH={json.dumps(str(bridge))}\n")
+    jdk = tmp_path / "jdk"
+    executable = jdk / "bin/java"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("java", encoding="utf-8")
+    executable.chmod(0o700)
+    (jdk / "release").write_text(
+        'JAVA_VERSION="17.0.1"\n'
+        'MODULES="java.base jdk.compiler jdk.jartool"\n',
+        encoding="utf-8",
+    )
+    service = DashboardService(dotenv_path, process_environment={})
+    request = _configuration(service.state())
+    request["java_home"] = str(jdk)
+
+    result = service.configure(request)
+
+    assert result["configuration"]["arapi"]["java_home"] == str(jdk)
+    assert result["local_requirements"]["arapi"] == "needs_attention"
+    assert result["local_requirements"]["bridge"] == "needs_attention"
+    assert dotenv_values(dotenv_path, interpolate=False)["HELIX_JAVA_HOME"] == str(jdk)
+    assert not bridge.exists()
+    browsed = service.browse_local_folders({"path": str(jdk)})
+    assert browsed["java_available"] is True
+    assert any(item["name"] == "bin" and item["kind"] == "folder" for item in browsed["items"])
+
+
+@pytest.mark.integration
+def test_dashboard_can_save_arapi_folder_while_java_is_pending(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if shutil.which("java") is None:
+        pytest.skip("Java is required to create the AR API test JARs")
+    java_dir = tmp_path / "java"
+    java_dir.mkdir()
+    _, libraries = build_test_runtime(java_dir)
+    dotenv_path = _installation(tmp_path)
+    bridge = tmp_path / "data/bridge/helix-arapi-bridge.jar"
+    with dotenv_path.open("a", encoding="utf-8") as stream:
+        stream.write(f"HELIX_ARAPI_BRIDGE_JAR_PATH={json.dumps(str(bridge))}\n")
+    monkeypatch.setattr(dashboard_module, "jdk_executable", lambda home: None)
+    monkeypatch.setattr(
+        dashboard_module,
+        "build_bridge",
+        lambda *args, **kwargs: pytest.fail("bridge must wait for Java"),
+    )
+    service = DashboardService(dotenv_path, process_environment={})
+    request = _configuration(service.state())
+    request["arapi_lib_dir"] = str(libraries)
+
+    result = service.configure(request)
+
+    assert result["configuration"]["arapi"]["lib_dir"] == str(libraries)
+    assert result["local_requirements"]["java"] == "needs_attention"
+    assert not bridge.exists()
+    assert dotenv_values(dotenv_path, interpolate=False)["HELIX_ARAPI_LIB_DIR"] == str(libraries)
+
+
+@pytest.mark.integration
+def test_dashboard_selects_jdk_folder_and_rebuilds_bridge(
+    tmp_path: Path,
+) -> None:
+    java_command = shutil.which("java")
+    if java_command is None:
+        pytest.skip("Java is required")
+    jdk = Path(java_command).resolve().parent.parent
+    java_dir = tmp_path / "java"
+    java_dir.mkdir()
+    bridge, libraries = build_test_runtime(java_dir)
+    dotenv_path = _installation(tmp_path)
+    with dotenv_path.open("a", encoding="utf-8") as stream:
+        stream.write(f"HELIX_ARAPI_BRIDGE_JAR_PATH={json.dumps(str(bridge))}\n")
+        stream.write(f"HELIX_ARAPI_LIB_DIR={json.dumps(str(libraries))}\n")
+    service = DashboardService(dotenv_path, process_environment={})
+    request = _configuration(service.state())
+    request["java_home"] = str(jdk)
+
+    result = service.configure(request)
+
+    assert result["configuration"]["arapi"]["java_home"] == str(jdk)
+    assert result["local_requirements"]["java"] == "ready"
+    assert dotenv_values(dotenv_path, interpolate=False)["HELIX_JAVA_HOME"] == str(jdk)
+    assert service.browse_local_folders({"path": str(jdk)})["java_available"] is True
+
+
+@pytest.mark.integration
+def test_dashboard_restores_bridge_when_library_path_save_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if shutil.which("java") is None:
+        pytest.skip("Java is required")
+    java_dir = tmp_path / "java"
+    java_dir.mkdir()
+    bridge, libraries = build_test_runtime(java_dir)
+    replacement = tmp_path / "other-lib"
+    shutil.copytree(libraries, replacement)
+    dotenv_path = _installation(tmp_path)
+    with dotenv_path.open("a", encoding="utf-8") as stream:
+        stream.write(f"HELIX_ARAPI_BRIDGE_JAR_PATH={json.dumps(str(bridge))}\n")
+        stream.write(f"HELIX_ARAPI_LIB_DIR={json.dumps(str(libraries))}\n")
+    service = DashboardService(dotenv_path, process_environment={})
+    request = _configuration(service.state())
+    request["arapi_lib_dir"] = str(replacement)
+    before_bridge = bridge.read_bytes()
+    before_dotenv = dotenv_path.read_bytes()
+    before_config = (tmp_path / "helix.yaml").read_bytes()
+    original_write = dashboard_module._atomic_write
+    failed = False
+
+    def fail_dotenv_once(path: Path, content: bytes, **kwargs: object) -> None:
+        nonlocal failed
+        if path == dotenv_path and not failed:
+            failed = True
+            raise OSError("simulated save failure")
+        original_write(path, content, **kwargs)
+
+    monkeypatch.setattr(dashboard_module, "_atomic_write", fail_dotenv_once)
+
+    with pytest.raises(DashboardConfigurationError, match="previous files were restored"):
+        service.configure(request)
+
+    assert failed
+    assert bridge.read_bytes() == before_bridge
+    assert dotenv_path.read_bytes() == before_dotenv
+    assert (tmp_path / "helix.yaml").read_bytes() == before_config
+
+
+@pytest.mark.integration
+def test_dashboard_removes_new_bridge_when_first_save_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if shutil.which("java") is None:
+        pytest.skip("Java is required")
+    java_dir = tmp_path / "java"
+    java_dir.mkdir()
+    _, libraries = build_test_runtime(java_dir)
+    dotenv_path = _installation(tmp_path)
+    bridge = tmp_path / "data/bridge/helix-arapi-bridge.jar"
+    with dotenv_path.open("a", encoding="utf-8") as stream:
+        stream.write(f"HELIX_ARAPI_BRIDGE_JAR_PATH={json.dumps(str(bridge))}\n")
+    service = DashboardService(dotenv_path, process_environment={})
+    request = _configuration(service.state())
+    request["arapi_lib_dir"] = str(libraries)
+    original_write = dashboard_module._atomic_write
+    failed = False
+
+    def fail_dotenv_once(path: Path, content: bytes, **kwargs: object) -> None:
+        nonlocal failed
+        if path == dotenv_path and not failed:
+            failed = True
+            raise OSError("simulated save failure")
+        original_write(path, content, **kwargs)
+
+    monkeypatch.setattr(dashboard_module, "_atomic_write", fail_dotenv_once)
+
+    with pytest.raises(DashboardConfigurationError, match="previous files were restored"):
+        service.configure(request)
+
+    assert failed
+    assert not bridge.exists()
+    assert dotenv_values(dotenv_path, interpolate=False).get("HELIX_ARAPI_LIB_DIR") is None
 
 
 @pytest.mark.integration
@@ -755,6 +1038,36 @@ def test_preflight_forwards_only_process_managed_credentials(
 
     assert report == {"status": "ready", "checks": []}
     assert captured["environ"] == {"HELIX_CREDENTIAL_DEV": "private"}
+
+
+@pytest.mark.integration
+def test_dashboard_tracks_kaazing_live_checks_for_setup_notice(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Report:
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            return {
+                "status": "ready",
+                "checks": [
+                    {"name": f"live.{environment}.kaazing", "status": "passed"}
+                    for environment in ("dev", "qa", "prod")
+                ],
+            }
+
+    async def fake_check_readiness(*args: object, **kwargs: object) -> Report:
+        return Report()
+
+    monkeypatch.setattr(dashboard_module, "check_readiness", fake_check_readiness)
+    service = DashboardService(_installation(tmp_path), process_environment={})
+    assert service.state()["local_requirements"]["kaazing"] == "not_checked"
+
+    service.preflight({"live": True, "environments": []})
+
+    assert service.state()["local_requirements"]["kaazing"] == "ready"
+    assert service.state()["kaazing_checks"] == {
+        "dev": "ready", "qa": "ready", "prod": "ready"
+    }
 
 
 @pytest.mark.integration
@@ -1309,6 +1622,21 @@ def test_http_surface_is_local_english_and_csrf_protected(
         response = connection.getresponse()
         state = json.loads(response.read())
         assert response.status == 200
+
+        connection.request(
+            "POST",
+            "/api/local/folders",
+            body=json.dumps({"path": str(tmp_path)}),
+            headers={
+                "Content-Type": "application/json",
+                "X-Helix-Dashboard-Token": "test-token",
+            },
+        )
+        response = connection.getresponse()
+        folder = json.loads(response.read())
+        assert response.status == 200
+        assert folder["path"] == str(tmp_path)
+        assert any(item["name"] == "helix.yaml" for item in folder["items"])
 
         connection.request(
             "POST",
