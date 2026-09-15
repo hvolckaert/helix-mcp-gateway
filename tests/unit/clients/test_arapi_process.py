@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import stat
 import zipfile
 from pathlib import Path
 
@@ -11,6 +12,7 @@ import pytest
 
 from helix_mcp.clients.arapi import (
     ArapiBridgeProcess,
+    ArapiBridgeProcessError,
     ArapiRuntimeInvalidError,
     ArapiRuntimeMissingError,
     validate_arapi_libraries,
@@ -116,6 +118,10 @@ def test_owned_bridge_is_terminated_on_close(
 
     async def create(*args, **kwargs):
         captured["environment"] = kwargs["env"]
+        captured["cwd"] = Path(kwargs["cwd"])
+        (Path(kwargs["cwd"]) / "RegKey.reg").write_text(
+            "BMC runtime artifact", encoding="utf-8"
+        )
         return process
 
     monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
@@ -141,6 +147,39 @@ def test_owned_bridge_is_terminated_on_close(
     assert environment["HELIX_ARAPI_BRIDGE_HOST"] == "127.0.0.1"
     assert environment["HELIX_ARAPI_BRIDGE_PORT"] == "8097"
     assert environment["HELIX_ARAPI_BRIDGE_TOKEN"] == "bridge-test-token"
+    working_directory = captured["cwd"]
+    assert working_directory == tmp_path / "runtime"
+    assert (working_directory / "RegKey.reg").is_file()
+    assert not (tmp_path / "RegKey.reg").exists()
+    if os.name != "nt":
+        assert stat.S_IMODE(working_directory.stat().st_mode) == 0o700
+
+
+def test_bridge_rejects_a_non_directory_runtime_path(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / "runtime").write_text("occupied", encoding="utf-8")
+
+    async def unhealthy(self) -> bool:
+        return False
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("subprocess must not be created")
+
+    monkeypatch.setattr(ArapiBridgeProcess, "_healthy", unhealthy)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", forbidden)
+    monkeypatch.setattr(
+        "helix_mcp.clients.arapi.process.jdk_executable",
+        lambda executable: "/runtime/java",
+    )
+    manager = ArapiBridgeProcess(
+        settings(tmp_path),
+        ("http://127.0.0.1:8097/",),
+    )
+
+    with pytest.raises(ArapiBridgeProcessError):
+        run(manager.start())
 
 
 def test_owned_bridge_uses_selected_jdk_folder(

@@ -18,6 +18,12 @@ Each user runs a separate MCP server and must have:
 The gateway references the installed AR API libraries directly. Do not copy
 those JARs into Git, wheels, containers, or project installers.
 
+An owned Java bridge starts with its working directory in `bridge/runtime`
+beside the compiled bridge JAR, rather than inheriting the MCP client's
+working directory. The directory is mode `0700` on POSIX and inherits the
+installation directory's access controls on Windows. Proprietary BMC libraries
+may create auxiliary files such as `RegKey.reg` there.
+
 ## Sanitized preflight
 
 ```text
