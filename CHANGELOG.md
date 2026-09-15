@@ -5,6 +5,12 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.10.2 - 2026-09-15
+
+- Start the owned Java AR API bridge inside a restricted installation runtime
+  directory so auxiliary files created by BMC libraries stay out of the MCP
+  client's working directory. Reject linked or invalid runtime directories.
+
 ## 0.10.1 - 2026-09-15
 
 - Show the compatible JDK detected on PATH directly in the Dashboard's Java
