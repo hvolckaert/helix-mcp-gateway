@@ -190,7 +190,9 @@ def test_setup_builds_bridge_and_never_overwrites_configuration(
         lambda explicit: library_dir,
     )
 
-    def fake_build(libraries: Path, output: Path) -> BridgeBuildResult:
+    def fake_build(
+        libraries: Path, output: Path, *, java_home: Path | None = None
+    ) -> BridgeBuildResult:
         assert libraries == library_dir
         output.parent.mkdir(parents=True)
         output.write_bytes(b"bridge")
@@ -262,7 +264,7 @@ def test_second_setup_preserves_both_configuration_files(
     monkeypatch.setattr(
         setup_implementation,
         "build_bridge",
-        lambda libraries, output: BridgeBuildResult(
+        lambda libraries, output, **kwargs: BridgeBuildResult(
             output_path=output,
             package_version="0.4.0",
             source_sha256="a" * 64,
@@ -302,7 +304,7 @@ def test_setup_rejects_an_existing_invalid_write_plan_key(
     monkeypatch.setattr(
         setup_implementation,
         "build_bridge",
-        lambda libraries, output: BridgeBuildResult(
+        lambda libraries, output, **kwargs: BridgeBuildResult(
             output_path=output,
             package_version="0.4.0",
             source_sha256="a" * 64,

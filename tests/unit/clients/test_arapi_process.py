@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import zipfile
 from pathlib import Path
 
@@ -147,7 +148,7 @@ def test_owned_bridge_uses_selected_jdk_folder(
     monkeypatch,
 ) -> None:
     jdk = tmp_path / "jdk"
-    executable = jdk / "bin/java"
+    executable = jdk / "bin" / ("java.exe" if os.name == "nt" else "java")
     executable.parent.mkdir(parents=True)
     executable.write_text("java", encoding="utf-8")
     executable.chmod(0o700)

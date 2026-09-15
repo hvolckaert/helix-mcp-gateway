@@ -544,7 +544,7 @@ def test_dashboard_can_save_java_folder_while_arapi_is_pending(
             f"HELIX_ARAPI_BRIDGE_JAR_PATH={json.dumps(str(bridge))}\n"
         )
     jdk = tmp_path / "jdk"
-    executable = jdk / "bin/java"
+    executable = jdk / "bin" / ("java.exe" if os.name == "nt" else "java")
     executable.parent.mkdir(parents=True)
     executable.write_text("java", encoding="utf-8")
     executable.chmod(0o700)
