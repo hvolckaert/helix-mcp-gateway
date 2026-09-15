@@ -74,6 +74,8 @@ private state directory, so refreshing the page, restarting the Dashboard, or
 saving unrelated settings does not mark a successful test as untested. The
 environment tab labels this as the last test; run Test again after changing the
 external gateway or when current connectivity matters.
+After upgrading from a release that did not save Kaazing results, run Test once
+for each environment to establish the remembered statuses.
 
 Each environment owns exactly one policy with the canonical internal name
 `dev`, `qa`, or `prod`; the assignment cannot be changed. Older policy names are

@@ -5,6 +5,13 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.10.3 - 2026-09-15
+
+- Keep each environment's last Kaazing Test result across Dashboard refreshes,
+  restarts, and unrelated configuration saves, so a successful connection
+  check does not return to "not tested" or reopen the setup notice. Label the
+  result as the last test rather than a current live check.
+
 ## 0.10.2 - 2026-09-15
 
 - Start the owned Java AR API bridge inside a restricted installation runtime
