@@ -224,8 +224,8 @@ reproducible prompts, approval boundaries, results, and limitations today.
 
 - Live operation requires user-supplied BMC AR API libraries, Client Gateway
   connectivity, and authorized credentials.
-- The complete installation has been validated on Ubuntu under WSL2. Native
-  Windows is documented but not yet fully validated; macOS is not validated.
+- The complete installation has been validated on Ubuntu under WSL2 and on
+  native Windows. macOS is not validated.
 - Database metadata and SQL require an AR System administrator account.
 - Generic stdio clients must reconnect after configuration changes. Managed
   OpenClaw installations are reloaded automatically by the dashboard.
@@ -245,7 +245,6 @@ policy against a non-production environment before enabling any write scope.
 
 ## Roadmap
 
-- complete and document a full native Windows installation validation;
 - expand public evidence for additional MCP clients and supported platforms;
 - publish sanitized recordings of the two reproducible use cases;
 - incorporate external feedback while preserving the explicit policy,
