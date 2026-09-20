@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.11.0 - 2026-09-20
+
 - Allow DEV, QA, and PROD credentials to be configured independently. Missing
   credentials now disable only their environment, while target discovery,
   preflight, live checks, capabilities, and the Dashboard report the partial
