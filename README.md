@@ -112,7 +112,8 @@ a real environment.
 - an authorized BMC Developer Studio / AR System Java API installation;
 - a configured local BMC Helix Client Gateway connection to the permitted
   Helix environments;
-- authorized per-environment credentials.
+- an authorized credential for each environment the user intends to enable;
+  DEV, QA, and PROD are configured independently.
 
 Only Python is required to create the installation. Guided setup can open the
 dashboard while the other runtime requirements remain pending.
@@ -167,6 +168,9 @@ a verified release into an isolated runtime with backup and rollback. Saving is
 validated and atomic. OpenClaw-managed installations reload their cached MCP
 runtime automatically after a save; other clients must reconnect their own
 stdio process before using configuration changes.
+An environment becomes available only after its own credential is configured.
+Missing QA or PROD credentials do not block a configured DEV environment, and
+the same rule applies independently to every environment.
 Use `helix-mcp-setup --no-dashboard` to keep the dashboard service available
 without opening a browser during headless or unattended setup.
 
@@ -269,6 +273,7 @@ policy against a non-production environment before enabling any write scope.
 - [Human-approved writes](docs/form-writes.md)
 - [SQL through AR API](docs/sql.md)
 - [Development and testing](docs/development.md)
+- [Controlled external evaluation](docs/evaluation-guide.md)
 
 ## Contact and support
 

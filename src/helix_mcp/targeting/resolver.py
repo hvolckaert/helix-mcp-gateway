@@ -7,6 +7,7 @@ from helix_mcp.targeting.errors import (
     BackendUnavailableError,
     InvalidBackendError,
     InvalidEnvironmentError,
+    TargetCredentialNotConfiguredError,
     TargetDisabledError,
     TargetSelectionRequiredError,
 )
@@ -32,8 +33,10 @@ class TargetResolver:
         key = _parse_target_key(environment)
         target = self._registry.get(key)
 
-        if require_enabled and not target.enabled:
-            raise TargetDisabledError(key)
+        if require_enabled and not self._registry.is_available(target):
+            if not target.enabled:
+                raise TargetDisabledError(key)
+            raise TargetCredentialNotConfiguredError(key)
 
         selected_backend = _parse_backend(backend)
         if (

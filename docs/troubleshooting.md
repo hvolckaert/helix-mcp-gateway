@@ -83,8 +83,8 @@ exactly 32 random bytes and use mode `0600` on POSIX.
 
 ### Credentials are missing or invalid
 
-Each enabled environment needs a compact JSON value with `username` and
-`password` members, for example:
+Each environment that will be used needs its own compact JSON value with
+`username` and `password` members, for example:
 
 ```dotenv
 HELIX_CREDENTIAL_DEV='{"username":"DEV_USER","password":"REPLACE_ME"}'
@@ -93,6 +93,13 @@ HELIX_CREDENTIAL_DEV='{"username":"DEV_USER","password":"REPLACE_ME"}'
 Add `domain` only when the account requires it. Never print the parsed value or
 source the dotenv file in a shell. A successful non-live preflight validates
 the credential structure, not whether the remote account can authenticate.
+
+An absent or blank value is allowed and makes only that environment
+unavailable. `list_targets(include_disabled=true)` reports it as
+`credential_not_configured`, and its tools return
+`TARGET_CREDENTIAL_NOT_CONFIGURED`. Configure and save that environment's
+credential, then reconnect the MCP client. Do not duplicate a credential from
+another environment merely to make the target appear available.
 
 ## Connectivity failures
 

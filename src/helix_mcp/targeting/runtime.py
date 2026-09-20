@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from helix_mcp.config import (
+    Environment,
     HelixConfig,
     RuntimeSettings,
     RuntimeSettingsError,
@@ -39,6 +40,14 @@ def load_runtime_target_context(
 
     settings = load_runtime_settings(dotenv_path, environ=environ)
     composition = load_single_instance_config(settings.config_path)
+    secret_values = load_secret_environment(dotenv_path, environ=environ)
+    credential_environments = frozenset(
+        environment
+        for environment in Environment
+        if secret_values.get(
+            f"HELIX_CREDENTIAL_{environment.value.upper()}", ""
+        ).strip()
+    )
     config = compose_single_instance_config(composition)
     if (
         config.server.transport is Transport.STREAMABLE_HTTP
@@ -47,11 +56,13 @@ def load_runtime_target_context(
         raise RuntimeSettingsError(
             "streamable_http requires HELIX_MCP_HTTP_BEARER_TOKEN"
         )
-    secret_values = load_secret_environment(dotenv_path, environ=environ)
     secrets = SecretResolver([EnvironmentSecretProvider(secret_values)])
     return RuntimeTargetContext(
         settings=settings,
         config=config,
-        registry=TargetRegistry(config),
+        registry=TargetRegistry(
+            config,
+            credential_environments=credential_environments,
+        ),
         secrets=secrets,
     )

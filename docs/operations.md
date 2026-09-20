@@ -13,7 +13,8 @@ Each user runs a separate MCP server and must have:
 - an authorized local connectivity layer configured and running;
 - BMC Developer Studio / AR API from a supported release;
 - Java and Python 3.12;
-- authorized credentials and network access for the selected environments.
+- an authorized credential and network access for each environment that will
+  be used. Other fixed environments may remain unconfigured.
 
 The gateway references the installed AR API libraries directly. Do not copy
 those JARs into Git, wheels, containers, or project installers.
@@ -31,8 +32,10 @@ helix-mcp-check --dotenv /path/to/.env
 ```
 
 Preflight checks strict configuration loading, Java, the compiled bridge,
-required AR API JAR manifests, and credential structure. It does not read
-forms, execute SQL, or modify Helix.
+required AR API JAR manifests, and the structure of every configured
+credential. Missing credentials are not startup failures; they leave only the
+corresponding environments unavailable. Preflight does not read forms, execute
+SQL, or modify Helix.
 
 The command emits one JSON object containing closed check names, status, and
 stable error codes. It excludes paths, hosts, ports, secret references,
@@ -45,8 +48,11 @@ Opt-in live connectivity checks remain read-only:
 helix-mcp-check --dotenv /path/to/.env --live --environment dev
 ```
 
-`--environment` may be repeated. Without it, all configured environments are
-checked. The check may start the local bridge temporarily and stops it when
+`--environment` may be repeated. Without it, only environments with configured
+credentials are checked. An explicitly requested environment without a
+credential fails with `TARGET_CREDENTIAL_NOT_CONFIGURED`; a live check with no
+configured targets fails with `NO_CONFIGURED_TARGETS`. The check may start the
+local bridge temporarily and stops it when
 finished. It performs a credential login/logout probe but does not read forms,
 execute SQL, or modify entries.
 

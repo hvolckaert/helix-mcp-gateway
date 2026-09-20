@@ -82,7 +82,7 @@ async def check_readiness(
             checks.append(_passed("arapi_bridge_startup"))
 
         for target in application.runtime.config.targets:
-            if not target.enabled:
+            if not application.runtime.registry.is_available(target):
                 continue
             checks.append(
                 await _check_secret(
@@ -93,15 +93,29 @@ async def check_readiness(
             )
 
         if live:
-            await _append_live_checks(
-                application,
-                checks,
-                environments=(
-                    tuple(environments)
-                    if environments is not None
-                    else tuple(Environment)
-                ),
+            selected_environments = (
+                tuple(environments)
+                if environments is not None
+                else tuple(
+                    target.environment
+                    for target in application.runtime.config.targets
+                    if application.runtime.registry.is_available(target)
+                )
             )
+            if selected_environments:
+                await _append_live_checks(
+                    application,
+                    checks,
+                    environments=selected_environments,
+                )
+            else:
+                checks.append(
+                    PreflightCheck(
+                        name="live.targets",
+                        status=CheckStatus.FAILED,
+                        error_code="NO_CONFIGURED_TARGETS",
+                    )
+                )
     finally:
         if application is not None:
             try:

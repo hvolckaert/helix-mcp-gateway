@@ -3,6 +3,12 @@
 The gateway represents one physical BMC Helix installation at a time. Its
 internal logical identity is `helix`, with fixed DEV, QA, and PROD environments.
 
+The three logical environments are always present in configuration, but their
+credentials and runtime availability are independent. An environment without a
+credential is reported as `credential_not_configured`, exposes no operational
+capabilities, and does not prevent another configured environment from being
+used.
+
 ## Local AR API routing
 
 The AR API bridge connects only to configured loopback listeners. The external

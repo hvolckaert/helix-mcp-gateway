@@ -224,6 +224,13 @@ Credentials are write-only in the browser:
 The dashboard uses the existing per-environment credential contract. Treat
 the browser session and local account as administrative access.
 
+Credentials are independent. Each environment becomes available when its own
+credential is saved; no credential is required for an environment that the
+user does not intend to use. Missing credentials disable only their associated
+targets, metadata catalogs, SQL capability check, and live Test button. The
+summary therefore reports how many environments are configured rather than
+treating three credentials as a global readiness requirement.
+
 ## Server updates
 
 The **Server** card in the top summary shows the active release status and

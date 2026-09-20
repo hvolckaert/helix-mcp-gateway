@@ -4,6 +4,7 @@ from helix_mcp.targeting.errors import (
     BackendUnavailableError,
     InvalidBackendError,
     InvalidEnvironmentError,
+    TargetCredentialNotConfiguredError,
     TargetDisabledError,
     TargetingError,
     TargetNotFoundError,
@@ -11,6 +12,7 @@ from helix_mcp.targeting.errors import (
 )
 from helix_mcp.targeting.models import (
     ResolvedTarget,
+    TargetAvailability,
     TargetCapabilities,
     TargetDescriptor,
 )
@@ -27,7 +29,9 @@ __all__ = [
     "InvalidEnvironmentError",
     "ResolvedTarget",
     "RuntimeTargetContext",
+    "TargetAvailability",
     "TargetCapabilities",
+    "TargetCredentialNotConfiguredError",
     "TargetDescriptor",
     "TargetDisabledError",
     "TargetNotFoundError",

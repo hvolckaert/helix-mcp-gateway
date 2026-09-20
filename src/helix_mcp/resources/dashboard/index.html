@@ -317,9 +317,9 @@
         <span class="metric-detail" id="config-file">—</span>
       </div>
       <div class="metric">
-        <span class="metric-label">Credentials</span>
+        <span class="metric-label">Available environments</span>
         <span class="metric-value" id="credential-count">—</span>
-        <span class="metric-detail">DEV · QA · PROD</span>
+        <span class="metric-detail">Configure DEV, QA and PROD independently</span>
       </div>
       <div class="metric">
         <span class="metric-label">Server</span>
@@ -661,6 +661,10 @@
       return unique.sort((left, right) => left.localeCompare(right, undefined, {sensitivity: 'base'}));
     }
 
+    function hasSavedCredential(environment) {
+      return document.querySelector(`[data-env="${environment}"]`)?.dataset.credentialConfigured === 'true';
+    }
+
     function setPolicyLines(environment, field, values) {
       const input = policyElement(environment, 'input', field);
       input.value = uniqueNames(values).join('\n');
@@ -725,6 +729,12 @@
 
     async function loadFormCatalog(picker, refresh = false) {
       const environment = picker.dataset.policyEnv;
+      if (!hasSavedCredential(environment)) {
+        const status = picker.querySelector('[data-catalog-status]');
+        status.className = 'catalog-status';
+        status.textContent = 'Configure and save this environment credential to load available forms.';
+        return;
+      }
       const search = picker.querySelector('[data-form-search]').value.trim();
       const requestId = String(++catalogRequestId);
       picker.dataset.requestId = requestId;
@@ -801,6 +811,12 @@
 
     async function loadSqlObjectCatalog(picker, refresh = false) {
       const environment = picker.dataset.policyEnv;
+      if (!hasSavedCredential(environment)) {
+        const status = picker.querySelector('[data-sql-object-status]');
+        status.className = 'catalog-status';
+        status.textContent = 'Configure and save this environment credential to load SQL objects.';
+        return;
+      }
       const search = picker.querySelector('[data-sql-object-search]').value.trim();
       const requestId = String(++catalogRequestId);
       picker.dataset.requestId = requestId;
@@ -1034,6 +1050,12 @@
 
     async function loadFieldCatalog(card, mappingElement, refresh = false) {
       const environment = mappingElement.dataset.policyEnv;
+      if (!hasSavedCredential(environment)) {
+        const status = card.querySelector('[data-field-status]');
+        status.className = 'catalog-status';
+        status.textContent = 'Configure and save this environment credential to load fields.';
+        return;
+      }
       const formName = card.dataset.fieldForm;
       const search = card.querySelector('[data-field-search]').value.trim();
       const requestId = String(++catalogRequestId);
@@ -1114,6 +1136,8 @@
     }
 
     function initializeEnvironmentCatalog(environment) {
+      const environmentCard = document.querySelector(`[data-env="${environment}"]`);
+      if (environmentCard?.dataset.credentialConfigured !== 'true') return;
       document.querySelectorAll(`[data-form-picker][data-policy-env="${environment}"]`).forEach(picker => {
         if (picker.classList.contains('disabled') || picker.closest('[hidden]')) return;
         if (picker.dataset.loaded !== 'true') loadFormCatalog(picker);
@@ -1144,14 +1168,16 @@
           ? `<span class="badge good">Credential configured</span>`
           : `<span class="badge warn">Credential missing</span>`;
         const managedCopy = credential.editable
-          ? 'Leave disabled to preserve the existing credential.'
+          ? credential.configured
+            ? 'Leave disabled to preserve the existing credential.'
+            : `Enable this option to configure ${label} without configuring the other environments.`
           : 'This credential is managed by the process environment and cannot be replaced here.';
-        return `<article class="env-card panel tab-panel" id="tab-panel-${environment}" role="tabpanel" aria-labelledby="tab-${environment}" data-env="${environment}" data-tab-panel="${environment}" ${environment === activeTab ? '' : 'hidden'}>
+        return `<article class="env-card panel tab-panel" id="tab-panel-${environment}" role="tabpanel" aria-labelledby="tab-${environment}" data-env="${environment}" data-tab-panel="${environment}" data-credential-configured="${credential.configured ? 'true' : 'false'}" ${environment === activeTab ? '' : 'hidden'}>
           <div class="env-head">
             <div class="env-title"><span class="env-dot"></span>${label}</div>
             <div class="env-actions">
               <span class="env-meta">Local listener ${item.gateway_port}</span>
-              <button class="button secondary small" type="button" data-test="${environment}">Test ${label}</button>
+              <button class="button secondary small" type="button" data-test="${environment}" ${credential.configured ? '' : 'disabled title="Configure and save this environment credential before testing"'}>Test ${label}</button>
             </div>
           </div>
           <p class="hint env-connection-status" data-kaazing-status="${environment}">Kaazing connection has not been tested.</p>
@@ -1159,9 +1185,10 @@
             <section class="policy-section">
               <h3>Credentials</h3>
               ${credentialBadge}
+              <p class="hint">${credential.configured ? `${label} is available independently of the other environments.` : `${label} is unavailable until its own credential is configured and saved.`}</p>
               <label class="credential-control">
                 <input type="checkbox" data-replace="${environment}" ${credential.editable ? '' : 'disabled'}>
-                Replace ${label} credential
+                ${credential.configured ? 'Replace' : 'Configure'} ${label} credential
               </label>
               <p class="hint">${managedCopy}</p>
               <div class="credential-editor" data-credential="${environment}">
@@ -1284,6 +1311,13 @@
     }
 
     async function loadSqlCapability(environment, refresh = false) {
+      const card = document.querySelector(`[data-env="${environment}"]`);
+      const replacement = document.querySelector(`[data-replace="${environment}"]`);
+      if (card?.dataset.credentialConfigured !== 'true' && !replacement?.checked) {
+        sqlCapabilityState.set(environment, 'credential_missing');
+        syncPolicyControls(environment);
+        return;
+      }
       const requestId = (sqlCapabilityRequests.get(environment) || 0) + 1;
       sqlCapabilityRequests.set(environment, requestId);
       sqlCapabilityState.set(environment, 'checking');
@@ -1345,7 +1379,7 @@
       const capabilityStatus = card.querySelector('[data-sql-capability-status]');
       const retry = card.querySelector('[data-sql-capability-retry]');
       capabilityStatus.className = 'capability-status';
-      retry.hidden = capability === 'checking' || capability === 'available' || capability === 'credential_pending';
+      retry.hidden = capability === 'checking' || capability === 'available' || capability === 'credential_pending' || capability === 'credential_missing';
       if (capability === 'available') {
         capabilityStatus.textContent = 'AR System administrator access confirmed.';
       } else if (capability === 'administrator_required') {
@@ -1353,6 +1387,8 @@
         capabilityStatus.textContent = 'Unavailable — the configured Helix account does not have AR System administrator permissions.';
       } else if (capability === 'credential_pending') {
         capabilityStatus.textContent = 'Save the replacement credential before SQL access can be verified.';
+      } else if (capability === 'credential_missing') {
+        capabilityStatus.textContent = 'Configure and save this environment credential before SQL access can be verified.';
       } else if (capability === 'unverified') {
         capabilityStatus.classList.add('error');
         capabilityStatus.textContent = 'Could not verify administrator access. Check connectivity or credentials and retry.';
@@ -1422,8 +1458,8 @@
       document.getElementById('config-status').className = 'metric-value status-good';
       document.getElementById('config-file').textContent = configuration.server.transport === 'stdio' ? state.files.configuration : `${state.files.configuration} · HTTP`;
       const credentialCount = configuration.environments.filter(item => item.credential.configured).length;
-      document.getElementById('credential-count').textContent = `${credentialCount} of 3`;
-      document.getElementById('credential-count').className = `metric-value ${credentialCount === 3 ? 'status-good' : 'status-warn'}`;
+      document.getElementById('credential-count').textContent = `${credentialCount} configured`;
+      document.getElementById('credential-count').className = `metric-value ${credentialCount > 0 ? 'status-good' : 'status-warn'}`;
       renderOpenClawIntegration(state.update, state.application);
       renderDashboardRuntime(state.dashboard_runtime);
       renderUpdate(state.update);
@@ -1455,7 +1491,7 @@
       document.getElementById('request-timeout').value = configuration.arapi.request_timeout_seconds;
       document.getElementById('pool-size').value = configuration.arapi.pool_size;
       renderEnvironments(configuration.environments, configuration.policies);
-      renderKaazingChecks(state.kaazing_checks || {});
+      renderKaazingChecks(state.kaazing_checks || {}, configuration.environments);
       clearDirtyTabs();
       configuration.environments.forEach(item => loadSqlCapability(item.environment));
       const saveNote = document.getElementById('save-note');
@@ -1479,22 +1515,32 @@
       if (requirements?.java !== 'ready') pending.push('Java JDK');
       if (requirements?.bridge !== 'ready') pending.push('Java bridge');
       const notice = document.getElementById('setup-notice');
-      notice.hidden = pending.length === 0 && requirements?.kaazing === 'ready';
+      const configuredCredentials = requirements?.credentials_configured || 0;
+      notice.hidden = pending.length === 0 && configuredCredentials > 0 && requirements?.kaazing === 'ready';
       document.getElementById('configure-folders').hidden = pending.length === 0;
       if (pending.length) {
         document.getElementById('setup-notice-text').textContent =
-          `The installation is available, but ${pending.join(', ')} need attention. Browse local folders to configure AR API and Java, then save. Configure or verify Kaazing for each environment with its Test button.`;
+          `The installation is available, but ${pending.join(', ')} need attention. Browse local folders to configure AR API and Java, then save. Configure and test only the environments you intend to use.`;
+      } else if (configuredCredentials === 0) {
+        document.getElementById('setup-notice-text').textContent =
+          'Local Java and AR API are ready. Configure and save any environment credential to make that environment available; the others may remain unconfigured.';
       } else {
         document.getElementById('setup-notice-text').textContent = requirements?.kaazing === 'needs_attention'
           ? 'Local Java and AR API are ready, but a Kaazing connection needs attention. Check its result in the environment tab and update the external gateway configuration.'
-          : 'Local Java and AR API are ready. Configure or verify Kaazing for each environment with its Test button.';
+          : 'Local Java and AR API are ready. Configure or verify Kaazing for each configured environment with its Test button.';
       }
     }
 
-    function renderKaazingChecks(checks) {
+    function renderKaazingChecks(checks, environments) {
+      const credentialState = new Map(environments.map(item => [item.environment, item.credential.configured]));
       ['dev', 'qa', 'prod'].forEach(environment => {
         const indicator = document.querySelector(`[data-kaazing-status="${environment}"]`);
         if (!indicator) return;
+        if (!credentialState.get(environment)) {
+          indicator.textContent = 'Environment unavailable — configure and save its credential before testing.';
+          indicator.className = 'hint env-connection-status';
+          return;
+        }
         const status = checks[environment];
         indicator.textContent = status === 'ready' ? 'Last Kaazing test passed.'
           : status === 'needs_attention' ? 'Last Kaazing test needs attention. Run Test again for details.'

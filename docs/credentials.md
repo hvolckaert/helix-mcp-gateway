@@ -9,6 +9,8 @@
 - Secret values cannot be copied or serialized with `pickle`.
 - Consumers close values through a context manager.
 - Each environment has one AR API credential reference.
+- DEV, QA, and PROD credentials are optional and independent. An environment
+  without its own configured value is unavailable without blocking the others.
 
 Python cannot guarantee physical erasure of a string already allocated in
 memory. `SecretValue.close()` removes application references as early as
@@ -47,4 +49,5 @@ sessions must be invalidated after rotation.
 AR API credentials require `username` and `password`, plus a domain when the
 installation requires one. SQL reuses the selected AR API credential and
 requires AR System administrator permissions. Resolution fails closed when a
-required field is absent.
+required field is absent. An absent value disables only its environment;
+malformed or incomplete non-empty values fail that environment's preflight.
