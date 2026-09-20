@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 from helix_mcp.config import (
     AccessMode,
@@ -16,6 +17,14 @@ from helix_mcp.config import (
 from helix_mcp.config.models import FrozenModel
 
 BackendConfig = ArapiBackendConfig
+
+
+class TargetAvailability(StrEnum):
+    """Safe reason why one fixed target is or is not usable."""
+
+    AVAILABLE = "available"
+    CREDENTIAL_NOT_CONFIGURED = "credential_not_configured"
+    DISABLED = "disabled"
 
 
 class TargetCapabilities(FrozenModel):
@@ -34,6 +43,7 @@ class TargetDescriptor(FrozenModel):
     environment: Environment
     display_name: str
     enabled: bool
+    availability: TargetAvailability
     production: bool
     read_only: bool
     backends: tuple[BackendKind, ...]
@@ -66,15 +76,25 @@ class ResolvedTarget:
 def describe_target(
     target: TargetConfig,
     policy: TargetPolicyConfig,
+    *,
+    availability: TargetAvailability | None = None,
 ) -> TargetDescriptor:
     """Build a public descriptor without serializing internal configuration."""
 
+    effective_availability = availability or (
+        TargetAvailability.AVAILABLE
+        if target.enabled
+        else TargetAvailability.DISABLED
+    )
+    available = effective_availability is TargetAvailability.AVAILABLE
     backends = tuple(
         backend
         for backend in BackendKind
-        if backend in target.enabled_backends
+        if available and backend in target.enabled_backends
     )
-    form_backend_available = BackendKind.ARAPI in target.enabled_backends
+    form_backend_available = (
+        available and BackendKind.ARAPI in target.enabled_backends
+    )
     writes_enabled = policy.access_mode is AccessMode.READ_WRITE
     capabilities = TargetCapabilities(
         form_read=policy.allow_form_reads and form_backend_available,
@@ -93,11 +113,13 @@ def describe_target(
             or bool(policy.updatable_fields_by_form)
         )
         and form_backend_available,
+        health_check=available,
     )
     return TargetDescriptor(
         environment=target.environment,
         display_name=target.display_name,
-        enabled=target.enabled,
+        enabled=available,
+        availability=effective_availability,
         production=target.environment is Environment.PROD,
         read_only=not capabilities.form_create
         and not capabilities.form_update,

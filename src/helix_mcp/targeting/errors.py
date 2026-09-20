@@ -67,6 +67,16 @@ class TargetDisabledError(TargetingError):
         super().__init__(f"target {key} is disabled")
 
 
+class TargetCredentialNotConfiguredError(TargetingError):
+    """The fixed target has no configured local credential."""
+
+    code = "TARGET_CREDENTIAL_NOT_CONFIGURED"
+
+    def __init__(self, key: TargetKey) -> None:
+        self.key = key
+        super().__init__(f"target {key} has no configured credential")
+
+
 class BackendUnavailableError(TargetingError):
     """The requested backend is not configured for a target."""
 

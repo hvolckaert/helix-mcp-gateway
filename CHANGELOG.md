@@ -5,6 +5,14 @@ Semantic Versioning.
 
 ## Unreleased
 
+- Allow DEV, QA, and PROD credentials to be configured independently. Missing
+  credentials now disable only their environment, while target discovery,
+  preflight, live checks, capabilities, and the Dashboard report the partial
+  availability explicitly.
+- Add a controlled external-evaluation guide and sanitized feedback template
+  covering release verification, first-use readiness, bounded DEV reads,
+  optional human-approved synthetic updates, and safe access revocation.
+
 ## 0.10.3 - 2026-09-15
 
 - Keep each environment's last Kaazing Test result across Dashboard refreshes,

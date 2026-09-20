@@ -156,10 +156,10 @@ installation that previously relied on a system `gh` command is migrated when
 the updated dashboard first starts. Running the new `helix-mcp-setup` also
 rewrites the persistent dashboard definition without that dependency.
 
-The generated `.env` contains no sample credentials. The user configures the
-required DEV, QA, and PROD credentials through the write-only dashboard fields
-or supplies them through an approved process environment using one compact
-JSON object per line:
+The generated `.env` contains no sample credentials. The user configures a
+credential independently for each DEV, QA, or PROD environment they intend to
+use through the write-only dashboard fields, or supplies it through an
+approved process environment using one compact JSON object per line:
 
 ```dotenv
 HELIX_CREDENTIAL_DEV='{"username":"DEV_USER","password":"REPLACE_ME"}'
@@ -171,6 +171,13 @@ An optional `domain` member may be included when required by the account. The
 gateway parses this file directly; do not source it in a shell or print it for
 diagnostics. Restrict its permissions to the current user and use an approved
 secret source for real values.
+
+Blank or absent credential variables are valid. Their environments remain
+visible as `credential_not_configured` when disabled targets are requested,
+expose no operational capabilities, and reject live tools with
+`TARGET_CREDENTIAL_NOT_CONFIGURED`. They do not block configured environments
+or non-live startup readiness. A malformed non-empty credential still fails
+closed for that environment.
 
 Review the generated `helix.yaml` before connecting. Its names and policies
 are fictional defaults, not knowledge of the user's systems. Replace targets,

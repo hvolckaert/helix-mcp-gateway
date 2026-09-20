@@ -1055,6 +1055,7 @@ class DashboardService:
         }
         policies: dict[str, object] = {}
         environments = []
+        configured_environments: set[Environment] = set()
         for environment in Environment:
             assigned_policy = policy_by_name[
                 configuration.policy_by_environment[environment]
@@ -1063,8 +1064,12 @@ class DashboardService:
             policy_payload["name"] = environment.value
             policies[environment.value] = policy_payload
             variable = _credential_variable(environment)
-            process_managed = bool(self._process_environment.get(variable))
-            file_configured = bool(dotenv.get(variable))
+            process_value = self._process_environment.get(variable, "")
+            file_value = dotenv.get(variable) or ""
+            process_managed = bool(process_value.strip())
+            file_configured = bool(file_value.strip())
+            if process_managed or file_configured:
+                configured_environments.add(environment)
             environments.append(
                 {
                     "environment": environment.value,
@@ -1136,6 +1141,7 @@ class DashboardService:
             },
             "restart_required": False,
             "local_requirements": {
+                "credentials_configured": len(configured_environments),
                 "arapi": "ready" if arapi_version else "needs_attention",
                 "java": "ready" if java_command else "needs_attention",
                 "bridge": (
@@ -1146,15 +1152,16 @@ class DashboardService:
                 ),
                 "kaazing": (
                     "ready"
-                    if len(self._kaazing_status) == len(Environment)
+                    if configured_environments
                     and all(
-                        status == "ready"
-                        for status in self._kaazing_status.values()
+                        self._kaazing_status.get(environment) == "ready"
+                        for environment in configured_environments
                     )
                     else "needs_attention"
                     if any(
-                        status == "needs_attention"
-                        for status in self._kaazing_status.values()
+                        self._kaazing_status.get(environment)
+                        == "needs_attention"
+                        for environment in configured_environments
                     )
                     else "not_checked"
                 ),
@@ -1669,7 +1676,7 @@ class DashboardService:
         """Run a sanitized, read-only readiness check."""
 
         request = _validate_request(DashboardPreflightRequest, raw_payload)
-        environments = request.environments or tuple(Environment)
+        environments = request.environments or None
         with self._mutex:
             self._metadata_session.reset()
             report = asyncio.run(

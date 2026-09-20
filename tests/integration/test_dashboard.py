@@ -23,6 +23,7 @@ from helix_mcp.clients.arapi import (
 )
 from helix_mcp.config import (
     AccessMode,
+    Environment,
     TargetKey,
     TargetPolicyConfig,
     load_single_instance_config,
@@ -205,6 +206,7 @@ def test_new_installation_opens_dashboard_with_missing_runtime_requirements(
 
     assert result.pending == ("arapi", "java")
     assert state["local_requirements"] == {
+        "credentials_configured": 0,
         "arapi": "needs_attention",
         "java": "needs_attention",
         "bridge": "needs_attention",
@@ -1086,6 +1088,7 @@ def test_preflight_forwards_only_process_managed_credentials(
 
     assert report == {"status": "ready", "checks": []}
     assert captured["environ"] == {"HELIX_CREDENTIAL_DEV": "private"}
+    assert captured["environments"] is None
 
 
 @pytest.mark.integration
@@ -1113,7 +1116,15 @@ def test_dashboard_tracks_kaazing_live_checks_for_setup_notice(
         dashboard_module, "check_readiness", fake_check_readiness
     )
     dotenv_path = _installation(tmp_path)
-    service = DashboardService(dotenv_path, process_environment={})
+    credentials = {
+        "HELIX_CREDENTIAL_DEV": "private-dev",
+        "HELIX_CREDENTIAL_QA": "private-qa",
+        "HELIX_CREDENTIAL_PROD": "private-prod",
+    }
+    service = DashboardService(
+        dotenv_path,
+        process_environment=credentials,
+    )
     assert service.state()["local_requirements"]["kaazing"] == "not_checked"
 
     for index, environment in enumerate(("dev", "qa", "prod")):
@@ -1121,7 +1132,10 @@ def test_dashboard_tracks_kaazing_live_checks_for_setup_notice(
             {"live": True, "environments": [environment]}
         )
         assert report["kaazing_status_persisted"] is True
-        restarted = DashboardService(dotenv_path, process_environment={})
+        restarted = DashboardService(
+            dotenv_path,
+            process_environment=credentials,
+        )
         assert restarted.state()["kaazing_checks"] == {
             name: "ready" for name in ("dev", "qa", "prod")[: index + 1]
         }
@@ -1143,11 +1157,34 @@ def test_dashboard_tracks_kaazing_live_checks_for_setup_notice(
     saved = service.configure(_configuration(service.state()))
     assert saved["local_requirements"]["kaazing"] == "ready"
     assert (
-        DashboardService(dotenv_path, process_environment={}).state()[
-            "local_requirements"
-        ]["kaazing"]
+        DashboardService(
+            dotenv_path,
+            process_environment=credentials,
+        ).state()["local_requirements"]["kaazing"]
         == "ready"
     )
+
+
+@pytest.mark.integration
+def test_dashboard_readiness_uses_only_configured_environments(
+    tmp_path: Path,
+) -> None:
+    raw_secret = json.dumps(
+        {"username": "private-user", "password": "private-password"}
+    )
+    service = DashboardService(
+        _installation(tmp_path, secret=raw_secret),
+        process_environment={},
+    )
+    service._kaazing_status = {  # type: ignore[attr-defined]
+        Environment.DEV: "ready",
+        Environment.QA: "needs_attention",
+    }
+
+    state = service.state()
+
+    assert state["local_requirements"]["credentials_configured"] == 1
+    assert state["local_requirements"]["kaazing"] == "ready"
 
 
 @pytest.mark.integration
@@ -1606,7 +1643,9 @@ def test_http_surface_is_local_english_and_csrf_protected(
         assert 'id="tab-panel-advanced"' in html
         assert "Diagnostics" in html
         assert '<span class="metric-label">Server</span>' in html
-        assert '<span class="metric-label">Credentials</span>' in html
+        assert (
+            '<span class="metric-label">Available environments</span>' in html
+        )
         assert '<span class="metric-label">MCP client</span>' not in html
         assert (
             '<span class="metric-label">Dashboard service</span>' not in html

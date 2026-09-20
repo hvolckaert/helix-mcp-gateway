@@ -6,10 +6,12 @@ import json
 
 import pytest
 
-from helix_mcp.config import BackendKind, HelixConfig
+from helix_mcp.config import BackendKind, Environment, HelixConfig
 from helix_mcp.targeting import (
     InvalidBackendError,
     InvalidEnvironmentError,
+    TargetAvailability,
+    TargetCredentialNotConfiguredError,
     TargetDisabledError,
     TargetRegistry,
     TargetResolver,
@@ -98,13 +100,17 @@ def test_registry_lists_safe_descriptors_in_environment_order() -> None:
         "prod",
     ]
     assert descriptors[0].capabilities.sql_read is True
+    assert descriptors[0].availability is TargetAvailability.AVAILABLE
     assert descriptors[1].production is True
     assert descriptors[1].read_only is True
 
     disabled = registry.list_descriptors(include_disabled=True)[1]
     assert disabled.environment.value == "qa"
-    assert disabled.capabilities.form_create is True
-    assert disabled.capabilities.form_update is True
+    assert disabled.availability is TargetAvailability.DISABLED
+    assert disabled.backends == ()
+    assert disabled.capabilities.form_create is False
+    assert disabled.capabilities.form_update is False
+    assert disabled.capabilities.health_check is False
 
 
 def test_public_descriptors_do_not_expose_connection_or_secret_details() -> (
@@ -184,6 +190,27 @@ def test_disabled_environment_requires_explicit_diagnostic_resolution() -> (
 
     assert str(resolved.key) == "helix.qa"
     assert resolved.config.enabled is False
+
+
+def test_registry_distinguishes_missing_credentials_from_disabled_targets() -> (
+    None
+):
+    config = build_config()
+    registry = TargetRegistry(
+        config,
+        credential_environments=(Environment.DEV,),
+    )
+    resolver = TargetResolver(registry)
+
+    descriptors = registry.list_descriptors(include_disabled=True)
+    assert [descriptor.availability for descriptor in descriptors] == [
+        TargetAvailability.AVAILABLE,
+        TargetAvailability.DISABLED,
+        TargetAvailability.CREDENTIAL_NOT_CONFIGURED,
+    ]
+    with pytest.raises(TargetCredentialNotConfiguredError) as exc_info:
+        resolver.resolve(environment="prod")
+    assert exc_info.value.code == "TARGET_CREDENTIAL_NOT_CONFIGURED"
 
 
 def test_resolutions_do_not_retain_an_active_environment() -> None:

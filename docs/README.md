@@ -17,6 +17,10 @@ release lifecycle of Helix MCP Gateway. Start with the project
 - [`dashboard.md`](dashboard.md): local browser configuration and its security
   boundaries;
 - [`operations.md`](operations.md): preflight, startup, shutdown, and recovery.
+- [`evaluation-guide.md`](evaluation-guide.md): controlled external evaluation
+  with a clean installation, bounded read, and optional approved DEV update;
+- [`evaluation-feedback-template.md`](evaluation-feedback-template.md):
+  sanitized structure for reporting first-use results.
 
 ## Architecture and contracts
 

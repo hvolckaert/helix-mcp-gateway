@@ -95,6 +95,9 @@ class FakeApplication:
         self.runtime = SimpleNamespace(
             config=SimpleNamespace(targets=(target,)),
             secrets=FakeSecrets(secret_error),
+            registry=SimpleNamespace(
+                is_available=lambda candidate: candidate.enabled
+            ),
         )
         self.arapi_bridge = FakeBridge(bridge_error)
         self.target_resolver = SimpleNamespace(resolve=lambda **kwargs: target)
@@ -168,6 +171,31 @@ def test_failures_are_reduced_to_stable_codes(monkeypatch) -> None:
     ]
     assert leaked not in serialized
     assert application.closed is True
+
+
+def test_live_preflight_without_configured_targets_is_explicit(
+    monkeypatch,
+) -> None:
+    application = FakeApplication()
+    application.runtime.registry = SimpleNamespace(
+        is_available=lambda candidate: False
+    )
+    monkeypatch.setattr(
+        "helix_mcp.operations.preflight.load_application",
+        lambda *args, **kwargs: application,
+    )
+
+    non_live = run(check_readiness())
+    live = run(check_readiness(live=True))
+
+    assert non_live.status is PreflightStatus.READY
+    assert "credential.dev.arapi" not in {
+        check.name for check in non_live.checks
+    }
+    assert live.status is PreflightStatus.NOT_READY
+    assert live.checks[-1].name == "live.targets"
+    assert live.checks[-1].error_code == "NO_CONFIGURED_TARGETS"
+    assert application.started is False
 
 
 def test_live_preflight_reports_each_component(monkeypatch) -> None:

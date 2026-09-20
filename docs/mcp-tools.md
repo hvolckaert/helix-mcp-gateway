@@ -40,7 +40,11 @@ operations still require the ordinary permissions of the selected BMC account.
 
 Accepts optional `include_disabled` and returns DEV, QA, and PROD with safe
 capabilities. It excludes hosts, URLs, ports, credentials, and complete policy
-configuration. It is local, read-only, non-destructive, and idempotent.
+configuration. Each descriptor includes `availability`: `available`,
+`credential_not_configured`, or `disabled`. Targets without credentials expose
+no backends or operational capabilities. They are returned only when
+`include_disabled=true`. The tool is local, read-only, non-destructive, and
+idempotent.
 
 ### `health_check`
 
