@@ -8,6 +8,8 @@ import com.bmc.arsys.api.DataType;
 import com.bmc.arsys.api.Entry;
 import com.bmc.arsys.api.EnumItem;
 import com.bmc.arsys.api.Field;
+import com.bmc.arsys.api.Menu;
+import com.bmc.arsys.api.MenuItem;
 import com.bmc.arsys.api.SelectionFieldLimit;
 import com.bmc.arsys.api.ServerInfoMap;
 import com.bmc.arsys.api.StatusInfo;
@@ -49,6 +51,10 @@ public final class ArapiBridgeTest {
             ArapiBridgeTest::testSelectionFieldEncoding
         );
         run("character menu encoding", ArapiBridgeTest::testCharacterMenuEncoding);
+        run(
+            "character menu value encoding",
+            ArapiBridgeTest::testCharacterMenuValueEncoding
+        );
         run("bounded scalar parsing", ArapiBridgeTest::testScalarParsing);
         run("list and host validation", ArapiBridgeTest::testValidation);
         run(
@@ -180,6 +186,89 @@ public final class ArapiBridgeTest {
                 "encodeFieldMenuMetadata",
                 types(Field.class),
                 new Field(4, "Enabled", DataType.ENUM.getValue())
+            )
+        );
+    }
+
+    private static void testCharacterMenuValueEncoding() throws Exception {
+        Field field = new Field(
+            2,
+            "Owner",
+            DataType.CHAR.getValue(),
+            new CharacterFieldLimit(
+                "Sample:Owners",
+                Constants.AR_MENU_OVERWRITE
+            )
+        );
+        CharacterFieldLimit limit = (CharacterFieldLimit) field.getFieldLimit();
+        Menu menu = new Menu(
+            Constants.AR_CHAR_MENU_QUERY,
+            List.of(
+                new MenuItem("Primary owner", "owner-one"),
+                new MenuItem(
+                    "Other owners",
+                    List.of(new MenuItem("Secondary owner", "owner-two"))
+                )
+            )
+        );
+        assertEquals(
+            "{\"id\":2,\"name\":\"Owner\",\"datatype\":\"CHAR\"," +
+                "\"has_menu\":true,\"menu_name\":\"Sample:Owners\"," +
+                "\"menu_style\":\"overwrite\",\"menu_type\":\"query\"," +
+                "\"values\":[{\"label\":\"Primary owner\"," +
+                "\"value\":\"owner-one\",\"path\":[]},{\"label\":" +
+                "\"Secondary owner\",\"value\":\"owner-two\"," +
+                "\"path\":[\"Other owners\"]}],\"limit\":10," +
+                "\"truncated\":false}",
+            invoke(
+                "encodeFieldMenuValues",
+                types(
+                    Field.class,
+                    CharacterFieldLimit.class,
+                    Menu.class,
+                    List.class,
+                    int.class
+                ),
+                field,
+                limit,
+                menu,
+                menu.getContent(),
+                10
+            )
+        );
+        assertEquals(
+            "{\"id\":2,\"name\":\"Owner\",\"datatype\":\"CHAR\"," +
+                "\"has_menu\":true,\"menu_name\":\"Sample:Owners\"," +
+                "\"menu_style\":\"overwrite\",\"menu_type\":\"query\"," +
+                "\"values\":[{\"label\":\"Primary owner\"," +
+                "\"value\":\"owner-one\",\"path\":[]}],\"limit\":1," +
+                "\"truncated\":true}",
+            invoke(
+                "encodeFieldMenuValues",
+                types(
+                    Field.class,
+                    CharacterFieldLimit.class,
+                    Menu.class,
+                    List.class,
+                    int.class
+                ),
+                field,
+                limit,
+                menu,
+                menu.getContent(),
+                1
+            )
+        );
+        assertEquals(
+            "{\"id\":5,\"name\":\"Description\",\"datatype\":\"CHAR\"," +
+                "\"has_menu\":false,\"menu_name\":null," +
+                "\"menu_style\":null,\"menu_type\":null,\"values\":[]," +
+                "\"limit\":10,\"truncated\":false}",
+            invoke(
+                "encodeFieldMenuValuesWithoutMenu",
+                types(Field.class, int.class),
+                new Field(5, "Description", DataType.CHAR.getValue()),
+                10
             )
         );
     }

@@ -43,11 +43,14 @@ from helix_mcp.services.forms import (
     FormEntryResult,
     FormFieldMenuMetadata,
     FormFieldMenuQuery,
+    FormFieldMenuValuesQuery,
+    FormFieldMenuValuesResult,
     FormFieldMetadata,
     FormFieldSelectionMetadata,
     FormFieldSelectionQuery,
     FormFieldsQuery,
     FormFieldsResult,
+    FormMenuValue,
     FormMetadata,
     FormQuery,
     FormQueryResult,
@@ -111,6 +114,9 @@ class FakeFormService:
         self.calls: list[tuple[Environment, FormQuery]] = []
         self.field_calls: list[tuple[Environment, FormFieldsQuery]] = []
         self.menu_calls: list[tuple[Environment, FormFieldMenuQuery]] = []
+        self.menu_value_calls: list[
+            tuple[Environment, FormFieldMenuValuesQuery]
+        ] = []
         self.selection_calls: list[
             tuple[Environment, FormFieldSelectionQuery]
         ] = []
@@ -183,6 +189,32 @@ class FakeFormService:
             has_menu=True,
             menu_name="Sample:Owners",
             menu_style="append",
+        )
+
+    async def resolve_field_menu_values(
+        self,
+        *,
+        environment: Environment,
+        query: FormFieldMenuValuesQuery,
+    ) -> FormFieldMenuValuesResult:
+        self.menu_value_calls.append((environment, query))
+        return FormFieldMenuValuesResult(
+            id=query.field_id,
+            name="Owner",
+            datatype="CHAR",
+            has_menu=True,
+            menu_name="Sample:Owners",
+            menu_style="append",
+            menu_type="query",
+            values=(
+                FormMenuValue(
+                    label="Primary owner",
+                    value="owner-one",
+                    path=(),
+                ),
+            ),
+            limit=query.limit,
+            truncated=False,
         )
 
     async def search(
@@ -465,6 +497,7 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                 "get_entry",
                 "get_form_field_menu_metadata",
                 "get_form_field_selection_values",
+                "resolve_form_field_menu_values",
                 "list_form_fields",
                 "list_forms",
                 "list_database_columns",
@@ -605,6 +638,16 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
             assert menu_tool.annotations.destructiveHint is False
             assert menu_tool.annotations.openWorldHint is True
             assert set(menu_tool.inputSchema["required"]) == {
+                "environment",
+                "form",
+                "field_id",
+            }
+
+            menu_values_tool = by_name["resolve_form_field_menu_values"]
+            assert menu_values_tool.annotations.readOnlyHint is True
+            assert menu_values_tool.annotations.destructiveHint is False
+            assert menu_values_tool.annotations.openWorldHint is True
+            assert set(menu_values_tool.inputSchema["required"]) == {
                 "environment",
                 "form",
                 "field_id",
@@ -769,6 +812,39 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                 },
             }
 
+            menu_values = await client.call_tool(
+                "resolve_form_field_menu_values",
+                {
+                    "environment": "dev",
+                    "form": "Example:HelpDesk",
+                    "field_id": 2,
+                    "limit": 10,
+                },
+            )
+            assert menu_values.isError is False
+            assert menu_values.structuredContent == {
+                "environment": "dev",
+                "form": "Example:HelpDesk",
+                "field": {
+                    "id": 2,
+                    "name": "Owner",
+                    "datatype": "CHAR",
+                    "has_menu": True,
+                    "menu_name": "Sample:Owners",
+                    "menu_style": "append",
+                    "menu_type": "query",
+                    "values": [
+                        {
+                            "label": "Primary owner",
+                            "value": "owner-one",
+                            "path": [],
+                        }
+                    ],
+                    "limit": 10,
+                    "truncated": False,
+                },
+            }
+
             result = await client.call_tool(
                 "query_form",
                 {
@@ -898,6 +974,8 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
     assert fake_forms.calls[0][1].sort[0].direction.value == "desc"
     assert len(fake_forms.field_calls) == 1
     assert fake_forms.field_calls[0][1].name_contains == "incident"
+    assert len(fake_forms.menu_value_calls) == 1
+    assert fake_forms.menu_value_calls[0][1].limit == 10
     assert len(fake_forms.catalog_calls) == 1
     assert fake_forms.catalog_calls[0][1].name_contains == "help"
     assert len(fake_forms.entry_calls) == 1

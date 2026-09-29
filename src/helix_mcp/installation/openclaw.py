@@ -21,6 +21,7 @@ EXPOSED_TOOLS = (
     "list_form_fields",
     "get_form_field_menu_metadata",
     "get_form_field_selection_values",
+    "resolve_form_field_menu_values",
     "query_form",
     "get_entry",
     "list_database_objects",

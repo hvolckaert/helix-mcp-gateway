@@ -17,6 +17,7 @@ permissions reduce it.
 | `list_form_fields` | read | Reads policy-visible metadata | Medium | No |
 | `get_form_field_selection_values` | read | Reads one policy-visible ENUM definition | Medium | No |
 | `get_form_field_menu_metadata` | read | Reads one policy-visible CHAR menu association | Medium | No |
+| `resolve_form_field_menu_values` | read | Expands bounded values from an allowed field's CHAR menu | High | No |
 | `query_form` | read | Reads bounded business data | High | No |
 | `get_entry` | read | Reads one business record | High | No |
 | `list_database_objects` | read | Reads database metadata | High | Yes |
@@ -90,6 +91,24 @@ This tool does not load, expand, or execute the menu definition. In
 particular, it does not evaluate dynamic, query, or SQL menu contents. The
 form and field pass the same account, policy, sensitive-field, and rate-limit
 checks as other form metadata reads.
+
+### `resolve_form_field_menu_values`
+
+Requires `environment`, `form`, and an exact numeric `field_id`; accepts a
+`limit` from 1 to 500, defaulting to 100 and additionally bounded by the
+target's maximum-row policy. It first verifies that the form and field are
+policy-visible, then resolves only the character menu actually associated with
+that field. Arbitrary menu names are not accepted.
+
+The response identifies the menu type and returns leaf `label`, `value`, and
+`path` elements so nested menus retain their hierarchy. `truncated=true`
+means the caller must refine the task rather than assume the returned set is
+complete. Static menus return their configured values. Query, SQL,
+data-dictionary, file, and server-side menus are expanded by AR System with
+the selected account and can read their backing data. The operation never
+modifies an entry, but its values can still contain business data and must be
+handled like other form-read results. Menus that require unavailable runtime
+field context may fail safely instead of returning guessed values.
 
 ### `query_form`
 

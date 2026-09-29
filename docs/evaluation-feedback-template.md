@@ -28,7 +28,7 @@ logs, configuration files, or unredacted screenshots.
 | Dashboard configuration | Pass / Blocked / Skipped | | |
 | Non-live preflight | Pass / Blocked / Skipped | | |
 | DEV live preflight | Pass / Blocked / Skipped | | |
-| MCP initialization and 21-tool discovery | Pass / Blocked / Skipped | | |
+| MCP initialization and 22-tool discovery | Pass / Blocked / Skipped | | |
 | Bounded read scenario | Pass / Blocked / Skipped | | |
 | Optional controlled update | Pass / Blocked / Skipped | | |
 | Credential removal or revocation | Pass / Blocked / Skipped | | |

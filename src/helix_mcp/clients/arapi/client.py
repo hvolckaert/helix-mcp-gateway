@@ -28,7 +28,9 @@ from helix_mcp.clients.arapi.models import (
     ArapiEntryResult,
     ArapiField,
     ArapiFieldMenu,
+    ArapiFieldMenuValues,
     ArapiFieldSelection,
+    ArapiMenuValue,
     ArapiPreparedUpdate,
     ArapiQueryPage,
     ArapiScalar,
@@ -42,6 +44,9 @@ _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _MAX_FORMS = 100_000
 _MAX_FIELDS = 100_000
 _MAX_SELECTION_VALUES = 4_096
+_MAX_MENU_VALUES = 500
+_MAX_MENU_DEPTH = 32
+_MAX_MENU_VALUE_LENGTH = 8_192
 _MAX_SQL_COLUMNS = 128
 _MAX_SQL_ROWS = 100_000
 _ARERR_FIELD_NOT_QUERYABLE = 286
@@ -140,6 +145,30 @@ class ArapiBridgeClient:
             {"form": form, "field_id": str(field_id)},
         )
         return _parse_field_menu(self._target, payload, status_code)
+
+    async def resolve_field_menu_values(
+        self,
+        *,
+        form: str,
+        field_id: int,
+        limit: int,
+    ) -> ArapiFieldMenuValues:
+        """Resolve bounded character-menu values for one exact field ID."""
+
+        payload, status_code = await self._post(
+            "/v1/fields/menu-values",
+            {
+                "form": form,
+                "field_id": str(field_id),
+                "limit": str(limit),
+            },
+        )
+        return _parse_field_menu_values(
+            self._target,
+            payload,
+            status_code,
+            expected_limit=limit,
+        )
 
     async def query_entries(
         self,
@@ -732,6 +761,130 @@ def _parse_field_menu(
         has_menu=has_menu,
         menu_name=normalized_menu_name,
         menu_style=menu_style,
+    )
+
+
+def _parse_field_menu_values(
+    target: TargetKey,
+    payload: Any,
+    status_code: int,
+    *,
+    expected_limit: int,
+) -> ArapiFieldMenuValues:
+    expected_keys = {
+        "id",
+        "name",
+        "datatype",
+        "has_menu",
+        "menu_name",
+        "menu_style",
+        "menu_type",
+        "values",
+        "limit",
+        "truncated",
+    }
+    if not isinstance(payload, dict) or set(payload) != expected_keys:
+        raise _protocol_error(target, status_code)
+    field_id = payload.get("id")
+    name = payload.get("name")
+    datatype = payload.get("datatype")
+    has_menu = payload.get("has_menu")
+    menu_name = payload.get("menu_name")
+    menu_style = payload.get("menu_style")
+    menu_type = payload.get("menu_type")
+    values = payload.get("values")
+    limit = payload.get("limit")
+    truncated = payload.get("truncated")
+    if (
+        not _is_integer(field_id)
+        or field_id < 1
+        or field_id > 2_147_483_647
+        or not _is_normalizable_text(name, 255)
+        or not _is_safe_text(datatype, 64)
+        or not isinstance(has_menu, bool)
+        or menu_style not in (None, "append", "overwrite")
+        or menu_type
+        not in (
+            None,
+            "list",
+            "query",
+            "file",
+            "sql",
+            "server_side",
+            "data_dictionary",
+        )
+        or not isinstance(values, list)
+        or len(values) > _MAX_MENU_VALUES
+        or len(values) > expected_limit
+        or not _is_integer(limit)
+        or limit != expected_limit
+        or limit < 1
+        or limit > _MAX_MENU_VALUES
+        or not isinstance(truncated, bool)
+        or (
+            has_menu
+            and (
+                not _is_normalizable_text(menu_name, 255)
+                or menu_style is None
+                or menu_type is None
+            )
+        )
+        or (
+            not has_menu
+            and (
+                menu_name is not None
+                or menu_style is not None
+                or menu_type is not None
+                or values
+                or truncated
+            )
+        )
+    ):
+        raise _protocol_error(target, status_code)
+    parsed_values: list[ArapiMenuValue] = []
+    for raw_value in values:
+        if not isinstance(raw_value, dict) or set(raw_value) != {
+            "label",
+            "value",
+            "path",
+        }:
+            raise _protocol_error(target, status_code)
+        label = raw_value.get("label")
+        value = raw_value.get("value")
+        path = raw_value.get("path")
+        if (
+            not _is_normalizable_text(label, _MAX_MENU_VALUE_LENGTH)
+            or not _is_normalizable_text(value, _MAX_MENU_VALUE_LENGTH)
+            or not isinstance(path, list)
+            or len(path) > _MAX_MENU_DEPTH
+            or any(
+                not _is_normalizable_text(item, _MAX_MENU_VALUE_LENGTH)
+                for item in path
+            )
+        ):
+            raise _protocol_error(target, status_code)
+        parsed_values.append(
+            ArapiMenuValue(
+                label=label.strip(),
+                value=value.strip(),
+                path=tuple(item.strip() for item in path),
+            )
+        )
+    normalized_menu_name = None
+    if has_menu:
+        assert isinstance(menu_name, str)
+        normalized_menu_name = menu_name.strip()
+    return ArapiFieldMenuValues(
+        id=field_id,
+        name=name.strip(),
+        datatype=datatype,
+        has_menu=has_menu,
+        menu_name=normalized_menu_name,
+        menu_style=menu_style,
+        menu_type=menu_type,
+        values=tuple(parsed_values),
+        limit=limit,
+        truncated=truncated,
     )
 
 

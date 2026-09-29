@@ -14,6 +14,7 @@ from helix_mcp.services.database import (
 from helix_mcp.services.forms import (
     FormEntry,
     FormFieldMenuMetadata,
+    FormFieldMenuValuesResult,
     FormFieldMetadata,
     FormFieldSelectionMetadata,
     FormMetadata,
@@ -97,6 +98,14 @@ class GetFormFieldMenuMetadataOutput(FrozenModel):
     environment: Environment
     form: str
     field: FormFieldMenuMetadata
+
+
+class ResolveFormFieldMenuValuesOutput(FrozenModel):
+    """Bounded values resolved from one policy-visible field menu."""
+
+    environment: Environment
+    form: str
+    field: FormFieldMenuValuesResult
 
 
 class ListFormsOutput(FrozenModel):

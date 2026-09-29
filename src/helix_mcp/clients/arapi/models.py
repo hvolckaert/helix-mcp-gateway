@@ -7,6 +7,14 @@ from typing import Any, Literal
 
 ArapiScalar = str | int | float | bool
 type ArapiSqlValue = str | int | float | bool | None
+type ArapiMenuType = Literal[
+    "list",
+    "query",
+    "file",
+    "sql",
+    "server_side",
+    "data_dictionary",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +55,38 @@ class ArapiFieldMenu:
     has_menu: bool
     menu_name: str | None
     menu_style: Literal["append", "overwrite"] | None
+
+
+@dataclass(frozen=True, slots=True)
+class ArapiMenuValue:
+    """One bounded, expanded character-menu leaf value."""
+
+    label: str
+    value: str
+    path: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ArapiFieldMenuValues:
+    """Bounded character-menu values for one exact AR System field ID."""
+
+    id: int
+    name: str
+    datatype: str
+    has_menu: bool
+    menu_name: str | None
+    menu_style: Literal["append", "overwrite"] | None
+    menu_type: ArapiMenuType | None
+    values: tuple[ArapiMenuValue, ...]
+    limit: int
+    truncated: bool
+
+    def __repr__(self) -> str:
+        return (
+            f"<ArapiFieldMenuValues id={self.id} name={self.name!r} "
+            f"values={len(self.values)} truncated={self.truncated} "
+            "payload=redacted>"
+        )
 
 
 @dataclass(frozen=True, slots=True)
