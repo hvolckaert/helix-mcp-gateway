@@ -249,6 +249,20 @@ def test_field_query_and_entry_contracts_are_typed_and_bounded() -> None:
                     "total": 2,
                 },
             )
+        if request.url.path == "/v1/fields/selection-values":
+            return httpx.Response(
+                200,
+                json={
+                    "id": 7,
+                    "name": "Status",
+                    "datatype": "ENUM",
+                    "selection_style": "custom",
+                    "values": [
+                        {"number": 0, "label": "New"},
+                        {"number": 7, "label": "Resolved"},
+                    ],
+                },
+            )
         if request.url.path == "/v1/entries/query":
             return httpx.Response(
                 200,
@@ -291,6 +305,10 @@ def test_field_query_and_entry_contracts_are_typed_and_bounded() -> None:
             http_client=transport,
         )
         fields = await client.list_fields("Example:HelpDesk")
+        selection = await client.get_field_selection_values(
+            form="Example:HelpDesk",
+            field_id=7,
+        )
         page = await client.query_entries(
             form="Example:HelpDesk",
             fields=("Request ID", "Status"),
@@ -306,14 +324,20 @@ def test_field_query_and_entry_contracts_are_typed_and_bounded() -> None:
             fields=("Request ID", "Status"),
         )
         await client.aclose()
-        return fields, page, entry
+        return fields, selection, page, entry
 
-    fields, page, entry = run(scenario())
+    fields, selection, page, entry = run(scenario())
     assert [(field.id, field.name, field.datatype) for field in fields] == [
         (1, "Request ID", "CHAR"),
         (7, "Status", "ENUM"),
     ]
     assert page.total == 21
+    assert selection.id == 7
+    assert selection.selection_style == "custom"
+    assert [(item.number, item.label) for item in selection.values] == [
+        (0, "New"),
+        (7, "Resolved"),
+    ]
     assert page.entries[0].values == {
         "Request ID": "000000000000001",
         "Status": 1,
@@ -322,10 +346,14 @@ def test_field_query_and_entry_contracts_are_typed_and_bounded() -> None:
     assert "000000000000001" not in repr(page.entries[0])
     assert [request.url.path for request in requests] == [
         "/v1/fields",
+        "/v1/fields/selection-values",
         "/v1/entries/query",
         "/v1/entries/get",
     ]
-    query_form = parse_qs(requests[1].content.decode("ascii"))
+    selection_form = parse_qs(requests[1].content.decode("ascii"))
+    assert selection_form["form"] == ["Example:HelpDesk"]
+    assert selection_form["field_id"] == ["7"]
+    query_form = parse_qs(requests[2].content.decode("ascii"))
     assert query_form["form"] == ["Example:HelpDesk"]
     assert query_form["fields"] == ["Request ID,Status"]
     assert query_form["qualification"] == ["'Status' = 1"]
@@ -371,6 +399,66 @@ def test_field_metadata_accepts_duplicate_names_with_distinct_ids() -> None:
         (100, "Status"),
         (200, "Status"),
     ]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "id": 7,
+            "name": "Status",
+            "datatype": "ENUM",
+            "selection_style": None,
+            "values": [{"number": 0, "label": "New"}],
+        },
+        {
+            "id": 7,
+            "name": "Status",
+            "datatype": "ENUM",
+            "selection_style": "custom",
+            "values": [
+                {"number": 0, "label": "New"},
+                {"number": 0, "label": "Duplicate"},
+            ],
+        },
+        {
+            "id": 7,
+            "name": "Status",
+            "datatype": "ENUM",
+            "selection_style": "dynamic",
+            "values": [],
+        },
+        {
+            "id": 7,
+            "name": "Status",
+            "datatype": "ENUM",
+            "selection_style": "custom",
+            "values": [{"number": 2_147_483_648, "label": "Invalid"}],
+        },
+    ],
+)
+def test_selection_metadata_rejects_malformed_bridge_payloads(payload) -> None:
+    async def scenario() -> None:
+        transport = httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=payload)
+            ),
+        )
+        client = ArapiBridgeClient(
+            target=TARGET,
+            config=config(),
+            secrets=secrets(),
+            http_client=transport,
+        )
+        with pytest.raises(ArapiBridgeProtocolError):
+            await client.get_field_selection_values(
+                form="Example:HelpDesk",
+                field_id=7,
+            )
+        await client.aclose()
+
+    run(scenario())
 
 
 def test_ambiguous_field_bridge_error_has_a_stable_public_code() -> None:

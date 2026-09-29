@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import Field, StringConstraints, field_validator, model_validator
 
@@ -176,6 +176,36 @@ class FormFieldsResult(FrozenModel):
     offset: int
     limit: int
     total: int
+
+
+class FormFieldSelectionQuery(FrozenModel):
+    """Exact field-selection metadata request for one permitted form."""
+
+    form: FormName
+    field_id: int = Field(ge=1, le=2_147_483_647)
+
+    @field_validator("form")
+    @classmethod
+    def validate_form_syntax(cls, value: str) -> str:
+        _reject_control_characters(value, "form")
+        return value
+
+
+class FormSelectionValue(FrozenModel):
+    """One exact AR System selection number and human-readable label."""
+
+    number: int = Field(ge=-2_147_483_648, le=2_147_483_647)
+    label: str = Field(min_length=1, max_length=255)
+
+
+class FormFieldSelectionMetadata(FrozenModel):
+    """Safe selection metadata for one policy-visible field."""
+
+    id: int = Field(ge=1)
+    name: FormName
+    datatype: str = Field(min_length=1, max_length=64)
+    selection_style: Literal["regular", "custom"] | None
+    values: tuple[FormSelectionValue, ...] = Field(max_length=4_096)
 
 
 class FormCatalogQuery(FrozenModel):

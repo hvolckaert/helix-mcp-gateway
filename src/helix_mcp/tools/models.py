@@ -14,6 +14,7 @@ from helix_mcp.services.database import (
 from helix_mcp.services.forms import (
     FormEntry,
     FormFieldMetadata,
+    FormFieldSelectionMetadata,
     FormMetadata,
 )
 from helix_mcp.services.health import HealthCheckResult
@@ -79,6 +80,14 @@ class ListFormFieldsOutput(FrozenModel):
     offset: int
     limit: int
     total: int
+
+
+class GetFormFieldSelectionValuesOutput(FrozenModel):
+    """Selection labels for one exact policy-visible form field."""
+
+    environment: Environment
+    form: str
+    field: FormFieldSelectionMetadata
 
 
 class ListFormsOutput(FrozenModel):

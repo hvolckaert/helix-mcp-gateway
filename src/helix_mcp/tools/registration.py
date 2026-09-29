@@ -18,6 +18,7 @@ from helix_mcp.tools.models import (
     DescribeDatabaseObjectOutput,
     ExecuteSqlQueryOutput,
     GetEntryOutput,
+    GetFormFieldSelectionValuesOutput,
     HealthCheckOutput,
     ListDatabaseColumnsOutput,
     ListDatabaseObjectsOutput,
@@ -387,6 +388,33 @@ def register_mcp_tools(
                 name_contains=name_contains,
                 offset=offset,
                 limit=limit,
+            ),
+        )
+
+    @server.tool(
+        name="get_form_field_selection_values",
+        title="Get Helix form-field selection values",
+        description=(
+            "Read the configured number-to-label mapping for one exact "
+            "policy-visible BMC Helix field ID. ENUM fields return their "
+            "regular or custom selection values. Non-selection fields "
+            "return no selection style or values."
+        ),
+        annotations=_HELIX_READ_ANNOTATIONS,
+        structured_output=True,
+    )
+    async def get_form_field_selection_values(
+        environment: Environment,
+        form: str,
+        field_id: int,
+    ) -> GetFormFieldSelectionValuesOutput:
+        return await audit.execute(
+            tool="get_form_field_selection_values",
+            environment=environment,
+            operation=lambda: forms.get_form_field_selection_values(
+                environment=environment,
+                form=form,
+                field_id=field_id,
             ),
         )
 

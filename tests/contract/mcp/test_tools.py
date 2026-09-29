@@ -42,11 +42,14 @@ from helix_mcp.services.forms import (
     FormEntryQuery,
     FormEntryResult,
     FormFieldMetadata,
+    FormFieldSelectionMetadata,
+    FormFieldSelectionQuery,
     FormFieldsQuery,
     FormFieldsResult,
     FormMetadata,
     FormQuery,
     FormQueryResult,
+    FormSelectionValue,
 )
 from helix_mcp.services.health import (
     HealthCheckResult,
@@ -105,6 +108,9 @@ class FakeFormService:
     def __init__(self) -> None:
         self.calls: list[tuple[Environment, FormQuery]] = []
         self.field_calls: list[tuple[Environment, FormFieldsQuery]] = []
+        self.selection_calls: list[
+            tuple[Environment, FormFieldSelectionQuery]
+        ] = []
         self.catalog_calls: list[tuple[Environment, FormCatalogQuery]] = []
         self.entry_calls: list[tuple[Environment, FormEntryQuery]] = []
 
@@ -140,6 +146,24 @@ class FakeFormService:
             offset=query.offset,
             limit=query.limit,
             total=1,
+        )
+
+    async def get_field_selection_values(
+        self,
+        *,
+        environment: Environment,
+        query: FormFieldSelectionQuery,
+    ) -> FormFieldSelectionMetadata:
+        self.selection_calls.append((environment, query))
+        return FormFieldSelectionMetadata(
+            id=query.field_id,
+            name="Status",
+            datatype="ENUM",
+            selection_style="custom",
+            values=(
+                FormSelectionValue(number=0, label="New"),
+                FormSelectionValue(number=7, label="Resolved"),
+            ),
         )
 
     async def search(
@@ -420,6 +444,7 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                 "cancel_write_plan",
                 "get_write_plan",
                 "get_entry",
+                "get_form_field_selection_values",
                 "list_form_fields",
                 "list_forms",
                 "list_database_columns",
@@ -545,6 +570,16 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                 "form",
             }
 
+            selection_tool = by_name["get_form_field_selection_values"]
+            assert selection_tool.annotations.readOnlyHint is True
+            assert selection_tool.annotations.destructiveHint is False
+            assert selection_tool.annotations.openWorldHint is True
+            assert set(selection_tool.inputSchema["required"]) == {
+                "environment",
+                "form",
+                "field_id",
+            }
+
             forms_tool = by_name["list_forms"]
             assert forms_tool.annotations.readOnlyHint is True
             assert forms_tool.annotations.destructiveHint is False
@@ -657,6 +692,30 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                 }
             ]
             assert fields.structuredContent["total"] == 1
+
+            selection = await client.call_tool(
+                "get_form_field_selection_values",
+                {
+                    "environment": "dev",
+                    "form": "Example:HelpDesk",
+                    "field_id": 7,
+                },
+            )
+            assert selection.isError is False
+            assert selection.structuredContent == {
+                "environment": "dev",
+                "form": "Example:HelpDesk",
+                "field": {
+                    "id": 7,
+                    "name": "Status",
+                    "datatype": "ENUM",
+                    "selection_style": "custom",
+                    "values": [
+                        {"number": 0, "label": "New"},
+                        {"number": 7, "label": "Resolved"},
+                    ],
+                },
+            }
 
             result = await client.call_tool(
                 "query_form",

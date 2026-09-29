@@ -18,7 +18,17 @@ public class ARServerUser {
         new Field(1, "Request ID", DataType.CHAR.getValue()),
         new Field(2, "Name", DataType.CHAR.getValue()),
         new Field(3, "Count", DataType.INTEGER.getValue()),
-        new Field(4, "Enabled", DataType.ENUM.getValue()),
+        new Field(
+            4,
+            "Enabled",
+            DataType.ENUM.getValue(),
+            new SelectionFieldLimit(
+                List.of(
+                    new EnumItem("Disabled", 0),
+                    new EnumItem("Enabled", 1)
+                )
+            )
+        ),
         new Field(5, "Description", DataType.CHAR.getValue()),
         new Field(
             Constants.AR_CORE_MODIFIED_DATE,
@@ -144,6 +154,19 @@ public class ARServerUser {
             throw new ARException(List.of(new StatusInfo(303)));
         }
         return fields;
+    }
+
+    public Field getField(
+        String form,
+        int fieldId,
+        FieldCriteria criteria
+    ) throws ARException {
+        for (Field field : getListFieldObjects(form)) {
+            if (field.getFieldID() == fieldId) {
+                return field;
+            }
+        }
+        throw new ARException(List.of(new StatusInfo(302)));
     }
 
     public QualifierInfo parseQualification(String form, String text)

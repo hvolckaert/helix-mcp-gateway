@@ -73,12 +73,12 @@ the database, and the user-supplied proprietary BMC libraries remain local.
 
 ## Capabilities
 
-The server exposes 19 MCP tools:
+The server exposes 20 MCP tools:
 
 | Area | Tools | External effect |
 | --- | --- | --- |
 | Targets and health | `list_targets`, `health_check` | Local catalog and bounded connectivity probes |
-| Form reads | `list_forms`, `list_form_fields`, `query_form`, `get_entry` | Policy-filtered metadata and bounded records |
+| Form reads | `list_forms`, `list_form_fields`, `get_form_field_selection_values`, `query_form`, `get_entry` | Policy-filtered metadata, ENUM labels, and bounded records |
 | Database metadata | `list_database_objects`, `list_database_columns`, `describe_database_object` | Administrator-only catalog reads through AR API |
 | Read-only SQL | `plan_sql_query`, `get_sql_query_plan`, `execute_sql_query`, `cancel_sql_query_plan` | Reviewable, bounded, single-use SQL execution |
 | Controlled writes | `plan_create_entry`, `apply_create_entry`, `plan_update_entry`, `apply_update_entry` | Human-approved single-entry creates and updates |

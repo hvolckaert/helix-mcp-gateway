@@ -27,9 +27,11 @@ from helix_mcp.clients.arapi.models import (
     ArapiEntry,
     ArapiEntryResult,
     ArapiField,
+    ArapiFieldSelection,
     ArapiPreparedUpdate,
     ArapiQueryPage,
     ArapiScalar,
+    ArapiSelectionValue,
     ArapiSqlResult,
 )
 from helix_mcp.config import ArapiBackendConfig, TargetKey
@@ -38,6 +40,7 @@ from helix_mcp.secrets import SecretResolver
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _MAX_FORMS = 100_000
 _MAX_FIELDS = 100_000
+_MAX_SELECTION_VALUES = 4_096
 _MAX_SQL_COLUMNS = 128
 _MAX_SQL_ROWS = 100_000
 _ARERR_FIELD_NOT_QUERYABLE = 286
@@ -108,6 +111,20 @@ class ArapiBridgeClient:
             {"form": form},
         )
         return _parse_fields(self._target, payload, status_code)
+
+    async def get_field_selection_values(
+        self,
+        *,
+        form: str,
+        field_id: int,
+    ) -> ArapiFieldSelection:
+        """Return bounded selection values for one exact field ID."""
+
+        payload, status_code = await self._post(
+            "/v1/fields/selection-values",
+            {"form": form, "field_id": str(field_id)},
+        )
+        return _parse_field_selection(self._target, payload, status_code)
 
     async def query_entries(
         self,
@@ -591,6 +608,65 @@ def _parse_fields(
             )
         )
     return tuple(fields)
+
+
+def _parse_field_selection(
+    target: TargetKey,
+    payload: Any,
+    status_code: int,
+) -> ArapiFieldSelection:
+    if not isinstance(payload, dict) or set(payload) != {
+        "id",
+        "name",
+        "datatype",
+        "selection_style",
+        "values",
+    }:
+        raise _protocol_error(target, status_code)
+    field_id = payload.get("id")
+    name = payload.get("name")
+    datatype = payload.get("datatype")
+    selection_style = payload.get("selection_style")
+    raw_values = payload.get("values")
+    if (
+        not _is_integer(field_id)
+        or field_id < 1
+        or field_id > 2_147_483_647
+        or not _is_normalizable_text(name, 255)
+        or not _is_safe_text(datatype, 64)
+        or selection_style not in (None, "regular", "custom")
+        or not isinstance(raw_values, list)
+        or len(raw_values) > _MAX_SELECTION_VALUES
+        or (selection_style is None and raw_values)
+    ):
+        raise _protocol_error(target, status_code)
+    values: list[ArapiSelectionValue] = []
+    numbers: set[int] = set()
+    for raw_value in raw_values:
+        if not isinstance(raw_value, dict) or set(raw_value) != {
+            "number",
+            "label",
+        }:
+            raise _protocol_error(target, status_code)
+        number = raw_value.get("number")
+        label = raw_value.get("label")
+        if (
+            not _is_integer(number)
+            or number < -2_147_483_648
+            or number > 2_147_483_647
+            or number in numbers
+            or not _is_normalizable_text(label, 255)
+        ):
+            raise _protocol_error(target, status_code)
+        numbers.add(number)
+        values.append(ArapiSelectionValue(number=number, label=label.strip()))
+    return ArapiFieldSelection(
+        id=field_id,
+        name=name.strip(),
+        datatype=datatype,
+        selection_style=selection_style,
+        values=tuple(values),
+    )
 
 
 def _parse_query_page(

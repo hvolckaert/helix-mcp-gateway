@@ -19,6 +19,7 @@ EXPOSED_TOOLS = (
     "health_check",
     "list_forms",
     "list_form_fields",
+    "get_form_field_selection_values",
     "query_form",
     "get_entry",
     "list_database_objects",
