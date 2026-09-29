@@ -18,7 +18,6 @@ from helix_mcp.installation.managed import (
     stable_launcher_path,
     versioned_runtime_paths,
 )
-from helix_mcp.installation.openclaw import EXPOSED_TOOLS
 from helix_mcp.installation.updater import (
     PublicGitHubTransport,
     UpdateError,
@@ -27,6 +26,7 @@ from helix_mcp.installation.updater import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+TARGET_EXPOSED_TOOLS = ("list_targets", "new_release_tool")
 
 
 class FakeUpdateRunner:
@@ -38,12 +38,14 @@ class FakeUpdateRunner:
         fail_smoke_test: bool = False,
         fail_attestation: bool = False,
         bridge_path: Path | None = None,
+        target_tools_payload: object = TARGET_EXPOSED_TOOLS,
     ) -> None:
         self.wheel_content = wheel_content
         self.digest_content = digest_content or wheel_content
         self.fail_smoke_test = fail_smoke_test
         self.fail_attestation = fail_attestation
         self.bridge_path = bridge_path
+        self.target_tools_payload = target_tools_payload
         self.commands: list[list[str]] = []
         self.urls: list[str] = []
 
@@ -136,6 +138,13 @@ class FakeUpdateRunner:
                 command,
                 0,
                 stdout="0.7.0\n",
+                stderr="",
+            )
+        if any("EXPOSED_TOOLS" in part for part in command):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(self.target_tools_payload),
                 stderr="",
             )
         if Path(command[0]).name.startswith("helix-mcp-setup"):
@@ -443,7 +452,60 @@ def test_update_refreshes_reloads_and_probes_openclaw_definition(
     else:
         assert runner.definition["command"] == str(launcher)
         assert runner.definition["args"] == []
-    assert runner.definition["toolFilter"] == {"include": list(EXPOSED_TOOLS)}
+    assert runner.definition["toolFilter"] == {
+        "include": list(TARGET_EXPOSED_TOOLS)
+    }
+
+
+def test_update_rejects_invalid_target_openclaw_tool_catalog(
+    tmp_path: Path,
+) -> None:
+    workspace, dotenv_path, bridge_path, base_python = _managed_installation(
+        tmp_path
+    )
+    current = load_managed_installation(workspace)
+    assert current is not None
+    openclaw = tmp_path / "bin/openclaw"
+    openclaw.parent.mkdir()
+    openclaw.write_text("openclaw", encoding="utf-8")
+    activate_managed_installation(
+        workspace=workspace,
+        version=current.active_version,
+        server_command=current.server_command,
+        dotenv_path=dotenv_path,
+        client="openclaw",
+        server_name="helix",
+        openclaw_command=openclaw,
+    )
+    gh = tmp_path / "gh"
+    gh.write_text("gh", encoding="utf-8")
+    runner = OpenClawUpdateRunner(
+        workspace=workspace,
+        wheel_content=b"published gateway wheel",
+        bridge_path=bridge_path,
+        target_tools_payload=["list_targets", "list_targets"],
+    )
+
+    with pytest.raises(
+        UpdateError,
+        match="target OpenClaw tool catalog is invalid",
+    ):
+        update_installation(
+            dotenv_path=dotenv_path,
+            workspace=workspace,
+            target_version="0.7.0",
+            gh_command=gh,
+            base_python=base_python,
+            runner=runner,
+            transport=runner,
+        )
+
+    managed = load_managed_installation(workspace)
+    assert managed is not None
+    assert managed.active_version == "0.6.8"
+    assert not any(
+        command[1:3] == ["mcp", "set"] for command in runner.commands
+    )
 
 
 def test_update_rejects_a_wheel_that_does_not_match_release_digest(

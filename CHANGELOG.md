@@ -5,6 +5,10 @@ Semantic Versioning.
 
 ## Unreleased
 
+- Refresh OpenClaw's tool filter from the newly installed runtime during
+  managed updates so tools introduced by that release are available
+  immediately after its automatic reload.
+
 ## 0.12.0 - 2026-09-29
 
 - Add the policy-filtered `get_form_field_selection_values` read tool so MCP
