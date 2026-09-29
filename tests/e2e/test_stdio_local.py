@@ -48,6 +48,7 @@ EXPECTED_TOOLS = {
     "plan_sql_query",
     "plan_update_entry",
     "query_form",
+    "resolve_form_field_menu_values",
     "execute_sql_query",
 }
 
@@ -375,6 +376,40 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
         "has_menu": True,
         "menu_name": "Sample:Names",
         "menu_style": "append",
+    }
+
+    menu_values = await session.call_tool(
+        "resolve_form_field_menu_values",
+        {
+            "environment": "dev",
+            "form": FORM,
+            "field_id": 2,
+            "limit": 10,
+        },
+    )
+    assert menu_values.isError is False
+    assert menu_values.structuredContent["field"] == {
+        "id": 2,
+        "name": "Name",
+        "datatype": "CHAR",
+        "has_menu": True,
+        "menu_name": "Sample:Names",
+        "menu_style": "append",
+        "menu_type": "query",
+        "values": [
+            {
+                "label": "Sample system",
+                "value": "sample-system",
+                "path": [],
+            },
+            {
+                "label": "Backup system",
+                "value": "backup-system",
+                "path": ["Additional systems"],
+            },
+        ],
+        "limit": 10,
+        "truncated": False,
     }
 
     query = await session.call_tool(

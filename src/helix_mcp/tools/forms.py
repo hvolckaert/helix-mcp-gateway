@@ -10,6 +10,7 @@ from helix_mcp.services.forms import (
     FormCatalogService,
     FormEntryQuery,
     FormFieldMenuQuery,
+    FormFieldMenuValuesQuery,
     FormFieldSelectionQuery,
     FormFieldsQuery,
     FormQuery,
@@ -24,6 +25,7 @@ from helix_mcp.tools.models import (
     ListFormFieldsOutput,
     ListFormsOutput,
     QueryFormOutput,
+    ResolveFormFieldMenuValuesOutput,
 )
 
 
@@ -144,6 +146,35 @@ class FormToolAdapter:
             query=query,
         )
         return GetFormFieldMenuMetadataOutput(
+            environment=environment,
+            form=query.form,
+            field=result,
+        )
+
+    async def resolve_form_field_menu_values(
+        self,
+        *,
+        environment: Environment,
+        form: str,
+        field_id: int,
+        limit: int = 100,
+    ) -> ResolveFormFieldMenuValuesOutput:
+        try:
+            query = FormFieldMenuValuesQuery(
+                form=form,
+                field_id=field_id,
+                limit=limit,
+            )
+        except ValidationError:
+            raise ToolInputError(
+                "resolve_form_field_menu_values input is invalid"
+            ) from None
+
+        result = await self._service.resolve_field_menu_values(
+            environment=environment,
+            query=query,
+        )
+        return ResolveFormFieldMenuValuesOutput(
             environment=environment,
             form=query.form,
             field=result,

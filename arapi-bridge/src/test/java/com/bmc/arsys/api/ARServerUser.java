@@ -44,6 +44,18 @@ public class ARServerUser {
             DataType.TIME.getValue()
         )
     );
+    private static final Menu SAMPLE_MENU = new Menu(
+        Constants.AR_CHAR_MENU_QUERY,
+        List.of(
+            new MenuItem("Sample system", "sample-system"),
+            new MenuItem(
+                "Additional systems",
+                List.of(
+                    new MenuItem("Backup system", "backup-system")
+                )
+            )
+        )
+    );
     private static final Map<String, Entry> SAMPLE_ENTRIES =
         Collections.synchronizedMap(new LinkedHashMap<>());
     private static long modifiedDate = 1_000L;
@@ -175,6 +187,26 @@ public class ARServerUser {
             }
         }
         throw new ARException(List.of(new StatusInfo(302)));
+    }
+
+    public Menu getMenu(String name, MenuCriteria criteria) throws ARException {
+        if (sampleDataEnabled() && "Sample:Names".equals(name)) {
+            return SAMPLE_MENU;
+        }
+        throw new ARException(List.of(new StatusInfo(302)));
+    }
+
+    public List<MenuItem> expandMenu(
+        Menu menu,
+        Entry keywordList,
+        Entry parameterList,
+        int maximum,
+        OutputInteger total
+    ) {
+        if (total != null) {
+            total.setValue(menu.getContent().size());
+        }
+        return menu.getContent();
     }
 
     public QualifierInfo parseQualification(String form, String text)

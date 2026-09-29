@@ -139,6 +139,24 @@ def test_real_client_and_managed_java_bridge_contract(
             assert menu.has_menu is True
             assert menu.menu_name == "Sample:Names"
             assert menu.menu_style == "append"
+            menu_values = await client.resolve_field_menu_values(
+                form=FORM,
+                field_id=2,
+                limit=10,
+            )
+            assert menu_values.menu_type == "query"
+            assert [
+                (item.label, item.value, item.path)
+                for item in menu_values.values
+            ] == [
+                ("Sample system", "sample-system", ()),
+                (
+                    "Backup system",
+                    "backup-system",
+                    ("Additional systems",),
+                ),
+            ]
+            assert menu_values.truncated is False
 
             page = await client.query_entries(
                 form=FORM,

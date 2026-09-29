@@ -21,6 +21,18 @@ EntryId = Annotated[
     str,
     StringConstraints(min_length=1, max_length=255, strip_whitespace=True),
 ]
+MenuValueText = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=8_192, strip_whitespace=True),
+]
+type FormMenuType = Literal[
+    "list",
+    "query",
+    "file",
+    "sql",
+    "server_side",
+    "data_dictionary",
+]
 
 
 class SortDirection(StrEnum):
@@ -238,6 +250,67 @@ class FormFieldMenuMetadata(FrozenModel):
         ):
             raise ValueError("character-menu metadata is inconsistent")
         return self
+
+
+class FormFieldMenuValuesQuery(FrozenModel):
+    """Bounded character-menu expansion for one permitted form field."""
+
+    form: FormName
+    field_id: int = Field(ge=1, le=2_147_483_647)
+    limit: int = Field(default=100, ge=1, le=500)
+
+    @field_validator("form")
+    @classmethod
+    def validate_form_syntax(cls, value: str) -> str:
+        _reject_control_characters(value, "form")
+        return value
+
+
+class FormMenuValue(FrozenModel):
+    """One expanded leaf value, including its optional submenu path."""
+
+    label: MenuValueText
+    value: MenuValueText
+    path: tuple[MenuValueText, ...] = Field(default=(), max_length=32)
+
+
+class FormFieldMenuValuesResult(FrozenModel):
+    """Bounded values resolved from a policy-visible field's menu."""
+
+    id: int = Field(ge=1, le=2_147_483_647)
+    name: FieldName
+    datatype: str = Field(min_length=1, max_length=64)
+    has_menu: bool
+    menu_name: FormName | None = None
+    menu_style: Literal["append", "overwrite"] | None = None
+    menu_type: FormMenuType | None = None
+    values: tuple[FormMenuValue, ...] = Field(
+        default=(),
+        max_length=500,
+        repr=False,
+    )
+    limit: int = Field(ge=1, le=500)
+    truncated: bool
+
+    @model_validator(mode="after")
+    def validate_menu_contract(self) -> Self:
+        complete_metadata = (
+            self.menu_name is not None
+            and self.menu_style is not None
+            and self.menu_type is not None
+        )
+        if self.has_menu != complete_metadata:
+            raise ValueError("character-menu value metadata is inconsistent")
+        if not self.has_menu and (self.values or self.truncated):
+            raise ValueError("a field without a menu cannot return values")
+        return self
+
+    def __repr__(self) -> str:
+        return (
+            f"<FormFieldMenuValuesResult id={self.id} name={self.name!r} "
+            f"values={len(self.values)} truncated={self.truncated} "
+            "payload=redacted>"
+        )
 
 
 class FormCatalogQuery(FrozenModel):

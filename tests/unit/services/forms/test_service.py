@@ -13,8 +13,10 @@ from helix_mcp.clients.arapi import (
     ArapiEntryResult,
     ArapiField,
     ArapiFieldMenu,
+    ArapiFieldMenuValues,
     ArapiFieldSelection,
     ArapiFormNotFoundError,
+    ArapiMenuValue,
     ArapiQueryPage,
     ArapiSelectionValue,
 )
@@ -31,6 +33,7 @@ from helix_mcp.config import (
 from helix_mcp.services.forms import (
     FormEntryQuery,
     FormFieldMenuQuery,
+    FormFieldMenuValuesQuery,
     FormFieldNotAllowedError,
     FormFieldSelectionQuery,
     FormFieldsQuery,
@@ -117,6 +120,44 @@ class FakeClient:
             has_menu=has_menu,
             menu_name="Sample:Owners" if has_menu else None,
             menu_style="append" if has_menu else None,
+        )
+
+    async def resolve_field_menu_values(
+        self,
+        *,
+        form: str,
+        field_id: int,
+        limit: int,
+    ) -> ArapiFieldMenuValues:
+        self.calls.append(
+            (
+                "resolve_field_menu_values",
+                {"form": form, "field_id": field_id, "limit": limit},
+            )
+        )
+        item = next(item for item in self.payload if item["id"] == field_id)
+        has_menu = item["datatype"] == "CHAR"
+        return ArapiFieldMenuValues(
+            id=item["id"],
+            name=item["name"],
+            datatype=item["datatype"],
+            has_menu=has_menu,
+            menu_name="Sample:Owners" if has_menu else None,
+            menu_style="append" if has_menu else None,
+            menu_type="query" if has_menu else None,
+            values=(
+                (
+                    ArapiMenuValue(
+                        label="Primary owner",
+                        value="owner-one",
+                        path=(),
+                    ),
+                )
+                if has_menu
+                else ()
+            ),
+            limit=limit,
+            truncated=False,
         )
 
     async def query_entries(
@@ -569,6 +610,84 @@ def test_get_field_menu_metadata_blocks_sensitive_id_before_lookup() -> None:
                 query=FormFieldMenuQuery(
                     form="Example:HelpDesk",
                     field_id=7,
+                ),
+            )
+        )
+
+    assert client.calls == [("list_fields", {"form": "Example:HelpDesk"})]
+
+
+def test_resolve_field_menu_values_returns_bounded_values() -> None:
+    client = FakeClient(
+        [
+            {"id": 1, "name": "Owner", "datatype": "CHAR"},
+            {"id": 2, "name": "Status", "datatype": "ENUM"},
+        ]
+    )
+    service, _ = build_service(
+        client,
+        allowed_fields=("Owner", "Status"),
+    )
+
+    result = run(
+        service.resolve_field_menu_values(
+            environment="dev",
+            query=FormFieldMenuValuesQuery(
+                form="Example:HelpDesk",
+                field_id=1,
+                limit=2,
+            ),
+        )
+    )
+
+    assert result.has_menu is True
+    assert result.menu_name == "Sample:Owners"
+    assert result.menu_type == "query"
+    assert [(item.label, item.value) for item in result.values] == [
+        ("Primary owner", "owner-one")
+    ]
+    assert "owner-one" not in repr(result)
+    assert client.calls == [
+        ("list_fields", {"form": "Example:HelpDesk"}),
+        (
+            "resolve_field_menu_values",
+            {"form": "Example:HelpDesk", "field_id": 1, "limit": 2},
+        ),
+    ]
+
+
+def test_resolve_field_menu_values_enforces_policy_before_expansion() -> None:
+    client = FakeClient(
+        [
+            {"id": 1, "name": "Owner", "datatype": "CHAR"},
+            {"id": 7, "name": "Password", "datatype": "CHAR"},
+        ]
+    )
+    service, _ = build_service(
+        client,
+        allowed_fields=("Owner",),
+        max_rows=2,
+    )
+
+    with pytest.raises(FormQueryLimitError):
+        run(
+            service.resolve_field_menu_values(
+                environment="dev",
+                query=FormFieldMenuValuesQuery(
+                    form="Example:HelpDesk",
+                    field_id=1,
+                    limit=3,
+                ),
+            )
+        )
+    with pytest.raises(FormFieldNotAllowedError):
+        run(
+            service.resolve_field_menu_values(
+                environment="dev",
+                query=FormFieldMenuValuesQuery(
+                    form="Example:HelpDesk",
+                    field_id=7,
+                    limit=2,
                 ),
             )
         )

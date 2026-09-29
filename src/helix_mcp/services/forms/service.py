@@ -30,11 +30,14 @@ from helix_mcp.services.forms.models import (
     FormEntryResult,
     FormFieldMenuMetadata,
     FormFieldMenuQuery,
+    FormFieldMenuValuesQuery,
+    FormFieldMenuValuesResult,
     FormFieldMetadata,
     FormFieldSelectionMetadata,
     FormFieldSelectionQuery,
     FormFieldsQuery,
     FormFieldsResult,
+    FormMenuValue,
     FormQuery,
     FormQueryResult,
     FormSelectionValue,
@@ -231,6 +234,73 @@ class FormQueryService:
             has_menu=result.has_menu,
             menu_name=result.menu_name,
             menu_style=result.menu_style,
+        )
+
+    async def resolve_field_menu_values(
+        self,
+        *,
+        environment: str | Environment,
+        query: FormFieldMenuValuesQuery,
+    ) -> FormFieldMenuValuesResult:
+        """Resolve bounded values for one policy-visible field's menu."""
+
+        target = self._targets.resolve(environment=environment)
+        _enforce_form_access(target, query.form)
+        if query.limit > target.policy.max_rows:
+            raise FormQueryLimitError(
+                target.key,
+                "menu value limit exceeds the target policy",
+            )
+        await self._limiter.check(
+            target.key,
+            target.policy.rate_limit_per_minute,
+        )
+        target = self._targets.resolve(
+            environment=environment,
+            backend=BackendKind.ARAPI,
+        )
+        visible_fields = await self._field_metadata(target, query.form)
+        visible = next(
+            (field for field in visible_fields if field.id == query.field_id),
+            None,
+        )
+        if visible is None:
+            raise FormFieldNotAllowedError(
+                target.key,
+                "field is not allowed by target policy",
+            )
+        result = await self._clients.get(target).resolve_field_menu_values(
+            form=query.form,
+            field_id=query.field_id,
+            limit=query.limit,
+        )
+        if (
+            result.id != visible.id
+            or result.name != visible.name
+            or result.datatype != visible.datatype
+        ):
+            raise FormResponseError(
+                target.key,
+                "field metadata changed during character-menu expansion",
+            )
+        return FormFieldMenuValuesResult(
+            id=result.id,
+            name=result.name,
+            datatype=result.datatype,
+            has_menu=result.has_menu,
+            menu_name=result.menu_name,
+            menu_style=result.menu_style,
+            menu_type=result.menu_type,
+            values=tuple(
+                FormMenuValue(
+                    label=item.label,
+                    value=item.value,
+                    path=item.path,
+                )
+                for item in result.values
+            ),
+            limit=result.limit,
+            truncated=result.truncated,
         )
 
     async def _field_metadata(

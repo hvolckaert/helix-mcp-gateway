@@ -27,6 +27,7 @@ from helix_mcp.tools.models import (
     ListFormsOutput,
     ListTargetsOutput,
     QueryFormOutput,
+    ResolveFormFieldMenuValuesOutput,
     SqlQueryPlanOutput,
     WritePlanOutput,
 )
@@ -443,6 +444,36 @@ def register_mcp_tools(
                 environment=environment,
                 form=form,
                 field_id=field_id,
+            ),
+        )
+
+    @server.tool(
+        name="resolve_form_field_menu_values",
+        title="Resolve Helix form-field character-menu values",
+        description=(
+            "Resolve a bounded set of character-menu values for one exact "
+            "policy-visible BMC Helix field ID. The menu must be associated "
+            "with that field; arbitrary menu names are not accepted. Dynamic "
+            "menus may read their backing data with the selected BMC account. "
+            "No entry is modified."
+        ),
+        annotations=_HELIX_READ_ANNOTATIONS,
+        structured_output=True,
+    )
+    async def resolve_form_field_menu_values(
+        environment: Environment,
+        form: str,
+        field_id: int,
+        limit: int = 100,
+    ) -> ResolveFormFieldMenuValuesOutput:
+        return await audit.execute(
+            tool="resolve_form_field_menu_values",
+            environment=environment,
+            operation=lambda: forms.resolve_form_field_menu_values(
+                environment=environment,
+                form=form,
+                field_id=field_id,
+                limit=limit,
             ),
         )
 

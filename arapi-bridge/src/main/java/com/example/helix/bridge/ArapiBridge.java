@@ -11,6 +11,9 @@ import com.bmc.arsys.api.Entry;
 import com.bmc.arsys.api.EnumItem;
 import com.bmc.arsys.api.Field;
 import com.bmc.arsys.api.FieldCriteria;
+import com.bmc.arsys.api.Menu;
+import com.bmc.arsys.api.MenuCriteria;
+import com.bmc.arsys.api.MenuItem;
 import com.bmc.arsys.api.OutputInteger;
 import com.bmc.arsys.api.QualifierInfo;
 import com.bmc.arsys.api.ServerInfoMap;
@@ -38,6 +41,7 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -55,6 +59,9 @@ public final class ArapiBridge {
     private static final int MAX_FORMS = 100_000;
     private static final int MAX_FIELDS = 100_000;
     private static final int MAX_SELECTION_VALUES = 4_096;
+    private static final int MAX_MENU_VALUES = 500;
+    private static final int MAX_MENU_DEPTH = 32;
+    private static final int MAX_MENU_VALUE_LENGTH = 8_192;
     private static final int MAX_SELECTED_FIELDS = 128;
     private static final int MAX_WRITE_FIELDS = 32;
     private static final int MAX_SORT_FIELDS = 8;
@@ -106,6 +113,10 @@ public final class ArapiBridge {
         server.createContext(
             "/v1/fields/menu-metadata",
             new FieldMenuMetadataHandler()
+        );
+        server.createContext(
+            "/v1/fields/menu-values",
+            new FieldMenuValuesHandler()
         );
         server.createContext("/v1/entries/query", new QueryEntriesHandler());
         server.createContext("/v1/entries/get", new GetEntryHandler());
@@ -402,6 +413,66 @@ public final class ArapiBridge {
             );
             Field field = user.getField(form, fieldId, criteria);
             return encodeFieldMenuMetadata(field);
+        }
+    }
+
+    private static final class FieldMenuValuesHandler extends ArapiHandler {
+        FieldMenuValuesHandler() {
+            super("/v1/fields/menu-values");
+        }
+
+        @Override
+        protected String execute(
+            ARServerUser user,
+            Map<String, String> input
+        ) throws ARException, BadRequest {
+            String form = requiredText(input, "form", MAX_NAME_LENGTH);
+            int fieldId = boundedInteger(
+                input,
+                "field_id",
+                1,
+                Integer.MAX_VALUE
+            );
+            int limit = boundedInteger(
+                input,
+                "limit",
+                1,
+                MAX_MENU_VALUES
+            );
+            FieldCriteria fieldCriteria = new FieldCriteria();
+            fieldCriteria.setPropertiesToRetrieve(
+                FieldCriteria.FIELD_NAME
+                    | FieldCriteria.DATATYPE
+                    | FieldCriteria.LIMIT
+            );
+            Field field = user.getField(form, fieldId, fieldCriteria);
+            CharacterFieldLimit fieldLimit = characterFieldLimit(field);
+            if (fieldLimit == null || !hasCharacterMenu(fieldLimit)) {
+                return encodeFieldMenuValuesWithoutMenu(field, limit);
+            }
+            String menuName = fieldLimit.getCharMenu().strip();
+            MenuCriteria menuCriteria = new MenuCriteria();
+            menuCriteria.setPropertiesToRetrieve(
+                MenuCriteria.MENU_DEFINITION
+            );
+            Menu menu = user.getMenu(menuName, menuCriteria);
+            if (menu == null) {
+                throw new IllegalStateException("ARAPI returned no menu");
+            }
+            List<MenuItem> expanded = user.expandMenu(
+                menu,
+                new Entry(),
+                new Entry(),
+                limit + 1,
+                null
+            );
+            return encodeFieldMenuValues(
+                field,
+                fieldLimit,
+                menu,
+                expanded,
+                limit
+            );
         }
     }
 
@@ -1570,6 +1641,225 @@ public final class ArapiBridge {
         return output.toString();
     }
 
+    private static String encodeFieldMenuValuesWithoutMenu(
+        Field field,
+        int limit
+    ) {
+        StringBuilder output = beginFieldMenuValues(field);
+        output.append(",\"has_menu\":false,\"menu_name\":null,");
+        output.append("\"menu_style\":null,\"menu_type\":null,");
+        output.append("\"values\":[],\"limit\":").append(limit);
+        output.append(",\"truncated\":false}");
+        return output.toString();
+    }
+
+    private static String encodeFieldMenuValues(
+        Field field,
+        CharacterFieldLimit fieldLimit,
+        Menu menu,
+        List<MenuItem> expanded,
+        int limit
+    ) {
+        String menuName = fieldLimit.getCharMenu();
+        if (
+            menuName == null
+            || menuName.isBlank()
+            || menuName.length() > MAX_NAME_LENGTH
+            || containsControlCharacters(menuName)
+        ) {
+            throw new IllegalStateException(
+                "ARAPI returned an invalid character menu"
+            );
+        }
+        String menuStyle = characterMenuStyle(fieldLimit);
+        String menuType = characterMenuType(menu.getMenuType());
+        List<ExpandedMenuValue> values = new ArrayList<>();
+        Set<MenuItem> visited = java.util.Collections.newSetFromMap(
+            new IdentityHashMap<>()
+        );
+        appendExpandedMenuValues(
+            expanded == null ? List.of() : expanded,
+            List.of(),
+            values,
+            limit + 1,
+            visited,
+            0
+        );
+        boolean truncated = values.size() > limit;
+        int returned = Math.min(values.size(), limit);
+
+        StringBuilder output = beginFieldMenuValues(field);
+        output.append(",\"has_menu\":true,\"menu_name\":");
+        appendJsonString(output, menuName.strip());
+        output.append(",\"menu_style\":");
+        appendJsonString(output, menuStyle);
+        output.append(",\"menu_type\":");
+        appendJsonString(output, menuType);
+        output.append(",\"values\":[");
+        for (int index = 0; index < returned; index++) {
+            if (index > 0) {
+                output.append(',');
+            }
+            ExpandedMenuValue value = values.get(index);
+            output.append("{\"label\":");
+            appendJsonString(output, value.label);
+            output.append(",\"value\":");
+            appendJsonString(output, value.value);
+            output.append(",\"path\":[");
+            for (int pathIndex = 0; pathIndex < value.path.size(); pathIndex++) {
+                if (pathIndex > 0) {
+                    output.append(',');
+                }
+                appendJsonString(output, value.path.get(pathIndex));
+            }
+            output.append("]}");
+        }
+        output.append("],\"limit\":").append(limit);
+        output.append(",\"truncated\":").append(truncated).append('}');
+        return output.toString();
+    }
+
+    private static StringBuilder beginFieldMenuValues(Field field) {
+        validateMenuField(field);
+        StringBuilder output = new StringBuilder();
+        output.append("{\"id\":").append(field.getFieldID());
+        output.append(",\"name\":");
+        appendJsonString(output, field.getName().strip());
+        output.append(",\"datatype\":");
+        appendJsonString(output, dataTypeName(field.getDataType()));
+        return output;
+    }
+
+    private static CharacterFieldLimit characterFieldLimit(Field field) {
+        validateMenuField(field);
+        if (
+            !DataType.CHAR.equals(DataType.toDataType(field.getDataType()))
+            || !(field.getFieldLimit() instanceof CharacterFieldLimit limit)
+        ) {
+            return null;
+        }
+        return limit;
+    }
+
+    private static boolean hasCharacterMenu(CharacterFieldLimit limit) {
+        String menuName = limit.getCharMenu();
+        return menuName != null && !menuName.isBlank();
+    }
+
+    private static void validateMenuField(Field field) {
+        if (field == null) {
+            throw new IllegalStateException("ARAPI returned no field");
+        }
+        String name = field.getName();
+        if (
+            name == null
+            || name.isBlank()
+            || name.length() > MAX_NAME_LENGTH
+            || containsControlCharacters(name)
+        ) {
+            throw new IllegalStateException("ARAPI returned an invalid field");
+        }
+    }
+
+    private static String characterMenuStyle(CharacterFieldLimit limit) {
+        if (limit.getMenuStyle() == Constants.AR_MENU_APPEND) {
+            return "append";
+        }
+        if (limit.getMenuStyle() == Constants.AR_MENU_OVERWRITE) {
+            return "overwrite";
+        }
+        throw new IllegalStateException(
+            "ARAPI returned an invalid character menu style"
+        );
+    }
+
+    private static String characterMenuType(int menuType) {
+        if (menuType == Constants.AR_CHAR_MENU_LIST) {
+            return "list";
+        }
+        if (menuType == Constants.AR_CHAR_MENU_QUERY) {
+            return "query";
+        }
+        if (menuType == Constants.AR_CHAR_MENU_FILE) {
+            return "file";
+        }
+        if (menuType == Constants.AR_CHAR_MENU_SQL) {
+            return "sql";
+        }
+        if (menuType == Constants.AR_CHAR_MENU_SS) {
+            return "server_side";
+        }
+        if (menuType == Constants.AR_CHAR_MENU_DATA_DICTIONARY) {
+            return "data_dictionary";
+        }
+        throw new IllegalStateException(
+            "ARAPI returned an unsupported character menu type"
+        );
+    }
+
+    private static void appendExpandedMenuValues(
+        List<MenuItem> items,
+        List<String> path,
+        List<ExpandedMenuValue> output,
+        int maximum,
+        Set<MenuItem> visited,
+        int depth
+    ) {
+        if (depth > MAX_MENU_DEPTH) {
+            throw new IllegalStateException("character menu is too deep");
+        }
+        for (MenuItem item : items) {
+            if (output.size() >= maximum) {
+                return;
+            }
+            if (item == null || !visited.add(item)) {
+                throw new IllegalStateException(
+                    "ARAPI returned an invalid character menu item"
+                );
+            }
+            String label = normalizedMenuText(item.getLabel());
+            if (item.getType() == Constants.AR_MENU_TYPE_MENU) {
+                List<MenuItem> children = item.getSubMenu();
+                if (children == null) {
+                    throw new IllegalStateException(
+                        "ARAPI returned an invalid character submenu"
+                    );
+                }
+                List<String> childPath = new ArrayList<>(path);
+                childPath.add(label);
+                appendExpandedMenuValues(
+                    children,
+                    List.copyOf(childPath),
+                    output,
+                    maximum,
+                    visited,
+                    depth + 1
+                );
+            } else if (item.getType() == Constants.AR_MENU_TYPE_VALUE) {
+                String value = normalizedMenuText(item.getValue());
+                output.add(new ExpandedMenuValue(label, value, path));
+            } else {
+                throw new IllegalStateException(
+                    "ARAPI returned an invalid character menu item type"
+                );
+            }
+        }
+    }
+
+    private static String normalizedMenuText(String value) {
+        if (
+            value == null
+            || value.isBlank()
+            || value.length() > MAX_MENU_VALUE_LENGTH
+            || containsControlCharacters(value)
+        ) {
+            throw new IllegalStateException(
+                "ARAPI returned an invalid character menu value"
+            );
+        }
+        return value.strip();
+    }
+
     private static String dataTypeName(int value) {
         DataType datatype = DataType.toDataType(value);
         if (DataType.NULL.equals(datatype)) {
@@ -1890,6 +2180,18 @@ public final class ArapiBridge {
         FieldSelection(List<String> names, int[] ids) {
             this.names = names;
             this.ids = ids;
+        }
+    }
+
+    private static final class ExpandedMenuValue {
+        private final String label;
+        private final String value;
+        private final List<String> path;
+
+        ExpandedMenuValue(String label, String value, List<String> path) {
+            this.label = label;
+            this.value = value;
+            this.path = List.copyOf(path);
         }
     }
 

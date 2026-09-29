@@ -81,6 +81,15 @@ name, and whether the field appends or overwrites values. It never loads or
 executes the referenced menu, so dynamic menu results and query or SQL menu
 contents remain outside this capability.
 
+`resolve_form_field_menu_values` starts from the same exact field ID and never
+accepts a free-standing menu name. After the field passes form, field, and
+sensitive-data policy checks, the bridge retrieves and expands its associated
+menu through AR API with a caller-supplied limit capped at 500 and by the
+target row policy. Leaf labels and values are returned with their submenu
+path. Dynamic menus execute with the selected BMC account and may read backing
+data; no entry is modified. Runtime-dependent menus fail safely when empty
+context is insufficient.
+
 `list_forms` calls `ARServerUser.getListForm()` through the bridge. BMC first
 limits results through account permissions; the service then applies its form
 policy, name filter, pagination, row limit, and rate limit.

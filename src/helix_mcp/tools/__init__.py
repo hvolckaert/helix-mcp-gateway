@@ -22,6 +22,7 @@ from helix_mcp.tools.models import (
     ListFormsOutput,
     ListTargetsOutput,
     QueryFormOutput,
+    ResolveFormFieldMenuValuesOutput,
     SqlQueryPlanOutput,
     WritePlanOutput,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "ListFormsOutput",
     "ListTargetsOutput",
     "QueryFormOutput",
+    "ResolveFormFieldMenuValuesOutput",
     "SqlQueryPlanOutput",
     "TargetToolAdapter",
     "ToolAdapterError",
