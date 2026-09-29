@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.14.0 - 2026-09-29
+
 - Add the policy-filtered `resolve_form_field_menu_values` read tool so MCP
   clients can expand bounded static or dynamic character-menu values only
   through a menu associated with an allowed form field.
