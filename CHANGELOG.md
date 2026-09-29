@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.13.0 - 2026-09-29
+
 - Add the policy-filtered `get_form_field_menu_metadata` read tool so MCP
   clients can identify a character-menu association and its append/overwrite
   style without loading or executing the menu definition.
