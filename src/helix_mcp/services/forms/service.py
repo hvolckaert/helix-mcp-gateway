@@ -28,6 +28,8 @@ from helix_mcp.services.forms.models import (
     FormEntry,
     FormEntryQuery,
     FormEntryResult,
+    FormFieldMenuMetadata,
+    FormFieldMenuQuery,
     FormFieldMetadata,
     FormFieldSelectionMetadata,
     FormFieldSelectionQuery,
@@ -179,6 +181,56 @@ class FormQueryService:
                 FormSelectionValue(number=item.number, label=item.label)
                 for item in result.values
             ),
+        )
+
+    async def get_field_menu_metadata(
+        self,
+        *,
+        environment: str | Environment,
+        query: FormFieldMenuQuery,
+    ) -> FormFieldMenuMetadata:
+        """Return character-menu metadata for one policy-visible field ID."""
+
+        target = self._targets.resolve(environment=environment)
+        _enforce_form_access(target, query.form)
+        await self._limiter.check(
+            target.key,
+            target.policy.rate_limit_per_minute,
+        )
+        target = self._targets.resolve(
+            environment=environment,
+            backend=BackendKind.ARAPI,
+        )
+        visible_fields = await self._field_metadata(target, query.form)
+        visible = next(
+            (field for field in visible_fields if field.id == query.field_id),
+            None,
+        )
+        if visible is None:
+            raise FormFieldNotAllowedError(
+                target.key,
+                "field is not allowed by target policy",
+            )
+        result = await self._clients.get(target).get_field_menu_metadata(
+            form=query.form,
+            field_id=query.field_id,
+        )
+        if (
+            result.id != visible.id
+            or result.name != visible.name
+            or result.datatype != visible.datatype
+        ):
+            raise FormResponseError(
+                target.key,
+                "field metadata changed during character-menu lookup",
+            )
+        return FormFieldMenuMetadata(
+            id=result.id,
+            name=result.name,
+            datatype=result.datatype,
+            has_menu=result.has_menu,
+            menu_name=result.menu_name,
+            menu_style=result.menu_style,
         )
 
     async def _field_metadata(

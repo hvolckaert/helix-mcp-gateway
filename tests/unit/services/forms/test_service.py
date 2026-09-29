@@ -12,6 +12,7 @@ from helix_mcp.clients.arapi import (
     ArapiEntry,
     ArapiEntryResult,
     ArapiField,
+    ArapiFieldMenu,
     ArapiFieldSelection,
     ArapiFormNotFoundError,
     ArapiQueryPage,
@@ -29,6 +30,7 @@ from helix_mcp.config import (
 )
 from helix_mcp.services.forms import (
     FormEntryQuery,
+    FormFieldMenuQuery,
     FormFieldNotAllowedError,
     FormFieldSelectionQuery,
     FormFieldsQuery,
@@ -92,6 +94,29 @@ class FakeClient:
                 if is_selection
                 else ()
             ),
+        )
+
+    async def get_field_menu_metadata(
+        self,
+        *,
+        form: str,
+        field_id: int,
+    ) -> ArapiFieldMenu:
+        self.calls.append(
+            (
+                "get_field_menu_metadata",
+                {"form": form, "field_id": field_id},
+            )
+        )
+        item = next(item for item in self.payload if item["id"] == field_id)
+        has_menu = item["datatype"] == "CHAR"
+        return ArapiFieldMenu(
+            id=item["id"],
+            name=item["name"],
+            datatype=item["datatype"],
+            has_menu=has_menu,
+            menu_name="Sample:Owners" if has_menu else None,
+            menu_style="append" if has_menu else None,
         )
 
     async def query_entries(
@@ -486,6 +511,69 @@ def test_get_field_selection_values_blocks_non_visible_id_before_lookup() -> (
         ("list_fields", {"form": "Example:HelpDesk"}),
         ("list_fields", {"form": "Example:HelpDesk"}),
     ]
+
+
+def test_get_field_menu_metadata_returns_character_menu_association() -> None:
+    client = FakeClient(
+        [
+            {"id": 1, "name": "Owner", "datatype": "CHAR"},
+            {"id": 2, "name": "Status", "datatype": "ENUM"},
+        ]
+    )
+    service, _ = build_service(
+        client,
+        allowed_fields=("Owner", "Status"),
+    )
+
+    result = run(
+        service.get_field_menu_metadata(
+            environment="dev",
+            query=FormFieldMenuQuery(
+                form="Example:HelpDesk",
+                field_id=1,
+            ),
+        )
+    )
+
+    assert result.id == 1
+    assert result.name == "Owner"
+    assert result.datatype == "CHAR"
+    assert result.has_menu is True
+    assert result.menu_name == "Sample:Owners"
+    assert result.menu_style == "append"
+    assert client.calls == [
+        ("list_fields", {"form": "Example:HelpDesk"}),
+        (
+            "get_field_menu_metadata",
+            {"form": "Example:HelpDesk", "field_id": 1},
+        ),
+    ]
+
+
+def test_get_field_menu_metadata_blocks_sensitive_id_before_lookup() -> None:
+    client = FakeClient(
+        [
+            {"id": 1, "name": "Owner", "datatype": "CHAR"},
+            {"id": 7, "name": "Password", "datatype": "CHAR"},
+        ]
+    )
+    service, _ = build_service(
+        client,
+        allowed_fields=("Owner",),
+    )
+
+    with pytest.raises(FormFieldNotAllowedError):
+        run(
+            service.get_field_menu_metadata(
+                environment="dev",
+                query=FormFieldMenuQuery(
+                    form="Example:HelpDesk",
+                    field_id=7,
+                ),
+            )
+        )
+
+    assert client.calls == [("list_fields", {"form": "Example:HelpDesk"})]
 
 
 def test_list_fields_read_all_supports_case_insensitive_name_filter() -> None:

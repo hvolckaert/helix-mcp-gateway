@@ -2,6 +2,7 @@ package com.example.helix.bridge;
 
 import com.bmc.arsys.api.ARException;
 import com.bmc.arsys.api.ARServerUser;
+import com.bmc.arsys.api.CharacterFieldLimit;
 import com.bmc.arsys.api.Constants;
 import com.bmc.arsys.api.DataType;
 import com.bmc.arsys.api.Entry;
@@ -47,6 +48,7 @@ public final class ArapiBridgeTest {
             "selection field encoding",
             ArapiBridgeTest::testSelectionFieldEncoding
         );
+        run("character menu encoding", ArapiBridgeTest::testCharacterMenuEncoding);
         run("bounded scalar parsing", ArapiBridgeTest::testScalarParsing);
         run("list and host validation", ArapiBridgeTest::testValidation);
         run(
@@ -141,6 +143,44 @@ public final class ArapiBridgeTest {
             "encodeFieldSelectionValues",
             types(Field.class),
             duplicate
+        );
+    }
+
+    private static void testCharacterMenuEncoding() throws Exception {
+        Field withMenu = new Field(
+            2,
+            "Owner",
+            DataType.CHAR.getValue(),
+            new CharacterFieldLimit(
+                "Sample:Owners",
+                Constants.AR_MENU_OVERWRITE
+            )
+        );
+        assertEquals(
+            "{\"id\":2,\"name\":\"Owner\",\"datatype\":\"CHAR\"," +
+                "\"has_menu\":true,\"menu_name\":\"Sample:Owners\"," +
+                "\"menu_style\":\"overwrite\"}",
+            invoke("encodeFieldMenuMetadata", types(Field.class), withMenu)
+        );
+        assertEquals(
+            "{\"id\":5,\"name\":\"Description\",\"datatype\":\"CHAR\"," +
+                "\"has_menu\":false,\"menu_name\":null," +
+                "\"menu_style\":null}",
+            invoke(
+                "encodeFieldMenuMetadata",
+                types(Field.class),
+                new Field(5, "Description", DataType.CHAR.getValue())
+            )
+        );
+        assertEquals(
+            "{\"id\":4,\"name\":\"Enabled\",\"datatype\":\"ENUM\"," +
+                "\"has_menu\":false,\"menu_name\":null," +
+                "\"menu_style\":null}",
+            invoke(
+                "encodeFieldMenuMetadata",
+                types(Field.class),
+                new Field(4, "Enabled", DataType.ENUM.getValue())
+            )
         );
     }
 

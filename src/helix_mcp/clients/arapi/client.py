@@ -27,6 +27,7 @@ from helix_mcp.clients.arapi.models import (
     ArapiEntry,
     ArapiEntryResult,
     ArapiField,
+    ArapiFieldMenu,
     ArapiFieldSelection,
     ArapiPreparedUpdate,
     ArapiQueryPage,
@@ -125,6 +126,20 @@ class ArapiBridgeClient:
             {"form": form, "field_id": str(field_id)},
         )
         return _parse_field_selection(self._target, payload, status_code)
+
+    async def get_field_menu_metadata(
+        self,
+        *,
+        form: str,
+        field_id: int,
+    ) -> ArapiFieldMenu:
+        """Return bounded character-menu metadata for one exact field ID."""
+
+        payload, status_code = await self._post(
+            "/v1/fields/menu-metadata",
+            {"form": form, "field_id": str(field_id)},
+        )
+        return _parse_field_menu(self._target, payload, status_code)
 
     async def query_entries(
         self,
@@ -666,6 +681,57 @@ def _parse_field_selection(
         datatype=datatype,
         selection_style=selection_style,
         values=tuple(values),
+    )
+
+
+def _parse_field_menu(
+    target: TargetKey,
+    payload: Any,
+    status_code: int,
+) -> ArapiFieldMenu:
+    if not isinstance(payload, dict) or set(payload) != {
+        "id",
+        "name",
+        "datatype",
+        "has_menu",
+        "menu_name",
+        "menu_style",
+    }:
+        raise _protocol_error(target, status_code)
+    field_id = payload.get("id")
+    name = payload.get("name")
+    datatype = payload.get("datatype")
+    has_menu = payload.get("has_menu")
+    menu_name = payload.get("menu_name")
+    menu_style = payload.get("menu_style")
+    if (
+        not _is_integer(field_id)
+        or field_id < 1
+        or field_id > 2_147_483_647
+        or not _is_normalizable_text(name, 255)
+        or not _is_safe_text(datatype, 64)
+        or not isinstance(has_menu, bool)
+        or menu_style not in (None, "append", "overwrite")
+        or (
+            has_menu
+            and (
+                not _is_normalizable_text(menu_name, 255) or menu_style is None
+            )
+        )
+        or (not has_menu and (menu_name is not None or menu_style is not None))
+    ):
+        raise _protocol_error(target, status_code)
+    normalized_menu_name = None
+    if has_menu:
+        assert isinstance(menu_name, str)
+        normalized_menu_name = menu_name.strip()
+    return ArapiFieldMenu(
+        id=field_id,
+        name=name.strip(),
+        datatype=datatype,
+        has_menu=has_menu,
+        menu_name=normalized_menu_name,
+        menu_style=menu_style,
     )
 
 

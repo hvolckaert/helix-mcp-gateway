@@ -3,6 +3,7 @@ package com.example.helix.bridge;
 import com.bmc.arsys.api.ARException;
 import com.bmc.arsys.api.ARServerUser;
 import com.bmc.arsys.api.ARErrors;
+import com.bmc.arsys.api.CharacterFieldLimit;
 import com.bmc.arsys.api.Constants;
 import com.bmc.arsys.api.DataType;
 import com.bmc.arsys.api.DateInfo;
@@ -101,6 +102,10 @@ public final class ArapiBridge {
         server.createContext(
             "/v1/fields/selection-values",
             new FieldSelectionValuesHandler()
+        );
+        server.createContext(
+            "/v1/fields/menu-metadata",
+            new FieldMenuMetadataHandler()
         );
         server.createContext("/v1/entries/query", new QueryEntriesHandler());
         server.createContext("/v1/entries/get", new GetEntryHandler());
@@ -369,6 +374,34 @@ public final class ArapiBridge {
             );
             Field field = user.getField(form, fieldId, criteria);
             return encodeFieldSelectionValues(field);
+        }
+    }
+
+    private static final class FieldMenuMetadataHandler extends ArapiHandler {
+        FieldMenuMetadataHandler() {
+            super("/v1/fields/menu-metadata");
+        }
+
+        @Override
+        protected String execute(
+            ARServerUser user,
+            Map<String, String> input
+        ) throws ARException, BadRequest {
+            String form = requiredText(input, "form", MAX_NAME_LENGTH);
+            int fieldId = boundedInteger(
+                input,
+                "field_id",
+                1,
+                Integer.MAX_VALUE
+            );
+            FieldCriteria criteria = new FieldCriteria();
+            criteria.setPropertiesToRetrieve(
+                FieldCriteria.FIELD_NAME
+                    | FieldCriteria.DATATYPE
+                    | FieldCriteria.LIMIT
+            );
+            Field field = user.getField(form, fieldId, criteria);
+            return encodeFieldMenuMetadata(field);
         }
     }
 
@@ -1469,6 +1502,71 @@ public final class ArapiBridge {
             output.append('}');
         }
         output.append("]}");
+        return output.toString();
+    }
+
+    private static String encodeFieldMenuMetadata(Field field) {
+        if (field == null) {
+            throw new IllegalStateException("ARAPI returned no field");
+        }
+        String name = field.getName();
+        if (
+            name == null
+            || name.isBlank()
+            || name.length() > MAX_NAME_LENGTH
+            || containsControlCharacters(name)
+        ) {
+            throw new IllegalStateException("ARAPI returned an invalid field");
+        }
+        StringBuilder output = new StringBuilder();
+        output.append("{\"id\":").append(field.getFieldID());
+        output.append(",\"name\":");
+        appendJsonString(output, name.strip());
+        output.append(",\"datatype\":");
+        appendJsonString(output, dataTypeName(field.getDataType()));
+
+        if (
+            !DataType.CHAR.equals(DataType.toDataType(field.getDataType()))
+            || !(field.getFieldLimit() instanceof CharacterFieldLimit limit)
+        ) {
+            output.append(
+                ",\"has_menu\":false,\"menu_name\":null,"
+                    + "\"menu_style\":null}"
+            );
+            return output.toString();
+        }
+
+        String menuName = limit.getCharMenu();
+        if (menuName == null || menuName.isBlank()) {
+            output.append(
+                ",\"has_menu\":false,\"menu_name\":null,"
+                    + "\"menu_style\":null}"
+            );
+            return output.toString();
+        }
+        if (
+            menuName.length() > MAX_NAME_LENGTH
+            || containsControlCharacters(menuName)
+        ) {
+            throw new IllegalStateException(
+                "ARAPI returned an invalid character menu"
+            );
+        }
+        String menuStyle;
+        if (limit.getMenuStyle() == Constants.AR_MENU_APPEND) {
+            menuStyle = "append";
+        } else if (limit.getMenuStyle() == Constants.AR_MENU_OVERWRITE) {
+            menuStyle = "overwrite";
+        } else {
+            throw new IllegalStateException(
+                "ARAPI returned an invalid character menu style"
+            );
+        }
+        output.append(",\"has_menu\":true,\"menu_name\":");
+        appendJsonString(output, menuName.strip());
+        output.append(",\"menu_style\":");
+        appendJsonString(output, menuStyle);
+        output.append('}');
         return output.toString();
     }
 

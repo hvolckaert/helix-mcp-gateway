@@ -25,6 +25,7 @@ _KNOWN_TOOLS: Final = frozenset(
         "cancel_sql_query_plan",
         "describe_database_object",
         "get_entry",
+        "get_form_field_menu_metadata",
         "get_form_field_selection_values",
         "get_write_plan",
         "get_sql_query_plan",

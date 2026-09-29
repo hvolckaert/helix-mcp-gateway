@@ -74,6 +74,13 @@ label, including non-contiguous custom numbers. Non-selection fields return no
 selection style or values. The response is bounded to 4,096 unique values and
 never exposes a sensitive or non-allowlisted field.
 
+`get_form_field_menu_metadata` applies the same visibility checks to one exact
+field ID and reads its `LIMIT` definition through `ARServerUser.getField`. For
+a CHAR field, it reports only whether a character menu is associated, the menu
+name, and whether the field appends or overwrites values. It never loads or
+executes the referenced menu, so dynamic menu results and query or SQL menu
+contents remain outside this capability.
+
 `list_forms` calls `ARServerUser.getListForm()` through the bridge. BMC first
 limits results through account permissions; the service then applies its form
 policy, name filter, pagination, row limit, and rate limit.

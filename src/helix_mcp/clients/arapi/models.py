@@ -38,6 +38,18 @@ class ArapiFieldSelection:
 
 
 @dataclass(frozen=True, slots=True)
+class ArapiFieldMenu:
+    """Bounded character-menu metadata for one exact AR System field ID."""
+
+    id: int
+    name: str
+    datatype: str
+    has_menu: bool
+    menu_name: str | None
+    menu_style: Literal["append", "overwrite"] | None
+
+
+@dataclass(frozen=True, slots=True)
 class ArapiEntry:
     """One entry whose representation never contains field values."""
 

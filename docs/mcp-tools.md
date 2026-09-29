@@ -16,6 +16,7 @@ permissions reduce it.
 | `list_forms` | read | Reads visible form names | Medium | No |
 | `list_form_fields` | read | Reads policy-visible metadata | Medium | No |
 | `get_form_field_selection_values` | read | Reads one policy-visible ENUM definition | Medium | No |
+| `get_form_field_menu_metadata` | read | Reads one policy-visible CHAR menu association | Medium | No |
 | `query_form` | read | Reads bounded business data | High | No |
 | `get_entry` | read | Reads one business record | High | No |
 | `list_database_objects` | read | Reads database metadata | High | Yes |
@@ -77,6 +78,19 @@ For a non-selection field, `selection_style` is null and `values` is empty.
 The form and field must pass the same account, policy, sensitive-field, and
 rate-limit checks as other form metadata reads.
 
+### `get_form_field_menu_metadata`
+
+Requires `environment`, `form`, and an exact numeric `field_id`. For a
+policy-visible `CHAR` field, it reports whether a character menu is associated
+and, when present, returns the menu name and its `append` or `overwrite`
+display style. Other field types and CHAR fields without a menu return
+`has_menu=false` with null menu metadata.
+
+This tool does not load, expand, or execute the menu definition. In
+particular, it does not evaluate dynamic, query, or SQL menu contents. The
+form and field pass the same account, policy, sensitive-field, and rate-limit
+checks as other form metadata reads.
+
 ### `query_form`
 
 Requires `environment`, `form`, and an explicit `fields` list. Optional inputs
@@ -90,7 +104,7 @@ Requires `environment`, `form`, `entry_id`, and explicit `fields`. It retrieves
 one record without requiring a qualification and returns only requested,
 policy-visible values.
 
-These four tools access BMC Helix and are read-only, non-destructive, and
+These form-read tools access BMC Helix and are read-only, non-destructive, and
 idempotent. Metadata may come from a bounded local cache; entry values never do.
 
 ## Database metadata

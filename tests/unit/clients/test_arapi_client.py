@@ -263,6 +263,18 @@ def test_field_query_and_entry_contracts_are_typed_and_bounded() -> None:
                     ],
                 },
             )
+        if request.url.path == "/v1/fields/menu-metadata":
+            return httpx.Response(
+                200,
+                json={
+                    "id": 2,
+                    "name": "Owner",
+                    "datatype": "CHAR",
+                    "has_menu": True,
+                    "menu_name": "Sample:Owners",
+                    "menu_style": "append",
+                },
+            )
         if request.url.path == "/v1/entries/query":
             return httpx.Response(
                 200,
@@ -309,6 +321,10 @@ def test_field_query_and_entry_contracts_are_typed_and_bounded() -> None:
             form="Example:HelpDesk",
             field_id=7,
         )
+        menu = await client.get_field_menu_metadata(
+            form="Example:HelpDesk",
+            field_id=2,
+        )
         page = await client.query_entries(
             form="Example:HelpDesk",
             fields=("Request ID", "Status"),
@@ -324,9 +340,9 @@ def test_field_query_and_entry_contracts_are_typed_and_bounded() -> None:
             fields=("Request ID", "Status"),
         )
         await client.aclose()
-        return fields, selection, page, entry
+        return fields, selection, menu, page, entry
 
-    fields, selection, page, entry = run(scenario())
+    fields, selection, menu, page, entry = run(scenario())
     assert [(field.id, field.name, field.datatype) for field in fields] == [
         (1, "Request ID", "CHAR"),
         (7, "Status", "ENUM"),
@@ -338,6 +354,11 @@ def test_field_query_and_entry_contracts_are_typed_and_bounded() -> None:
         (0, "New"),
         (7, "Resolved"),
     ]
+    assert menu.id == 2
+    assert menu.datatype == "CHAR"
+    assert menu.has_menu is True
+    assert menu.menu_name == "Sample:Owners"
+    assert menu.menu_style == "append"
     assert page.entries[0].values == {
         "Request ID": "000000000000001",
         "Status": 1,
@@ -347,13 +368,17 @@ def test_field_query_and_entry_contracts_are_typed_and_bounded() -> None:
     assert [request.url.path for request in requests] == [
         "/v1/fields",
         "/v1/fields/selection-values",
+        "/v1/fields/menu-metadata",
         "/v1/entries/query",
         "/v1/entries/get",
     ]
     selection_form = parse_qs(requests[1].content.decode("ascii"))
     assert selection_form["form"] == ["Example:HelpDesk"]
     assert selection_form["field_id"] == ["7"]
-    query_form = parse_qs(requests[2].content.decode("ascii"))
+    menu_form = parse_qs(requests[2].content.decode("ascii"))
+    assert menu_form["form"] == ["Example:HelpDesk"]
+    assert menu_form["field_id"] == ["2"]
+    query_form = parse_qs(requests[3].content.decode("ascii"))
     assert query_form["form"] == ["Example:HelpDesk"]
     assert query_form["fields"] == ["Request ID,Status"]
     assert query_form["qualification"] == ["'Status' = 1"]
@@ -455,6 +480,59 @@ def test_selection_metadata_rejects_malformed_bridge_payloads(payload) -> None:
             await client.get_field_selection_values(
                 form="Example:HelpDesk",
                 field_id=7,
+            )
+        await client.aclose()
+
+    run(scenario())
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "id": 2,
+            "name": "Owner",
+            "datatype": "CHAR",
+            "has_menu": False,
+            "menu_name": "Sample:Owners",
+            "menu_style": None,
+        },
+        {
+            "id": 2,
+            "name": "Owner",
+            "datatype": "CHAR",
+            "has_menu": True,
+            "menu_name": None,
+            "menu_style": "append",
+        },
+        {
+            "id": 2,
+            "name": "Owner",
+            "datatype": "CHAR",
+            "has_menu": True,
+            "menu_name": "Sample:Owners",
+            "menu_style": "dynamic",
+        },
+    ],
+)
+def test_character_menu_rejects_malformed_bridge_payloads(payload) -> None:
+    async def scenario() -> None:
+        transport = httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=payload)
+            ),
+        )
+        client = ArapiBridgeClient(
+            target=TARGET,
+            config=config(),
+            secrets=secrets(),
+            http_client=transport,
+        )
+        with pytest.raises(ArapiBridgeProtocolError):
+            await client.get_field_menu_metadata(
+                form="Example:HelpDesk",
+                field_id=2,
             )
         await client.aclose()
 
