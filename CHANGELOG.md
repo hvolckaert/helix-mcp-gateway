@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.12.1 - 2026-09-29
+
 - Refresh OpenClaw's tool filter from the newly installed runtime during
   managed updates so tools introduced by that release are available
   immediately after its automatic reload.
