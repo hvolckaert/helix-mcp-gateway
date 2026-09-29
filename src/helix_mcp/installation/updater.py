@@ -38,7 +38,6 @@ from helix_mcp.installation.managed import (
     supports_transactional_updates,
     versioned_runtime_paths,
 )
-from helix_mcp.installation.openclaw import EXPOSED_TOOLS
 
 DEFAULT_REPOSITORY = "hvolckaert/helix-mcp-gateway"
 DEFAULT_OPENCLAW_SERVER_NAME = "helix"
@@ -48,6 +47,7 @@ _VERSION_PATTERN = re.compile(
 )
 _REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_MCP_TOOL_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,127}$")
 _GITHUB_API_ROOT = "https://api.github.com"
 _GITHUB_RELEASE_ROOT = "https://github.com"
 _GITHUB_API_HEADERS = {
@@ -346,6 +346,11 @@ def update_installation(
             expected=release.version,
             runner=runner,
         )
+        target_exposed_tools = (
+            _target_exposed_tools(target_python, runner=runner)
+            if managed.client == "openclaw"
+            else ()
+        )
         backup = _create_backup(
             workspace=resolved_workspace,
             dotenv_path=resolved_dotenv,
@@ -397,6 +402,7 @@ def update_installation(
             openclaw_reloaded, openclaw_probed = _switch_openclaw(
                 activated,
                 previous_openclaw,
+                exposed_tools=target_exposed_tools,
                 runner=runner,
             )
             if post_activation_check is not None:
@@ -641,6 +647,46 @@ def _verify_installed_version(
         )
 
 
+def _target_exposed_tools(
+    python: Path,
+    *,
+    runner: CommandRunner,
+) -> tuple[str, ...]:
+    """Read the OpenClaw tool catalog from the newly installed runtime."""
+
+    completed = _run(
+        [
+            str(python),
+            "-c",
+            (
+                "import json; "
+                "from helix_mcp.installation.openclaw import EXPOSED_TOOLS; "
+                "print(json.dumps(list(EXPOSED_TOOLS)))"
+            ),
+        ],
+        runner=runner,
+        timeout=30,
+        action="target OpenClaw tool catalog inspection",
+    )
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        raise UpdateError("target OpenClaw tool catalog is invalid") from None
+    if (
+        not isinstance(payload, list)
+        or not payload
+        or len(payload) > 256
+        or any(
+            not isinstance(item, str)
+            or not _MCP_TOOL_NAME_PATTERN.fullmatch(item)
+            for item in payload
+        )
+        or len(payload) != len(set(payload))
+    ):
+        raise UpdateError("target OpenClaw tool catalog is invalid")
+    return tuple(payload)
+
+
 def _create_backup(
     *,
     workspace: Path,
@@ -775,6 +821,7 @@ def _switch_openclaw(
     managed: ManagedInstallation,
     previous: dict[str, Any] | None,
     *,
+    exposed_tools: Sequence[str],
     runner: CommandRunner,
 ) -> tuple[bool, bool]:
     if managed.client != "openclaw":
@@ -791,7 +838,7 @@ def _switch_openclaw(
     definition["command"] = str(stdio_command)
     definition["args"] = list(stdio_arguments)
     definition["cwd"] = str(managed.launcher.parent.parent)
-    definition["toolFilter"] = {"include": list(EXPOSED_TOOLS)}
+    definition["toolFilter"] = {"include": list(exposed_tools)}
     _set_openclaw_definition(
         command,
         server_name=managed.server_name or DEFAULT_OPENCLAW_SERVER_NAME,

@@ -252,6 +252,11 @@ committing the transaction. Failed updates keep or restore the previous active
 runtime and restart its dashboard manager. See [Installation](installation.md)
 for the complete transaction and client restart behavior.
 
+For OpenClaw-managed installations, the update reads the exposed-tool catalog
+from the newly installed runtime before replacing the OpenClaw definition.
+This ensures that tools introduced by the target release are included in the
+automatic reload rather than inheriting the previous release's filter.
+
 ## Save transaction
 
 Every state response includes a revision derived from both `helix.yaml` and
