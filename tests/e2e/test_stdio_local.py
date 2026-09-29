@@ -34,6 +34,7 @@ EXPECTED_TOOLS = {
     "cancel_write_plan",
     "describe_database_object",
     "get_entry",
+    "get_form_field_menu_metadata",
     "get_form_field_selection_values",
     "get_sql_query_plan",
     "get_write_plan",
@@ -356,6 +357,24 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
             {"number": 0, "label": "Disabled"},
             {"number": 1, "label": "Enabled"},
         ],
+    }
+
+    menu = await session.call_tool(
+        "get_form_field_menu_metadata",
+        {
+            "environment": "dev",
+            "form": FORM,
+            "field_id": 2,
+        },
+    )
+    assert menu.isError is False
+    assert menu.structuredContent["field"] == {
+        "id": 2,
+        "name": "Name",
+        "datatype": "CHAR",
+        "has_menu": True,
+        "menu_name": "Sample:Names",
+        "menu_style": "append",
     }
 
     query = await session.call_tool(

@@ -6,6 +6,8 @@ public final class Constants {
     public static final int AR_JOIN_SETOPTION_NONE = 0;
     public static final int AR_SORT_ASCENDING = 1;
     public static final int AR_SORT_DESCENDING = 2;
+    public static final int AR_MENU_APPEND = 1;
+    public static final int AR_MENU_OVERWRITE = 2;
 
     private Constants() {
     }

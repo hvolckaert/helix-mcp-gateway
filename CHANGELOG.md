@@ -5,6 +5,10 @@ Semantic Versioning.
 
 ## Unreleased
 
+- Add the policy-filtered `get_form_field_menu_metadata` read tool so MCP
+  clients can identify a character-menu association and its append/overwrite
+  style without loading or executing the menu definition.
+
 ## 0.12.1 - 2026-09-29
 
 - Refresh OpenClaw's tool filter from the newly installed runtime during

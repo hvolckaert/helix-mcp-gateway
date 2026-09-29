@@ -21,8 +21,8 @@ HELIX_LOCAL_E2E_TESTS=1 \
 python -m pytest -q -s -m local_e2e tests/e2e/test_stdio_local.py
 ```
 
-The test covers the exact 20-tool catalog, explicit targeting, bridge health,
-form metadata, ENUM selection labels, queries, direct reads, policy errors,
+The test covers the exact 21-tool catalog, explicit targeting, bridge health,
+form metadata, ENUM selection labels, CHAR menu associations, queries, direct reads, policy errors,
 SQL planning/execution,
 create/update plan application, cancellation, idempotency, persistence across
 restart, optimistic conflicts, PROD write rejection, closed-schema audit, and
@@ -34,8 +34,9 @@ clean process shutdown.
 requires the authorized local AR API runtime and network connectivity.
 
 The default live flow calls `list_targets`, `health_check`, `list_forms`,
-`list_form_fields`, `query_form`, and `get_entry`. The exact field-selection
-tool is exercised separately with an explicitly approved ENUM field. Optional environment
+`list_form_fields`, `query_form`, and `get_entry`. Exact field-selection and
+character-menu metadata tools are exercised separately with explicitly
+approved fields. Optional environment
 variables enable database metadata discovery and create/cancel a write plan,
 but the automated live test never invokes an `apply_*` tool.
 

@@ -16,7 +16,15 @@ public class ARServerUser {
         "java-bridge-password-never-expose";
     private static final List<Field> SAMPLE_FIELDS = List.of(
         new Field(1, "Request ID", DataType.CHAR.getValue()),
-        new Field(2, "Name", DataType.CHAR.getValue()),
+        new Field(
+            2,
+            "Name",
+            DataType.CHAR.getValue(),
+            new CharacterFieldLimit(
+                "Sample:Names",
+                Constants.AR_MENU_APPEND
+            )
+        ),
         new Field(3, "Count", DataType.INTEGER.getValue()),
         new Field(
             4,

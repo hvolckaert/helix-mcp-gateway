@@ -18,6 +18,7 @@ from helix_mcp.tools.models import (
     DescribeDatabaseObjectOutput,
     ExecuteSqlQueryOutput,
     GetEntryOutput,
+    GetFormFieldMenuMetadataOutput,
     GetFormFieldSelectionValuesOutput,
     HealthCheckOutput,
     ListDatabaseColumnsOutput,
@@ -412,6 +413,33 @@ def register_mcp_tools(
             tool="get_form_field_selection_values",
             environment=environment,
             operation=lambda: forms.get_form_field_selection_values(
+                environment=environment,
+                form=form,
+                field_id=field_id,
+            ),
+        )
+
+    @server.tool(
+        name="get_form_field_menu_metadata",
+        title="Get Helix form-field character-menu metadata",
+        description=(
+            "Read whether one exact policy-visible BMC Helix field ID has a "
+            "character menu associated with it. CHAR fields return the menu "
+            "name and append or overwrite style. Fields without a character "
+            "menu return has_menu false and no menu name or style."
+        ),
+        annotations=_HELIX_READ_ANNOTATIONS,
+        structured_output=True,
+    )
+    async def get_form_field_menu_metadata(
+        environment: Environment,
+        form: str,
+        field_id: int,
+    ) -> GetFormFieldMenuMetadataOutput:
+        return await audit.execute(
+            tool="get_form_field_menu_metadata",
+            environment=environment,
+            operation=lambda: forms.get_form_field_menu_metadata(
                 environment=environment,
                 form=form,
                 field_id=field_id,

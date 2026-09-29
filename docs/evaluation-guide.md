@@ -79,7 +79,7 @@ check authenticates and disconnects without reading forms or records.
 - the dashboard remained bound to loopback;
 - the saved policy matched the intended narrow DEV scope;
 - non-live and DEV live preflight reported `ready`;
-- the MCP client discovered all 20 tools;
+- the MCP client discovered all 21 tools;
 - no secret or private business information appeared in public output.
 
 If installation or preflight fails, stop and use the

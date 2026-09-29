@@ -13,6 +13,7 @@ from helix_mcp.services.database import (
 )
 from helix_mcp.services.forms import (
     FormEntry,
+    FormFieldMenuMetadata,
     FormFieldMetadata,
     FormFieldSelectionMetadata,
     FormMetadata,
@@ -88,6 +89,14 @@ class GetFormFieldSelectionValuesOutput(FrozenModel):
     environment: Environment
     form: str
     field: FormFieldSelectionMetadata
+
+
+class GetFormFieldMenuMetadataOutput(FrozenModel):
+    """Character-menu association for one policy-visible form field."""
+
+    environment: Environment
+    form: str
+    field: FormFieldMenuMetadata
 
 
 class ListFormsOutput(FrozenModel):

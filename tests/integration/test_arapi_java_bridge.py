@@ -130,6 +130,15 @@ def test_real_client_and_managed_java_bridge_contract(
                 (0, "Disabled"),
                 (1, "Enabled"),
             ]
+            menu = await client.get_field_menu_metadata(
+                form=FORM,
+                field_id=2,
+            )
+            assert menu.name == "Name"
+            assert menu.datatype == "CHAR"
+            assert menu.has_menu is True
+            assert menu.menu_name == "Sample:Names"
+            assert menu.menu_style == "append"
 
             page = await client.query_entries(
                 form=FORM,

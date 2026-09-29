@@ -208,6 +208,38 @@ class FormFieldSelectionMetadata(FrozenModel):
     values: tuple[FormSelectionValue, ...] = Field(max_length=4_096)
 
 
+class FormFieldMenuQuery(FrozenModel):
+    """Exact character-menu metadata request for one permitted form."""
+
+    form: FormName
+    field_id: int = Field(ge=1, le=2_147_483_647)
+
+    @field_validator("form")
+    @classmethod
+    def validate_form_syntax(cls, value: str) -> str:
+        _reject_control_characters(value, "form")
+        return value
+
+
+class FormFieldMenuMetadata(FrozenModel):
+    """Character-menu association for one exact policy-visible field."""
+
+    id: int = Field(ge=1, le=2_147_483_647)
+    name: FieldName
+    datatype: str = Field(min_length=1, max_length=64)
+    has_menu: bool
+    menu_name: FormName | None = None
+    menu_style: Literal["append", "overwrite"] | None = None
+
+    @model_validator(mode="after")
+    def validate_menu_contract(self) -> Self:
+        if self.has_menu != (
+            self.menu_name is not None and self.menu_style is not None
+        ):
+            raise ValueError("character-menu metadata is inconsistent")
+        return self
+
+
 class FormCatalogQuery(FrozenModel):
     """Bounded request for accessible form names."""
 

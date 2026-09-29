@@ -41,6 +41,8 @@ from helix_mcp.services.forms import (
     FormEntry,
     FormEntryQuery,
     FormEntryResult,
+    FormFieldMenuMetadata,
+    FormFieldMenuQuery,
     FormFieldMetadata,
     FormFieldSelectionMetadata,
     FormFieldSelectionQuery,
@@ -108,6 +110,7 @@ class FakeFormService:
     def __init__(self) -> None:
         self.calls: list[tuple[Environment, FormQuery]] = []
         self.field_calls: list[tuple[Environment, FormFieldsQuery]] = []
+        self.menu_calls: list[tuple[Environment, FormFieldMenuQuery]] = []
         self.selection_calls: list[
             tuple[Environment, FormFieldSelectionQuery]
         ] = []
@@ -164,6 +167,22 @@ class FakeFormService:
                 FormSelectionValue(number=0, label="New"),
                 FormSelectionValue(number=7, label="Resolved"),
             ),
+        )
+
+    async def get_field_menu_metadata(
+        self,
+        *,
+        environment: Environment,
+        query: FormFieldMenuQuery,
+    ) -> FormFieldMenuMetadata:
+        self.menu_calls.append((environment, query))
+        return FormFieldMenuMetadata(
+            id=query.field_id,
+            name="Owner",
+            datatype="CHAR",
+            has_menu=True,
+            menu_name="Sample:Owners",
+            menu_style="append",
         )
 
     async def search(
@@ -444,6 +463,7 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                 "cancel_write_plan",
                 "get_write_plan",
                 "get_entry",
+                "get_form_field_menu_metadata",
                 "get_form_field_selection_values",
                 "list_form_fields",
                 "list_forms",
@@ -575,6 +595,16 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
             assert selection_tool.annotations.destructiveHint is False
             assert selection_tool.annotations.openWorldHint is True
             assert set(selection_tool.inputSchema["required"]) == {
+                "environment",
+                "form",
+                "field_id",
+            }
+
+            menu_tool = by_name["get_form_field_menu_metadata"]
+            assert menu_tool.annotations.readOnlyHint is True
+            assert menu_tool.annotations.destructiveHint is False
+            assert menu_tool.annotations.openWorldHint is True
+            assert set(menu_tool.inputSchema["required"]) == {
                 "environment",
                 "form",
                 "field_id",
@@ -714,6 +744,28 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                         {"number": 0, "label": "New"},
                         {"number": 7, "label": "Resolved"},
                     ],
+                },
+            }
+
+            menu = await client.call_tool(
+                "get_form_field_menu_metadata",
+                {
+                    "environment": "dev",
+                    "form": "Example:HelpDesk",
+                    "field_id": 2,
+                },
+            )
+            assert menu.isError is False
+            assert menu.structuredContent == {
+                "environment": "dev",
+                "form": "Example:HelpDesk",
+                "field": {
+                    "id": 2,
+                    "name": "Owner",
+                    "datatype": "CHAR",
+                    "has_menu": True,
+                    "menu_name": "Sample:Owners",
+                    "menu_style": "append",
                 },
             }
 
