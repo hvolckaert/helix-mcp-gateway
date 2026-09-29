@@ -9,6 +9,7 @@ from helix_mcp.services.forms import (
     FormCatalogQuery,
     FormCatalogService,
     FormEntryQuery,
+    FormFieldSelectionQuery,
     FormFieldsQuery,
     FormQuery,
     FormQueryService,
@@ -17,6 +18,7 @@ from helix_mcp.services.forms import (
 from helix_mcp.tools.errors import ToolInputError
 from helix_mcp.tools.models import (
     GetEntryOutput,
+    GetFormFieldSelectionValuesOutput,
     ListFormFieldsOutput,
     ListFormsOutput,
     QueryFormOutput,
@@ -95,6 +97,30 @@ class FormToolAdapter:
             offset=result.offset,
             limit=result.limit,
             total=result.total,
+        )
+
+    async def get_form_field_selection_values(
+        self,
+        *,
+        environment: Environment,
+        form: str,
+        field_id: int,
+    ) -> GetFormFieldSelectionValuesOutput:
+        try:
+            query = FormFieldSelectionQuery(form=form, field_id=field_id)
+        except ValidationError:
+            raise ToolInputError(
+                "get_form_field_selection_values input is invalid"
+            ) from None
+
+        result = await self._service.get_field_selection_values(
+            environment=environment,
+            query=query,
+        )
+        return GetFormFieldSelectionValuesOutput(
+            environment=environment,
+            form=query.form,
+            field=result,
         )
 
     async def query_form(

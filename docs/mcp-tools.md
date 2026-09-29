@@ -15,6 +15,7 @@ permissions reduce it.
 | `health_check` | read | Local connectivity probes | Low | No |
 | `list_forms` | read | Reads visible form names | Medium | No |
 | `list_form_fields` | read | Reads policy-visible metadata | Medium | No |
+| `get_form_field_selection_values` | read | Reads one policy-visible ENUM definition | Medium | No |
 | `query_form` | read | Reads bounded business data | High | No |
 | `get_entry` | read | Reads one business record | High | No |
 | `list_database_objects` | read | Reads database metadata | High | Yes |
@@ -65,6 +66,16 @@ returns only form names visible to both the BMC account and gateway policy.
 Requires `environment` and `form`; accepts `name_contains`, `offset`, and
 `limit`. It returns policy-visible field `id`, `name`, and `datatype`. Field ID
 is authoritative when duplicate names exist.
+
+### `get_form_field_selection_values`
+
+Requires `environment`, `form`, and an exact numeric `field_id`. It returns
+the policy-visible field identity and the configured ENUM number-to-label
+mapping. Regular and custom selection lists are identified explicitly; custom
+numbers are returned as configured and must not be inferred from list order.
+For a non-selection field, `selection_style` is null and `values` is empty.
+The form and field must pass the same account, policy, sensitive-field, and
+rate-limit checks as other form metadata reads.
 
 ### `query_form`
 

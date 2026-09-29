@@ -5,6 +5,10 @@ Semantic Versioning.
 
 ## Unreleased
 
+- Add the policy-filtered `get_form_field_selection_values` read tool so MCP
+  clients can resolve exact regular or custom AR System ENUM numbers to their
+  configured labels without bypassing the gateway.
+
 ## 0.11.0 - 2026-09-20
 
 - Allow DEV, QA, and PROD credentials to be configured independently. Missing

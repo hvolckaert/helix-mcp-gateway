@@ -21,6 +21,7 @@ from helix_mcp.services.forms.errors import (
     FormQualificationInvalidError,
     FormQueryLimitError,
     FormReadDisabledError,
+    FormResponseError,
 )
 from helix_mcp.services.forms.limiter import FormRateLimiter
 from helix_mcp.services.forms.models import (
@@ -28,10 +29,13 @@ from helix_mcp.services.forms.models import (
     FormEntryQuery,
     FormEntryResult,
     FormFieldMetadata,
+    FormFieldSelectionMetadata,
+    FormFieldSelectionQuery,
     FormFieldsQuery,
     FormFieldsResult,
     FormQuery,
     FormQueryResult,
+    FormSelectionValue,
 )
 from helix_mcp.services.forms.qualification import (
     QualificationSyntaxError,
@@ -123,6 +127,58 @@ class FormQueryService:
             offset=query.offset,
             limit=query.limit,
             total=len(fields),
+        )
+
+    async def get_field_selection_values(
+        self,
+        *,
+        environment: str | Environment,
+        query: FormFieldSelectionQuery,
+    ) -> FormFieldSelectionMetadata:
+        """Return selection labels for one exact policy-visible field ID."""
+
+        target = self._targets.resolve(environment=environment)
+        _enforce_form_access(target, query.form)
+        await self._limiter.check(
+            target.key,
+            target.policy.rate_limit_per_minute,
+        )
+        target = self._targets.resolve(
+            environment=environment,
+            backend=BackendKind.ARAPI,
+        )
+        visible_fields = await self._field_metadata(target, query.form)
+        visible = next(
+            (field for field in visible_fields if field.id == query.field_id),
+            None,
+        )
+        if visible is None:
+            raise FormFieldNotAllowedError(
+                target.key,
+                "field is not allowed by target policy",
+            )
+        result = await self._clients.get(target).get_field_selection_values(
+            form=query.form,
+            field_id=query.field_id,
+        )
+        if (
+            result.id != visible.id
+            or result.name != visible.name
+            or result.datatype != visible.datatype
+        ):
+            raise FormResponseError(
+                target.key,
+                "field metadata changed during selection lookup",
+            )
+        return FormFieldSelectionMetadata(
+            id=result.id,
+            name=result.name,
+            datatype=result.datatype,
+            selection_style=result.selection_style,
+            values=tuple(
+                FormSelectionValue(number=item.number, label=item.label)
+                for item in result.values
+            ),
         )
 
     async def _field_metadata(

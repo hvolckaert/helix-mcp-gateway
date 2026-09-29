@@ -49,7 +49,7 @@ HELIX_LOCAL_E2E_TESTS=1 \
 tests/e2e/test_stdio_local.py
 ```
 
-It covers all 19 tools, policies, planning, create/update application,
+It covers all 20 tools, policies, planning, create/update application,
 idempotency, cancellation, optimistic conflicts, audit, and encrypted plan
 recovery across process restarts.
 

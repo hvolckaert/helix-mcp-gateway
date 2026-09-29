@@ -67,6 +67,13 @@ rejected.
 datatype after policy filtering. Field ID is authoritative when a join or
 synchronized form exposes duplicate names.
 
+`get_form_field_selection_values` addresses one exact policy-visible field ID
+and requests only its name, datatype, and `LIMIT` definition through
+`ARServerUser.getField`. ENUM results preserve each configured number and
+label, including non-contiguous custom numbers. Non-selection fields return no
+selection style or values. The response is bounded to 4,096 unique values and
+never exposes a sensitive or non-allowlisted field.
+
 `list_forms` calls `ARServerUser.getListForm()` through the bridge. BMC first
 limits results through account permissions; the service then applies its form
 policy, name filter, pagination, row limit, and rate limit.

@@ -5,7 +5,9 @@ import com.bmc.arsys.api.ARServerUser;
 import com.bmc.arsys.api.Constants;
 import com.bmc.arsys.api.DataType;
 import com.bmc.arsys.api.Entry;
+import com.bmc.arsys.api.EnumItem;
 import com.bmc.arsys.api.Field;
+import com.bmc.arsys.api.SelectionFieldLimit;
 import com.bmc.arsys.api.ServerInfoMap;
 import com.bmc.arsys.api.StatusInfo;
 import com.bmc.arsys.api.Timestamp;
@@ -41,6 +43,10 @@ public final class ArapiBridgeTest {
     public static void main(String[] args) throws Exception {
         run("create result encoding", ArapiBridgeTest::testCreateResult);
         run("JSON encoding", ArapiBridgeTest::testJsonEncoding);
+        run(
+            "selection field encoding",
+            ArapiBridgeTest::testSelectionFieldEncoding
+        );
         run("bounded scalar parsing", ArapiBridgeTest::testScalarParsing);
         run("list and host validation", ArapiBridgeTest::testValidation);
         run(
@@ -85,6 +91,57 @@ public final class ArapiBridgeTest {
             Double.NaN
         );
         assertEquals("\"NaN\"", output.toString());
+    }
+
+    private static void testSelectionFieldEncoding() throws Exception {
+        Field custom = new Field(
+            4,
+            "Enabled",
+            DataType.ENUM.getValue(),
+            new SelectionFieldLimit(
+                List.of(
+                    new EnumItem("Disabled", 0),
+                    new EnumItem("Enabled", 7)
+                )
+            )
+        );
+        assertEquals(
+            "{\"id\":4,\"name\":\"Enabled\",\"datatype\":\"ENUM\"," +
+                "\"selection_style\":\"custom\",\"values\":[" +
+                "{\"number\":0,\"label\":\"Disabled\"}," +
+                "{\"number\":7,\"label\":\"Enabled\"}]}",
+            invoke(
+                "encodeFieldSelectionValues",
+                types(Field.class),
+                custom
+            )
+        );
+        assertEquals(
+            "{\"id\":2,\"name\":\"Name\",\"datatype\":\"CHAR\"," +
+                "\"selection_style\":null,\"values\":[]}",
+            invoke(
+                "encodeFieldSelectionValues",
+                types(Field.class),
+                new Field(2, "Name", DataType.CHAR.getValue())
+            )
+        );
+        Field duplicate = new Field(
+            5,
+            "Duplicate",
+            DataType.ENUM.getValue(),
+            new SelectionFieldLimit(
+                List.of(
+                    new EnumItem("First", 1),
+                    new EnumItem("Second", 1)
+                )
+            )
+        );
+        assertFailure(
+            "IllegalStateException",
+            "encodeFieldSelectionValues",
+            types(Field.class),
+            duplicate
+        );
     }
 
     private static void testScalarParsing() throws Exception {

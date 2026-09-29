@@ -117,6 +117,19 @@ def test_real_client_and_managed_java_bridge_contract(
                 ("Description", "CHAR"),
                 ("Modified Date", "TIME"),
             ]
+            selection = await client.get_field_selection_values(
+                form=FORM,
+                field_id=4,
+            )
+            assert selection.name == "Enabled"
+            assert selection.datatype == "ENUM"
+            assert selection.selection_style == "custom"
+            assert [
+                (item.number, item.label) for item in selection.values
+            ] == [
+                (0, "Disabled"),
+                (1, "Enabled"),
+            ]
 
             page = await client.query_entries(
                 form=FORM,

@@ -12,8 +12,10 @@ from helix_mcp.clients.arapi import (
     ArapiEntry,
     ArapiEntryResult,
     ArapiField,
+    ArapiFieldSelection,
     ArapiFormNotFoundError,
     ArapiQueryPage,
+    ArapiSelectionValue,
 )
 from helix_mcp.config import (
     ArapiBackendConfig,
@@ -28,6 +30,7 @@ from helix_mcp.config import (
 from helix_mcp.services.forms import (
     FormEntryQuery,
     FormFieldNotAllowedError,
+    FormFieldSelectionQuery,
     FormFieldsQuery,
     FormNotAllowedError,
     FormNotFoundError,
@@ -60,6 +63,35 @@ class FakeClient:
                 datatype=item["datatype"],
             )
             for item in self.payload
+        )
+
+    async def get_field_selection_values(
+        self,
+        *,
+        form: str,
+        field_id: int,
+    ) -> ArapiFieldSelection:
+        self.calls.append(
+            (
+                "get_field_selection_values",
+                {"form": form, "field_id": field_id},
+            )
+        )
+        item = next(item for item in self.payload if item["id"] == field_id)
+        is_selection = item["datatype"] == "ENUM"
+        return ArapiFieldSelection(
+            id=item["id"],
+            name=item["name"],
+            datatype=item["datatype"],
+            selection_style="custom" if is_selection else None,
+            values=(
+                (
+                    ArapiSelectionValue(number=0, label="New"),
+                    ArapiSelectionValue(number=7, label="Resolved"),
+                )
+                if is_selection
+                else ()
+            ),
         )
 
     async def query_entries(
@@ -388,6 +420,72 @@ def test_list_fields_filters_policy_sensitive_names_and_paginates() -> None:
         (field.id, field.name, field.datatype) for field in result.fields
     ] == [(2, "Status", "ENUM")]
     assert client.calls == [("list_fields", {"form": "Example:HelpDesk"})]
+
+
+def test_get_field_selection_values_returns_exact_custom_numbers() -> None:
+    client = FakeClient(
+        [
+            {"id": 1, "name": "Incident Number", "datatype": "CHAR"},
+            {"id": 2, "name": "Status", "datatype": "ENUM"},
+        ]
+    )
+    service, _ = build_service(client)
+
+    result = run(
+        service.get_field_selection_values(
+            environment="dev",
+            query=FormFieldSelectionQuery(
+                form="Example:HelpDesk",
+                field_id=2,
+            ),
+        )
+    )
+
+    assert result.id == 2
+    assert result.name == "Status"
+    assert result.datatype == "ENUM"
+    assert result.selection_style == "custom"
+    assert [(item.number, item.label) for item in result.values] == [
+        (0, "New"),
+        (7, "Resolved"),
+    ]
+    assert client.calls == [
+        ("list_fields", {"form": "Example:HelpDesk"}),
+        (
+            "get_field_selection_values",
+            {"form": "Example:HelpDesk", "field_id": 2},
+        ),
+    ]
+
+
+def test_get_field_selection_values_blocks_non_visible_id_before_lookup() -> (
+    None
+):
+    client = FakeClient(
+        [
+            {"id": 2, "name": "Status", "datatype": "ENUM"},
+            {"id": 7, "name": "Password", "datatype": "ENUM"},
+            {"id": 9, "name": "Unexpected", "datatype": "ENUM"},
+        ]
+    )
+    service, _ = build_service(client)
+
+    for field_id in (7, 9):
+        with pytest.raises(FormFieldNotAllowedError):
+            run(
+                service.get_field_selection_values(
+                    environment="dev",
+                    query=FormFieldSelectionQuery(
+                        form="Example:HelpDesk",
+                        field_id=field_id,
+                    ),
+                )
+            )
+
+    assert client.calls == [
+        ("list_fields", {"form": "Example:HelpDesk"}),
+        ("list_fields", {"form": "Example:HelpDesk"}),
+    ]
 
 
 def test_list_fields_read_all_supports_case_insensitive_name_filter() -> None:

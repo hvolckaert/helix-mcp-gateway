@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 ArapiScalar = str | int | float | bool
 type ArapiSqlValue = str | int | float | bool | None
@@ -16,6 +16,25 @@ class ArapiField:
     id: int
     name: str
     datatype: str
+
+
+@dataclass(frozen=True, slots=True)
+class ArapiSelectionValue:
+    """One exact AR System selection-field number and label."""
+
+    number: int
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class ArapiFieldSelection:
+    """Bounded selection metadata for one exact AR System field ID."""
+
+    id: int
+    name: str
+    datatype: str
+    selection_style: Literal["regular", "custom"] | None
+    values: tuple[ArapiSelectionValue, ...]
 
 
 @dataclass(frozen=True, slots=True)

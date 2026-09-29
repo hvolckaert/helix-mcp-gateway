@@ -25,7 +25,8 @@ tests/integration/test_arapi_java_bridge.py
 ```
 
 The reproducible local E2E adds the real MCP server over `stdio` and exercises
-all 19 tools, including plan/apply flows and encrypted persistence:
+all 20 tools, including ENUM label discovery, plan/apply flows, and encrypted
+persistence:
 
 ```text
 HELIX_LOCAL_E2E_TESTS=1 \

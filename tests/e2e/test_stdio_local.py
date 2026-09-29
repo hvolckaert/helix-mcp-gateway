@@ -34,6 +34,7 @@ EXPECTED_TOOLS = {
     "cancel_write_plan",
     "describe_database_object",
     "get_entry",
+    "get_form_field_selection_values",
     "get_sql_query_plan",
     "get_write_plan",
     "health_check",
@@ -336,6 +337,26 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
     assert [
         field["name"] for field in fields.structuredContent["fields"]
     ] == list(FIELDS)
+
+    selection = await session.call_tool(
+        "get_form_field_selection_values",
+        {
+            "environment": "dev",
+            "form": FORM,
+            "field_id": 4,
+        },
+    )
+    assert selection.isError is False
+    assert selection.structuredContent["field"] == {
+        "id": 4,
+        "name": "Enabled",
+        "datatype": "ENUM",
+        "selection_style": "custom",
+        "values": [
+            {"number": 0, "label": "Disabled"},
+            {"number": 1, "label": "Enabled"},
+        ],
+    }
 
     query = await session.call_tool(
         "query_form",

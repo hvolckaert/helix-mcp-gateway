@@ -7,10 +7,13 @@ import com.bmc.arsys.api.Constants;
 import com.bmc.arsys.api.DataType;
 import com.bmc.arsys.api.DateInfo;
 import com.bmc.arsys.api.Entry;
+import com.bmc.arsys.api.EnumItem;
 import com.bmc.arsys.api.Field;
+import com.bmc.arsys.api.FieldCriteria;
 import com.bmc.arsys.api.OutputInteger;
 import com.bmc.arsys.api.QualifierInfo;
 import com.bmc.arsys.api.ServerInfoMap;
+import com.bmc.arsys.api.SelectionFieldLimit;
 import com.bmc.arsys.api.SortInfo;
 import com.bmc.arsys.api.SQLResult;
 import com.bmc.arsys.api.StatusInfo;
@@ -33,9 +36,11 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executors;
 
 import javax.crypto.Mac;
@@ -48,6 +53,7 @@ public final class ArapiBridge {
     private static final int MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
     private static final int MAX_FORMS = 100_000;
     private static final int MAX_FIELDS = 100_000;
+    private static final int MAX_SELECTION_VALUES = 4_096;
     private static final int MAX_SELECTED_FIELDS = 128;
     private static final int MAX_WRITE_FIELDS = 32;
     private static final int MAX_SORT_FIELDS = 8;
@@ -92,6 +98,10 @@ public final class ArapiBridge {
         );
         server.createContext("/v1/forms", new FormsHandler());
         server.createContext("/v1/fields", new FieldsHandler());
+        server.createContext(
+            "/v1/fields/selection-values",
+            new FieldSelectionValuesHandler()
+        );
         server.createContext("/v1/entries/query", new QueryEntriesHandler());
         server.createContext("/v1/entries/get", new GetEntryHandler());
         server.createContext(
@@ -330,6 +340,35 @@ public final class ArapiBridge {
             String form = requiredText(input, "form", MAX_NAME_LENGTH);
             List<Field> fields = loadFields(user, form);
             return encodeFields(fields);
+        }
+    }
+
+    private static final class FieldSelectionValuesHandler
+        extends ArapiHandler {
+        FieldSelectionValuesHandler() {
+            super("/v1/fields/selection-values");
+        }
+
+        @Override
+        protected String execute(
+            ARServerUser user,
+            Map<String, String> input
+        ) throws ARException, BadRequest {
+            String form = requiredText(input, "form", MAX_NAME_LENGTH);
+            int fieldId = boundedInteger(
+                input,
+                "field_id",
+                1,
+                Integer.MAX_VALUE
+            );
+            FieldCriteria criteria = new FieldCriteria();
+            criteria.setPropertiesToRetrieve(
+                FieldCriteria.FIELD_NAME
+                    | FieldCriteria.DATATYPE
+                    | FieldCriteria.LIMIT
+            );
+            Field field = user.getField(form, fieldId, criteria);
+            return encodeFieldSelectionValues(field);
         }
     }
 
@@ -1345,6 +1384,91 @@ public final class ArapiBridge {
             output.append('}');
         }
         output.append("],\"total\":").append(fields.size()).append('}');
+        return output.toString();
+    }
+
+    private static String encodeFieldSelectionValues(Field field) {
+        if (field == null) {
+            throw new IllegalStateException("ARAPI returned no field");
+        }
+        String name = field.getName();
+        if (
+            name == null
+            || name.isBlank()
+            || name.length() > MAX_NAME_LENGTH
+            || containsControlCharacters(name)
+        ) {
+            throw new IllegalStateException("ARAPI returned an invalid field");
+        }
+        StringBuilder output = new StringBuilder();
+        output.append("{\"id\":").append(field.getFieldID());
+        output.append(",\"name\":");
+        appendJsonString(output, name.strip());
+        output.append(",\"datatype\":");
+        appendJsonString(output, dataTypeName(field.getDataType()));
+
+        if (!DataType.ENUM.equals(DataType.toDataType(field.getDataType()))) {
+            output.append(",\"selection_style\":null,\"values\":[]}");
+            return output.toString();
+        }
+        if (!(field.getFieldLimit() instanceof SelectionFieldLimit limit)) {
+            throw new IllegalStateException(
+                "ARAPI returned no selection-field limit"
+            );
+        }
+
+        String selectionStyle;
+        if (limit.getListStyle() == SelectionFieldLimit.REGULAR) {
+            selectionStyle = "regular";
+        } else if (limit.getListStyle() == SelectionFieldLimit.CUSTOM) {
+            selectionStyle = "custom";
+        } else {
+            throw new IllegalStateException(
+                "ARAPI returned an invalid selection style"
+            );
+        }
+        List<EnumItem> values = limit.getValues();
+        if (values == null) {
+            values = List.of();
+        }
+        if (values.size() > MAX_SELECTION_VALUES) {
+            throw new IllegalStateException(
+                "ARAPI returned too many selection values"
+            );
+        }
+        Set<Integer> numbers = new HashSet<>();
+        output.append(",\"selection_style\":");
+        appendJsonString(output, selectionStyle);
+        output.append(",\"values\":[");
+        for (int index = 0; index < values.size(); index++) {
+            EnumItem item = values.get(index);
+            if (item == null) {
+                throw new IllegalStateException(
+                    "ARAPI returned an invalid selection value"
+                );
+            }
+            int number = item.getEnumItemNumber();
+            String label = item.getEnumItemName();
+            if (
+                !numbers.add(number)
+                || label == null
+                || label.isBlank()
+                || label.length() > MAX_NAME_LENGTH
+                || containsControlCharacters(label)
+            ) {
+                throw new IllegalStateException(
+                    "ARAPI returned an invalid selection value"
+                );
+            }
+            if (index > 0) {
+                output.append(',');
+            }
+            output.append("{\"number\":").append(number);
+            output.append(",\"label\":");
+            appendJsonString(output, label.strip());
+            output.append('}');
+        }
+        output.append("]}");
         return output.toString();
     }
 
