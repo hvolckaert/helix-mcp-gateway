@@ -127,7 +127,8 @@ The response preserves view-level properties and separates each field's
 merge them or infer inherited defaults. Each configured property has its exact
 ID, known AR API constant name, typed value/status, and an optional value symbol.
 Supported properties include labels, visibility, editing mode (`AR_DPROP_ENABLE`),
-bounding boxes, row count, custom CSS style names, tab order, layout/parent
+bounding boxes, row count, character display type, expand-box mode,
+custom CSS style names, tab order, layout/parent
 attributes, desktop/tablet/mobile visibility, and the progressive, padding,
 margin and panel-alignment families.
 Coordinates retain their normalized AR API units, without conversion to pixels.
@@ -135,6 +136,12 @@ Developer Studio applies a client-specific coordinate transformation; its X/Y
 and width/height values cannot be compared directly with the raw bounding box.
 Custom style names are returned as metadata, never evaluated as CSS or HTML.
 Editing codes distinguish default, read-only, read/write and disabled.
+Character display types and expand-box modes also include known symbolic codes.
+
+`AR_DPROP_TAB_ORDER` is the stored value. Developer Studio may reindex fields
+within their parent container and show a different computed tab order. This
+tool does not reproduce that client-side index: authorized metadata can omit
+fields excluded by gateway policy, which also changes such a calculation.
 
 This is bounded coverage of stored metadata, not a complete reconstruction of
 the rendered UI. Properties outside these families, complex values not yet

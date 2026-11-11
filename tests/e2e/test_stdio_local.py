@@ -392,6 +392,16 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
         "datatype": "CHAR",
         "value": "sample-field sample-company",
     }
+    for prop, symbol in (
+        ("AR_DPROP_CHARFIELD_DISPLAY_TYPE", "AR_DVAL_CHARFIELD_DROPDOWN"),
+        ("AR_DPROP_MANAGE_EXPAND_BOX", "AR_DVAL_EXPAND_BOX_HIDE"),
+    ):
+        assert properties[prop]["value"] == {
+            "status": "present",
+            "datatype": "ENUM",
+            "value": 1,
+        }
+        assert properties[prop]["value_symbol"] == symbol
     empty_page = await session.call_tool(
         "get_form_view_definition",
         {

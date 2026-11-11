@@ -115,6 +115,8 @@ public final class ArapiBridgeTest {
             throw new AssertionError("view type, PWA width or row metadata missing");
         }
         if (!json.contains("sample-field sample-company")
+            || !json.contains("AR_DVAL_CHARFIELD_DROPDOWN")
+            || !json.contains("AR_DVAL_EXPAND_BOX_HIDE")
             || !json.contains("AR_DVAL_ENABLE_READ_WRITE")
             || !json.contains("AR_DVAL_ENABLE_READ_ONLY")
             || !json.contains("\"present_in_view\":false")

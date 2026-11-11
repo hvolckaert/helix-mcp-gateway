@@ -21,6 +21,8 @@ public final class Field {
         DisplayPropertyMap properties = new DisplayPropertyMap();
         properties.put(Constants.AR_DPROP_LABEL, new Value("Sample label"));
         properties.put(Constants.AR_DPROP_DATA_ROWS, new Value(1L, DataType.ULONG));
+        properties.put(Constants.AR_DPROP_CHARFIELD_DISPLAY_TYPE, new Value(1, DataType.ENUM));
+        properties.put(Constants.AR_DPROP_MANAGE_EXPAND_BOX, new Value(1, DataType.ENUM));
         properties.put(Constants.AR_DPROP_FIELD_CUSTOMSTYLE, new Value("sample-field sample-company"));
         properties.put(Constants.AR_DPROP_ENABLE, new Value(2));
         properties.put(Constants.AR_DPROP_PROGRESSIVE_WIDTH_DESKTOP, new Value(6));

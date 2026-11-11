@@ -1644,6 +1644,7 @@ public final class ArapiBridge {
         if (Set.of("AR_DPROP_BBOX", "AR_DPROP_VISIBLE", "AR_DPROP_ENABLE",
             "AR_DPROP_LABEL", "AR_DPROP_LABEL_BBOX", "AR_DPROP_DATA_BBOX",
             "AR_DPROP_DATA_ROWS", "AR_DPROP_FIELD_CUSTOMSTYLE",
+            "AR_DPROP_CHARFIELD_DISPLAY_TYPE", "AR_DPROP_MANAGE_EXPAND_BOX",
             "AR_DPROP_DISPLAY_PARENT", "AR_DPROP_TAB_ORDER", "AR_DPROP_VIEW_RTL",
             "AR_DPROP_AUTO_LAYOUT", "AR_DPROP_LAYOUT_POLICY",
             "AR_DPROP_DESKTOP_VISIBLE", "AR_DPROP_TABLET_VISIBLE", "AR_DPROP_MOBILE_VISIBLE"
@@ -1676,6 +1677,29 @@ public final class ArapiBridge {
                     case 1 -> "AR_DVAL_ENABLE_READ_ONLY";
                     case 2 -> "AR_DVAL_ENABLE_READ_WRITE";
                     case 3 -> "AR_DVAL_ENABLE_DISABLE";
+                    default -> null;
+                };
+            }
+            if ("AR_DPROP_CHARFIELD_DISPLAY_TYPE".equals(name) && raw instanceof Integer code) {
+                symbol = switch (code) {
+                    case 0 -> "AR_DVAL_CHARFIELD_EDIT";
+                    case 1 -> "AR_DVAL_CHARFIELD_DROPDOWN";
+                    case 2 -> "AR_DVAL_CHARFIELD_MASKED";
+                    case 3 -> "AR_DVAL_CHARFIELD_FILE";
+                    case 4 -> "AR_DVAL_CHARFIELD_RICH_TEXT";
+                    case 5 -> "AR_DVAL_CHARFIELD_RICH_TEXT_ADV";
+                    case 6 -> "AR_DVAL_CHARFIELD_EMAIL";
+                    case 7 -> "AR_DVAL_CHARFIELD_PHONE";
+                    case 8 -> "AR_DVAL_CHARFIELD_THUMBNAIL";
+                    case 9 -> "AR_DVAL_CHARFIELD_ADVANCE_RICH_TEXT";
+                    default -> null;
+                };
+            }
+            if ("AR_DPROP_MANAGE_EXPAND_BOX".equals(name) && raw instanceof Integer code) {
+                symbol = switch (code) {
+                    case 0 -> "AR_DVAL_EXPAND_BOX_DEFAULT";
+                    case 1 -> "AR_DVAL_EXPAND_BOX_HIDE";
+                    case 2 -> "AR_DVAL_EXPAND_BOX_SHOW";
                     default -> null;
                 };
             }
