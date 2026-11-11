@@ -15,6 +15,7 @@ import com.bmc.arsys.api.Menu;
 import com.bmc.arsys.api.MenuCriteria;
 import com.bmc.arsys.api.MenuItem;
 import com.bmc.arsys.api.OutputInteger;
+import com.bmc.arsys.api.PermissionInfo;
 import com.bmc.arsys.api.QualifierInfo;
 import com.bmc.arsys.api.ServerInfoMap;
 import com.bmc.arsys.api.SelectionFieldLimit;
@@ -106,6 +107,7 @@ public final class ArapiBridge {
         );
         server.createContext("/v1/forms", new FormsHandler());
         server.createContext("/v1/fields", new FieldsHandler());
+        server.createContext("/v1/fields/definition", new FieldDefinitionHandler());
         server.createContext(
             "/v1/fields/selection-values",
             new FieldSelectionValuesHandler()
@@ -356,6 +358,28 @@ public final class ArapiBridge {
             String form = requiredText(input, "form", MAX_NAME_LENGTH);
             List<Field> fields = loadFields(user, form);
             return encodeFields(fields);
+        }
+    }
+
+    private static final class FieldDefinitionHandler extends ArapiHandler {
+        FieldDefinitionHandler() {
+            super("/v1/fields/definition");
+        }
+
+        @Override
+        protected String execute(ARServerUser user, Map<String, String> input)
+            throws ARException, BadRequest {
+            String form = requiredText(input, "form", MAX_NAME_LENGTH);
+            int id = boundedInteger(input, "field_id", 1, Integer.MAX_VALUE);
+            FieldCriteria criteria = new FieldCriteria();
+            criteria.setPropertiesToRetrieve(
+                FieldCriteria.FIELD_NAME | FieldCriteria.DATATYPE
+                    | FieldCriteria.LIMIT | FieldCriteria.DEFAULT_VALUE
+                    | FieldCriteria.OPTION | FieldCriteria.CREATE_MODE
+                    | FieldCriteria.SETFIELD_OPTION | FieldCriteria.AUDIT_OPTION
+                    | FieldCriteria.PERMISSIONS
+            );
+            return encodeFieldDefinition(user.getField(form, id, criteria));
         }
     }
 
@@ -1489,6 +1513,152 @@ public final class ArapiBridge {
         }
         output.append("],\"total\":").append(fields.size()).append('}');
         return output.toString();
+    }
+
+    private static String encodeFieldDefinition(Field field) {
+        if (field == null || field.getName() == null || field.getName().isBlank()
+            || field.getName().length() > MAX_NAME_LENGTH
+            || containsControlCharacters(field.getName())) {
+            throw new IllegalStateException("ARAPI returned an invalid field");
+        }
+        StringBuilder out = new StringBuilder();
+        out.append("{\"id\":").append(field.getFieldID()).append(",\"name\":");
+        appendJsonString(out, field.getName().strip());
+        out.append(",\"datatype\":");
+        appendJsonString(out, dataTypeName(field.getDataType()));
+        out.append(",\"field_type\":");
+        appendDefinitionCode(out, field.getFieldType(), "AR_FIELD_TYPE_");
+        out.append(",\"option\":");
+        appendDefinitionCode(out, field.getFieldOption(), "AR_FIELD_OPTION_");
+        out.append(",\"create_mode\":");
+        appendDefinitionCode(out, field.getCreateMode(), "AR_FIELD_", "_AT_CREATE");
+        out.append(",\"set_field_options\":").append(field.getSetFieldOptions());
+        out.append(",\"audit_option\":").append(field.getAuditOption());
+        out.append(",\"default_value\":");
+        Value defaultValue = field.getDefaultValue();
+        appendMetadataValue(out, defaultValue == null ? null : defaultValue.getValue(),
+            defaultValue == null || defaultValue.getDataType() == null
+                ? null : dataTypeName(defaultValue.getDataType().toInt()));
+        out.append(",\"limits\":");
+        appendFieldLimits(out, field);
+        out.append(",\"permissions\":[");
+        List<PermissionInfo> permissions = field.getPermissions();
+        if (permissions == null) {
+            throw new IllegalStateException("ARAPI returned no field permissions");
+        }
+        if (permissions.size() > 4096) {
+            throw new IllegalStateException("field permission list is too large");
+        }
+        permissions = new ArrayList<>(permissions);
+        permissions.sort(Comparator.comparingInt(PermissionInfo::getGroupID));
+        for (int i = 0; i < permissions.size(); i++) {
+            if (i > 0) out.append(',');
+            PermissionInfo permission = permissions.get(i);
+            out.append("{\"group_id\":").append(permission.getGroupID());
+            out.append(",\"permission\":{\"code\":").append(permission.getPermissionValue());
+            out.append(",\"name\":");
+            String name = switch (permission.getPermissionValue()) {
+                case 0 -> "AR_PERMISSIONS_NONE";
+                case 1 -> "AR_PERMISSIONS_VIEW";
+                case 2 -> "AR_PERMISSIONS_CHANGE";
+                default -> null;
+            };
+            appendJsonValue(out, name);
+            out.append("}}");
+        }
+        return out.append("]}").toString();
+    }
+
+    private static void appendDefinitionCode(StringBuilder out, int code, String prefix) {
+        appendDefinitionCode(out, code, prefix, "");
+    }
+
+    private static void appendDefinitionCode(StringBuilder out, int code, String prefix, String suffix) {
+        out.append("{\"code\":").append(code).append(",\"name\":");
+        String name = null;
+        for (java.lang.reflect.Field constant : Constants.class.getFields()) {
+            if (constant.getName().startsWith(prefix) && constant.getName().endsWith(suffix)
+                && constant.getType() == int.class) {
+                try {
+                    if (constant.getInt(null) == code
+                        && (name == null || constant.getName().compareTo(name) < 0)) {
+                        name = constant.getName();
+                    }
+                } catch (IllegalAccessException exc) {
+                    throw new IllegalStateException("cannot read ARAPI constant", exc);
+                }
+            }
+        }
+        appendJsonValue(out, name);
+        out.append('}');
+    }
+
+    private static void appendMetadataValue(StringBuilder out, Object raw, String datatype) {
+        Object scalar = raw;
+        if (raw instanceof BigDecimal decimal) scalar = decimal.toPlainString();
+        else if (raw instanceof Timestamp timestamp) scalar = timestamp.getValue();
+        else if (raw instanceof DateInfo date) scalar = date.getValue();
+        else if (raw instanceof Time time) scalar = time.getValue();
+        boolean supported = scalar == null || scalar instanceof Boolean
+            || scalar instanceof Byte || scalar instanceof Short
+            || scalar instanceof Integer || scalar instanceof Long
+            || (scalar instanceof String text && text.length() <= 8192)
+            || (scalar instanceof Double number && Double.isFinite(number))
+            || (scalar instanceof Float number && Float.isFinite(number));
+        out.append("{\"status\":");
+        appendJsonString(out, raw == null ? "unset" : supported ? "present" : "unsupported");
+        out.append(",\"datatype\":");
+        appendJsonValue(out, datatype);
+        out.append(",\"value\":");
+        appendJsonValue(out, supported ? scalar : null);
+        out.append('}');
+    }
+
+    private static void appendFieldLimits(StringBuilder out, Field field) {
+        Object limits = field.getFieldLimit();
+        // Only explicit, side-effect-free getters are eligible. Never serialize
+        // arbitrary ARAPI objects or invoke a getter supplied by a caller.
+        String[] getters = switch (dataTypeName(field.getDataType())) {
+            case "CHAR" -> new String[]{"MaxLength", "LengthUnits", "Pattern",
+                "StorageOptionForCLOB", "QBEMatch", "FullTextOption"};
+            case "INTEGER" -> new String[]{"LowRange", "HighRange"};
+            case "REAL", "DECIMAL" -> new String[]{"LowRange", "HighRange", "Precision"};
+            case "CURRENCY" -> new String[]{"LowRange", "HighRange", "Precision",
+                "Allowable", "Functional"};
+            case "ATTACH" -> new String[]{"MaxSize", "AttachType", "FullTextOption"};
+            case "ENUM" -> new String[]{"ListStyle"};
+            default -> new String[0];
+        };
+        String status = getters.length == 0 ? "unsupported" : "supported";
+        if ("CURRENCY".equals(dataTypeName(field.getDataType()))) status = "partial";
+        if (limits == null) status = "unsupported";
+        StringBuilder properties = new StringBuilder();
+        if (limits != null) {
+            for (String getter : getters) {
+                Object value;
+                try {
+                    value = limits.getClass().getMethod("get" + getter).invoke(limits);
+                } catch (NoSuchMethodException exc) {
+                    status = "partial";
+                    value = new Object();
+                } catch (ReflectiveOperationException exc) {
+                    throw new IllegalStateException("cannot read ARAPI field limit", exc);
+                }
+                if (properties.length() > 0) properties.append(',');
+                String property = getter.replaceAll("([A-Z]+)([A-Z][a-z])", "$1_$2")
+                    .replaceAll("([a-z0-9])([A-Z])", "$1_$2")
+                    .toLowerCase(Locale.ROOT);
+                appendJsonString(properties, property);
+                properties.append(':');
+                String datatype = value instanceof BigDecimal ? "DECIMAL"
+                    : value instanceof Number ? (value instanceof Double || value instanceof Float ? "REAL" : "INTEGER")
+                    : value instanceof String ? "CHAR" : null;
+                appendMetadataValue(properties, value, datatype);
+            }
+        }
+        out.append("{\"status\":");
+        appendJsonString(out, status);
+        out.append(",\"properties\":{").append(properties).append("}}");
     }
 
     private static String encodeFieldSelectionValues(Field field) {

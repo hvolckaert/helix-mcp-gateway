@@ -13,6 +13,7 @@ from helix_mcp.clients.arapi import (
     ArapiBridgeClientPool,
     ArapiFormNotFoundError,
 )
+from helix_mcp.clients.arapi.definitions import FieldDefinition
 from helix_mcp.config import BackendKind, Environment, TargetKey
 from helix_mcp.services.forms.errors import (
     FormFieldNotAllowedError,
@@ -28,6 +29,7 @@ from helix_mcp.services.forms.models import (
     FormEntry,
     FormEntryQuery,
     FormEntryResult,
+    FormFieldDefinitionQuery,
     FormFieldMenuMetadata,
     FormFieldMenuQuery,
     FormFieldMenuValuesQuery,
@@ -133,6 +135,42 @@ class FormQueryService:
             limit=query.limit,
             total=len(fields),
         )
+
+    async def get_field_definition(
+        self,
+        *,
+        environment: str | Environment,
+        query: FormFieldDefinitionQuery,
+    ) -> FieldDefinition:
+        """Authorize the field before requesting defaults or permissions."""
+        target = self._targets.resolve(environment=environment)
+        _enforce_form_access(target, query.form)
+        await self._limiter.check(
+            target.key, target.policy.rate_limit_per_minute
+        )
+        target = self._targets.resolve(
+            environment=environment, backend=BackendKind.ARAPI
+        )
+        visible_fields = await self._field_metadata(target, query.form)
+        visible = next(
+            (f for f in visible_fields if f.id == query.field_id), None
+        )
+        if visible is None:
+            raise FormFieldNotAllowedError(
+                target.key, "field is not allowed by target policy"
+            )
+        result = await self._clients.get(target).get_field_definition(
+            form=query.form, field_id=query.field_id
+        )
+        if (result.id, result.name, result.datatype) != (
+            visible.id,
+            visible.name,
+            visible.datatype,
+        ):
+            raise FormResponseError(
+                target.key, "field metadata changed during definition lookup"
+            )
+        return result
 
     async def get_field_selection_values(
         self,

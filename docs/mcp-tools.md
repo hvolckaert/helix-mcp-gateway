@@ -15,6 +15,7 @@ permissions reduce it.
 | `health_check` | read | Local connectivity probes | Low | No |
 | `list_forms` | read | Reads visible form names | Medium | No |
 | `list_form_fields` | read | Reads policy-visible metadata | Medium | No |
+| `get_form_field_definition` | read | Reads one policy-visible stored field definition | Medium | No |
 | `get_form_field_selection_values` | read | Reads one policy-visible ENUM definition | Medium | No |
 | `get_form_field_menu_metadata` | read | Reads one policy-visible CHAR menu association | Medium | No |
 | `resolve_form_field_menu_values` | read | Expands bounded values from an allowed field's CHAR menu | High | No |
@@ -68,6 +69,37 @@ returns only form names visible to both the BMC account and gateway policy.
 Requires `environment` and `form`; accepts `name_contains`, `offset`, and
 `limit`. It returns policy-visible field `id`, `name`, and `datatype`. Field ID
 is authoritative when duplicate names exist.
+
+### `get_form_field_definition`
+
+Requires `environment`, `form`, and an exact numeric `field_id`. Returns the
+stored field identity, field type, required/optional/system/display option,
+create mode, set-field and audit option codes, typed default, declared group
+permissions, and datatype-specific limits. Recognized option codes include
+their AR API constant name; unknown codes keep their number and a null name.
+
+Defaults distinguish `present`, `unset`, and `unsupported`. Empty strings,
+whitespace, zero, and false are preserved. Decimal defaults and range endpoints
+use exact decimal strings. Complex values and values exceeding the metadata
+bound are marked unsupported rather than stringified or silently truncated.
+
+Limit properties include `max_length`, `length_units` (0 bytes, 1 characters),
+`pattern`, CLOB storage, QBE and full-text options for CHAR; `low_range` and
+`high_range` for INTEGER; ranges and precision for REAL/DECIMAL; and attachment
+size/type/full-text options. ENUM returns its list style; use
+`get_form_field_selection_values` for labels, and the existing menu tools for
+menu associations and values. CURRENCY ranges and precision are available;
+its allowable/functional currency lists are explicitly unsupported, and the
+limit section reports partial coverage. Other unimplemented limit structures
+report unsupported, including absent limit objects; they are not represented
+as unlimited constraints.
+
+These are declared metadata, not effective user permissions or a guarantee of
+editability. View properties, gateway write policy, server permissions, and
+workflow can impose additional restrictions. The service authorizes the form
+and field before requesting detailed values, rechecks field identity afterward,
+and applies the same sensitive-field exclusions and rate limits as other reads.
+Defaults and permission payloads are omitted from diagnostic representations.
 
 ### `get_form_field_selection_values`
 

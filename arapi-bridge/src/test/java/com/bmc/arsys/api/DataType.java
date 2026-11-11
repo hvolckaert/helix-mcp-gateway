@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class DataType {
+    public int toInt() { return getValue(); }
     private static final Map<Integer, DataType> VALUES = new HashMap<>();
 
     public static final DataType NULL = register(0);

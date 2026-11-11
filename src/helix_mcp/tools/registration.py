@@ -18,6 +18,7 @@ from helix_mcp.tools.models import (
     DescribeDatabaseObjectOutput,
     ExecuteSqlQueryOutput,
     GetEntryOutput,
+    GetFormFieldDefinitionOutput,
     GetFormFieldMenuMetadataOutput,
     GetFormFieldSelectionValuesOutput,
     HealthCheckOutput,
@@ -390,6 +391,33 @@ def register_mcp_tools(
                 name_contains=name_contains,
                 offset=offset,
                 limit=limit,
+            ),
+        )
+
+    @server.tool(
+        name="get_form_field_definition",
+        title="Get Helix form-field definition",
+        description=(
+            "Read the stored definition of one exact policy-visible field ID: "
+            "typed default, limits, requiredness, create mode, and declared group "
+            "permissions. These are metadata, not effective runtime authorization. "
+            "View properties and workflow effects are separate."
+        ),
+        annotations=_HELIX_READ_ANNOTATIONS,
+        structured_output=True,
+    )
+    async def get_form_field_definition(
+        environment: Environment,
+        form: str,
+        field_id: int,
+    ) -> GetFormFieldDefinitionOutput:
+        return await audit.execute(
+            tool="get_form_field_definition",
+            environment=environment,
+            operation=lambda: forms.get_form_field_definition(
+                environment=environment,
+                form=form,
+                field_id=field_id,
             ),
         )
 

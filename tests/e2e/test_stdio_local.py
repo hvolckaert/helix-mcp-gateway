@@ -35,6 +35,7 @@ EXPECTED_TOOLS = {
     "describe_database_object",
     "get_entry",
     "get_form_field_menu_metadata",
+    "get_form_field_definition",
     "get_form_field_selection_values",
     "get_sql_query_plan",
     "get_write_plan",
@@ -341,6 +342,23 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
     assert [
         field["name"] for field in fields.structured_content["fields"]
     ] == list(FIELDS)
+
+    definition = await session.call_tool(
+        "get_form_field_definition",
+        {
+            "environment": "dev",
+            "form": FORM,
+            "field_id": 2,
+        },
+    )
+    assert definition.is_error is False
+    assert definition.structured_content["field"]["name"] == "Name"
+    assert (
+        definition.structured_content["field"]["limits"]["properties"][
+            "max_length"
+        ]["value"]
+        == 255
+    )
 
     selection = await session.call_tool(
         "get_form_field_selection_values",
