@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
+## 0.17.3 - 2026-11-11
+
+- Renew an expired Dashboard session without reloading the page or discarding
+  unsaved controls and replacement credentials. Keep edits and their original
+  configuration revision across managed updates, refresh metadata selectors,
+  and offer an explicit reconnect action when automatic recovery fails.
+  Retry only a request explicitly rejected for an invalid session token,
+  once, before any operation was dispatched.
+- Run isolated Chromium regression tests for session recovery and form
+  selection after a Dashboard update in CI and before publishing releases.
+
 ## 0.17.2 - 2026-11-11
 
 - Recover an unavailable AR API bridge before a surviving client's next

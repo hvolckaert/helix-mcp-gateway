@@ -1999,6 +1999,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 .joinpath("dashboard", "index.html")
                 .read_text(encoding="utf-8")
                 .replace("__DASHBOARD_TOKEN__", self.server.dashboard_token)
+                .replace(
+                    "__DASHBOARD_INSTALLATION_ID__",
+                    str(self.server.service.identity()["installation_id"]),
+                )
                 .replace("__CSP_NONCE__", csp_nonce)
             )
             self._send(
@@ -2006,6 +2010,26 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 template.encode(),
                 "text/html; charset=utf-8",
                 csp_nonce=csp_nonce,
+            )
+            return
+        if path == "/api/session":
+            # A same-origin fetch uses this non-simple header. Cross-origin
+            # callers cannot read the token or pass a CORS preflight.
+            origin = self.headers.get("Origin")
+            if self.headers.get("X-Helix-Dashboard-Reconnect") != "1" or (
+                origin and not self._trusted_origin(origin)
+            ):
+                self._json(
+                    HTTPStatus.FORBIDDEN,
+                    {"error": "invalid dashboard reconnect request"},
+                )
+                return
+            self._json(
+                HTTPStatus.OK,
+                {
+                    **self.server.service.identity(),
+                    "token": self.server.dashboard_token,
+                },
             )
             return
         if path == "/api/state":
@@ -2035,7 +2059,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if not self._authenticated():
             self._json(
                 HTTPStatus.FORBIDDEN,
-                {"error": "invalid dashboard token"},
+                {
+                    "error": "invalid dashboard token",
+                    "error_code": "DASHBOARD_TOKEN_INVALID",
+                },
             )
             return
         origin = self.headers.get("Origin")

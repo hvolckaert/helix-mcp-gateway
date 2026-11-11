@@ -14,6 +14,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  dashboard-browser:
+    name: Dashboard / Chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install browser test dependencies
+        run: python -m pip install -e ".[test,browser-test]"
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Test dashboard recovery and post-update selectors
+        env:
+          HELIX_DASHBOARD_BROWSER_TESTS: "1"
+        run: python -m pytest -q -m dashboard_browser tests/e2e/test_dashboard_browser.py
+
   bridge-test:
     name: Java bridge / JDK 17
     runs-on: ubuntu-latest

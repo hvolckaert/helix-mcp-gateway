@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="helix-dashboard-token" content="__DASHBOARD_TOKEN__">
+  <meta name="helix-dashboard-installation" content="__DASHBOARD_INSTALLATION_ID__">
   <title>IntelliAgentia · Helix MCP Gateway</title>
   <style nonce="__CSP_NONCE__">
     :root {
@@ -332,6 +333,11 @@
       </div>
     </section>
 
+    <section class="panel setup-notice" id="session-notice" role="status" hidden>
+      <h2>Dashboard connection</h2>
+      <p class="panel-copy" id="session-message"></p>
+      <div class="actions"><button class="button secondary small" type="button" id="reconnect-session" hidden>Reconnect without losing changes</button></div>
+    </section>
     <section class="panel setup-notice" id="setup-notice" aria-live="polite" hidden>
       <h2 id="setup-notice-title">Setup needs attention</h2>
       <p class="panel-copy" id="setup-notice-text"></p>
@@ -508,7 +514,10 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script nonce="__CSP_NONCE__">
-    const token = document.querySelector('meta[name="helix-dashboard-token"]').content;
+    let token = document.querySelector('meta[name="helix-dashboard-token"]').content;
+    const installationId = document.querySelector('meta[name="helix-dashboard-installation"]').content;
+    let sessionRefresh = null;
+    class DashboardSessionError extends Error {}
     const form = document.getElementById('configuration-form');
     const reviewButton = document.getElementById('review-button');
     const reviewDialog = document.getElementById('review-dialog');
@@ -537,15 +546,70 @@
     let catalogRequestId = 0;
     let updateReconnectRunning = false;
 
-    async function api(path, options = {}) {
+    function sessionNotice(message, retry = false) {
+      document.getElementById('session-notice').hidden = false;
+      document.getElementById('session-message').textContent = message;
+      document.getElementById('reconnect-session').hidden = !retry;
+    }
+
+    function checkInstallation(identity) {
+      if (identity?.product !== 'helix-mcp-gateway' || identity.installation_id !== installationId) {
+        throw new DashboardSessionError('A different Gateway installation is using this address. Your edits remain on this page. Reopen the correct dashboard.');
+      }
+    }
+
+    async function renewSession(rejectedToken = token) {
+      if (token !== rejectedToken) return;
+      if (sessionRefresh) return sessionRefresh;
+      sessionNotice('The dashboard session expired or restarted. Reconnecting; your unsaved changes are kept on this page.');
+      sessionRefresh = (async () => {
+        try {
+          const response = await fetch('/api/session', {
+            headers: {'X-Helix-Dashboard-Reconnect': '1'},
+            cache: 'no-store', credentials: 'same-origin', redirect: 'error',
+            signal: AbortSignal.timeout(10000)
+          });
+          if (!response.ok) throw new Error('Session unavailable');
+          const session = await response.json();
+          checkInstallation(session);
+          if (typeof session.token !== 'string' || !session.token || session.token.length > 256) {
+            throw new Error('Invalid session');
+          }
+          token = session.token;
+          sessionNotice('Dashboard reconnected. Your unsaved changes are preserved.');
+        } catch (error) {
+          const message = error instanceof DashboardSessionError ? error.message
+            : 'The dashboard could not reconnect. Your unsaved changes are still on this page. Keep it open and try reconnecting again.';
+          sessionNotice(message, true);
+          throw new DashboardSessionError(message);
+        } finally {
+          sessionRefresh = null;
+        }
+      })();
+      return sessionRefresh;
+    }
+
+    async function api(path, options = {}, retryToken = true) {
       const headers = {...(options.headers || {})};
+      const sentToken = token;
       if (options.method === 'POST') {
         headers['Content-Type'] = 'application/json';
-        headers['X-Helix-Dashboard-Token'] = token;
+        headers['X-Helix-Dashboard-Token'] = sentToken;
       }
-      const response = await fetch(path, {...options, headers, cache: 'no-store'});
+      const response = await fetch(path, {...options, headers, cache: 'no-store', redirect: 'error'});
       let payload = {};
       try { payload = await response.json(); } catch (_) { payload = {}; }
+      if (response.status === 403 && payload.error_code === 'DASHBOARD_TOKEN_INVALID') {
+        if (retryToken) {
+          await renewSession(sentToken);
+          // The server rejects this code before dispatching the operation.
+          // Only that explicit rejection is safe to retry, once, unchanged.
+          return api(path, options, false);
+        }
+        const message = 'The dashboard session changed again. Your unsaved changes are still on this page. Reconnect and try again.';
+        sessionNotice(message, true);
+        throw new DashboardSessionError(message);
+      }
       if (!response.ok) throw new Error(payload.error || 'The dashboard request failed.');
       return payload;
     }
@@ -1791,19 +1855,67 @@
         await new Promise(resolve => setTimeout(resolve, 1000));
         try {
           const identity = await api('/api/identity');
+          checkInstallation(identity);
           if (disconnected || identity.process_id !== previousProcessId) {
+            await renewSession();
             const state = await api('/api/state');
-            populate(state);
+            restoreConnection(state);
             showToast(state.update?.operation?.status === 'success' ? 'Server updated successfully.' : 'Dashboard reconnected.');
             updateReconnectRunning = false;
             return;
           }
-        } catch (_) {
+        } catch (error) {
+          if (error instanceof DashboardSessionError) {
+            sessionNotice(error.message, true);
+            updateReconnectRunning = false;
+            return;
+          }
           disconnected = true;
         }
       }
       updateReconnectRunning = false;
-      showToast('The dashboard did not reconnect in time. Reload this page to check the update.', true);
+      sessionNotice('The dashboard did not reconnect in time. Your unsaved changes are still on this page. Keep it open and try reconnecting again.', true);
+    }
+
+    function restoreConnection(state) {
+      checkInstallation(state.dashboard);
+      if (!tabs.some(tab => tab.classList.contains('dirty'))) {
+        populate(state);
+        return;
+      }
+      // Keep the live controls, including invalid/incomplete values, passwords,
+      // selections and focus. Keep the original revision for conflict checks.
+      for (const key of ['dashboard', 'server_version', 'update', 'dashboard_runtime']) {
+        currentState[key] = state[key];
+      }
+      document.getElementById('server-version').textContent = `Server ${state.server_version}`;
+      renderUpdate(state.update);
+      renderDashboardRuntime(state.dashboard_runtime);
+      formCatalogCache.clear();
+      fieldCatalogCache.clear();
+      sqlObjectCatalogCache.clear();
+      document.querySelectorAll('[data-form-picker], [data-field-card], [data-sql-object-picker]').forEach(picker => {
+        picker.dataset.loaded = 'false';
+        picker.dataset.requestId = String(++catalogRequestId);
+      });
+      initializeEnvironmentCatalog(activeTab);
+      if (state.revision !== currentState.revision) {
+        sessionNotice('The saved configuration changed while this page was open. Your edits are preserved, but saving will require resolving that conflict.');
+      }
+    }
+
+    async function reconnectSession() {
+      const button = document.getElementById('reconnect-session');
+      button.disabled = true;
+      try {
+        await renewSession();
+        restoreConnection(await api('/api/state'));
+      } catch (error) {
+        sessionNotice(error instanceof DashboardSessionError ? error.message
+          : 'The dashboard is still unavailable. Keep this page open to retain your unsaved changes and try reconnecting again.', true);
+      } finally {
+        button.disabled = false;
+      }
     }
 
     function numberValue(id) { return document.getElementById(id).valueAsNumber; }
@@ -2093,6 +2205,7 @@
     });
     document.getElementById('check-update-button').addEventListener('click', checkForUpdate);
     document.getElementById('install-update-button').addEventListener('click', installUpdate);
+    document.getElementById('reconnect-session').addEventListener('click', reconnectSession);
 
     api('/api/state').then(state => {
       populate(state);

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "helix-mcp-gateway"
-version = "0.17.2"
+version = "0.17.3"
 description = "Policy-controlled MCP access to BMC Helix through the AR API"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -29,6 +29,9 @@ Issues = "https://github.com/hvolckaert/helix-mcp-gateway/issues"
 Changelog = "https://github.com/hvolckaert/helix-mcp-gateway/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
+browser-test = [
+    "playwright==1.65.0",
+]
 keyring = [
     "keyring>=25.7,<26",
 ]
@@ -72,6 +75,7 @@ addopts = "-ra --strict-config --strict-markers"
 pythonpath = ["src"]
 testpaths = ["tests"]
 markers = [
+    "dashboard_browser: isolated dashboard scenarios in real Chromium",
     "e2e: complete MCP transport scenarios",
     "integration: local integration across real clients and services",
     "java_bridge: real Python-to-Java bridge contract without BMC binaries",
