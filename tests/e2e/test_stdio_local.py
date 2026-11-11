@@ -713,6 +713,8 @@ async def _assert_two_phase_writes(session: ClientSession) -> None:
     assert applied.structured_content["status"] == "applied"
     assert applied.structured_content["entry_id"] == CREATED_ENTRY_ID
     assert applied.structured_content["reused_result"] is False
+    assert applied.structured_content["verification"]["status"] == "matched"
+    assert applied.structured_content["verification"]["read_at"]
 
     replay = await session.call_tool(
         "apply_create_entry",
@@ -724,6 +726,10 @@ async def _assert_two_phase_writes(session: ClientSession) -> None:
     )
     assert replay.is_error is False
     assert replay.structured_content["reused_result"] is True
+    assert (
+        replay.structured_content["verification"]
+        == applied.structured_content["verification"]
+    )
     created = await _get_entry(session, CREATED_ENTRY_ID)
     assert created["Name"] == "local-e2e-created"
     assert created["Enabled"] == 0
@@ -736,6 +742,7 @@ async def _assert_two_phase_writes(session: ClientSession) -> None:
     updated = await _apply_update(session, update)
     assert updated.is_error is False
     assert updated.structured_content["entry_id"] == ENTRY_ID
+    assert updated.structured_content["verification"]["status"] == "matched"
     assert (await _get_entry(session, ENTRY_ID))["Description"] == (
         "updated through local E2E"
     )

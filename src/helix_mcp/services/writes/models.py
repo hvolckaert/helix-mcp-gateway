@@ -6,12 +6,13 @@ import json
 import math
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, StringConstraints, field_validator
 
 from helix_mcp.config import Environment
 from helix_mcp.config.models import FrozenModel
+from helix_mcp.provenance import ReadProvenance
 from helix_mcp.services.forms.models import FieldName, FormName
 
 JsonScalar = str | int | float | bool
@@ -104,7 +105,7 @@ class WritePlanResult(FrozenModel):
     environment: Environment
     form: FormName
     entry_id: EntryId | None = None
-    current_values: dict[str, JsonScalar] | None = Field(
+    current_values: dict[str, JsonScalar | None] | None = Field(
         default=None,
         repr=False,
     )
@@ -123,6 +124,31 @@ class WritePlanResult(FrozenModel):
         )
 
 
+class WriteVerification(FrozenModel):
+    """Bounded comparison metadata; never retains original or observed values."""
+
+    status: Literal["matched", "different", "unavailable"]
+    read_at: datetime | None = None
+    provenance: ReadProvenance | None = Field(default=None, repr=False)
+    matched_fields: tuple[FieldName, ...] = Field(
+        default=(), max_length=32, repr=False
+    )
+    differing_fields: tuple[FieldName, ...] = Field(
+        default=(), max_length=32, repr=False
+    )
+    unverified_fields: tuple[FieldName, ...] = Field(
+        default=(), max_length=32, repr=False
+    )
+    reason: (
+        Literal[
+            "read_failed",
+            "unsupported_or_unavailable_values",
+            "entry_id_unavailable",
+        ]
+        | None
+    ) = None
+
+
 class ApplyWriteResult(FrozenModel):
     """Terminal result without request payloads or endpoint details."""
 
@@ -133,6 +159,7 @@ class ApplyWriteResult(FrozenModel):
     status: WritePlanStatus = WritePlanStatus.APPLIED
     entry_id: EntryId | None = None
     reused_result: bool = False
+    verification: WriteVerification | None = Field(default=None, repr=False)
 
 
 def _validate_field(value: str) -> None:

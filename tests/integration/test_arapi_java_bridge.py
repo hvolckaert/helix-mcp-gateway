@@ -223,12 +223,34 @@ def test_real_client_and_managed_java_bridge_contract(
                 "Count": 8,
                 "Enabled": 0,
             }
+            verified = await client.verify_entry(
+                form=FORM,
+                entry_id=CREATED_ENTRY_ID,
+                values={
+                    "Name": "created-system",
+                    "Count": 8,
+                    "Enabled": False,
+                },
+            )
+            assert set(verified.matched_fields) == {"Name", "Count", "Enabled"}
+            assert (
+                not verified.differing_fields
+                and not verified.unverified_fields
+            )
+            different = await client.verify_entry(
+                form=FORM,
+                entry_id=CREATED_ENTRY_ID,
+                values={"Name": "different requested name", "Enabled": False},
+            )
+            assert different.differing_fields == ("Name",)
+            assert different.matched_fields == ("Enabled",)
 
             await client.update_entry(
                 form=FORM,
                 entry_id=ENTRY_ID,
                 values={"Description": "updated through Python"},
                 precondition=prepared.precondition,
+                values_fingerprint=prepared.values_fingerprint,
             )
             updated = await client.get_entry(
                 form=FORM,
@@ -245,6 +267,7 @@ def test_real_client_and_managed_java_bridge_contract(
                     entry_id=ENTRY_ID,
                     values={"Description": "stale update"},
                     precondition=prepared.precondition,
+                    values_fingerprint=prepared.values_fingerprint,
                 )
             assert conflict.value.status_code == 409
 

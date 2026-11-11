@@ -328,17 +328,25 @@ create allowlists and stores normalized proposed values without calling Helix.
 Requires `environment`, `plan_id`, and `plan_digest`. It creates exactly the
 approved entry. A successful AR API create may return `entry_id: null` for a
 form that does not provide an identifier.
+The result includes post-write `verification`; a missing ID is applied but
+cannot be verified. See [verification](form-writes.md#verification).
 
 ### `plan_update_entry`
 
 Requires `environment`, `form`, `entry_id`, `values`, and `reason`. It reads
-the current values and `Modified Date`, then stores a digest-bound optimistic
-precondition without changing the entry.
+the current values and `Modified Date`, then stores digest-bound timestamp and
+exact requested-field value preconditions without changing the entry.
 
 ### `apply_update_entry`
 
 Requires `environment`, `plan_id`, and `plan_digest`. It updates the entry only
-when the current `Modified Date` still matches the reviewed plan.
+when both `Modified Date` and the requested original field snapshot still match
+the reviewed plan. These optimistic checks do not eliminate the interval in
+which an external writer can change the entry before the server write.
+After a confirmed write, `verification` reports matching, differing and
+unverified fields with the read time, without returning business values.
+`status: applied` is distinct from `verification.status`; an unavailable
+verification does not authorize retrying the write.
 
 ### `get_write_plan`
 
@@ -351,8 +359,10 @@ Requires `environment` and `plan_id`. It invalidates a pending plan without
 writing to Helix.
 
 Apply tools must never be called in the same turn as plan creation. Any
-transport or protocol uncertainty during apply permanently changes the plan to
+transport or protocol uncertainty in the write request permanently changes the plan to
 `outcome_unknown`; writes are never retried automatically.
+Verification read failures after confirmed writes instead return
+`verification.status: unavailable` with `status: applied`.
 
 ## Audit and errors
 

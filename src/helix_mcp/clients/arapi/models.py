@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal
 
 ArapiScalar = str | int | float | bool
@@ -136,6 +137,7 @@ class ArapiPreparedUpdate:
     entry_id: str
     entry: ArapiEntry
     precondition: str
+    values_fingerprint: str
 
     def __repr__(self) -> str:
         return (
@@ -156,3 +158,11 @@ class ArapiSqlResult:
             f"<ArapiSqlResult rows={len(self.rows)} "
             f"truncated={self.truncated} values=redacted>"
         )
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ArapiWriteVerification:
+    read_at: datetime
+    matched_fields: tuple[str, ...]
+    differing_fields: tuple[str, ...]
+    unverified_fields: tuple[str, ...]

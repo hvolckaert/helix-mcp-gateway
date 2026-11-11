@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs
 
@@ -70,6 +72,16 @@ class ArapiBridgeStub:
         self.create_calls = 0
         self.update_calls = 0
         self.modified_date = 1_785_434_400
+        self.rewrite_values: dict[str, Any] = {}
+        self.verification_fails = False
+
+    def fingerprint(self, entry_id, fields):
+        return hashlib.sha256(
+            json.dumps(
+                {name: self.records[entry_id].get(name) for name in fields},
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.calls.append(request.url.path)
@@ -96,13 +108,18 @@ class ArapiBridgeStub:
         if request.url.path == "/v1/entries/create":
             self.create_calls += 1
             self.records[CREATED_ENTRY_ID] = _decode_write_values(form)
+            self.records[CREATED_ENTRY_ID].update(self.rewrite_values)
             return httpx.Response(
                 200,
                 json={"entry_id": CREATED_ENTRY_ID},
             )
 
-        if request.url.path == "/v1/entries/update":
-            if form["precondition"] != [str(self.modified_date)]:
+        if request.url.path == "/v1/entries/update-checked":
+            entry_id = form["entry_id"][0]
+            values = _decode_write_values(form)
+            if form["precondition"] != [str(self.modified_date)] or form[
+                "values_fingerprint"
+            ] != [self.fingerprint(entry_id, values)]:
                 return httpx.Response(
                     409,
                     json={"error": "entry changed after it was read"},
@@ -110,8 +127,32 @@ class ArapiBridgeStub:
             entry_id = form["entry_id"][0]
             self.update_calls += 1
             self.records[entry_id].update(_decode_write_values(form))
+            self.records[entry_id].update(self.rewrite_values)
             self.modified_date += 1
             return httpx.Response(200, json={"entry_id": entry_id})
+
+        if request.url.path == "/v1/entries/verify":
+            if self.verification_fails:
+                raise httpx.ReadTimeout("private read failure")
+            entry_id = form["entry_id"][0]
+            values = _decode_write_values(form)
+            matched = [
+                k
+                for k, v in values.items()
+                if self.records[entry_id].get(k) == v
+            ]
+            return httpx.Response(
+                200,
+                json={
+                    "entry_id": entry_id,
+                    "read_at": datetime.now(UTC).isoformat(),
+                    "matched_fields": matched,
+                    "differing_fields": [
+                        k for k in values if k not in matched
+                    ],
+                    "unverified_fields": [],
+                },
+            )
 
         requested = form["fields"][0].split(",")
         if request.url.path == "/v1/entries/prepare-update":
@@ -127,6 +168,9 @@ class ArapiBridgeStub:
                         }
                     },
                     "precondition": str(self.modified_date),
+                    "values_fingerprint": self.fingerprint(
+                        entry_id, requested
+                    ),
                 },
             )
 
@@ -448,6 +492,131 @@ def test_stale_update_plan_is_rejected_without_overwriting_winner() -> None:
                 == "winner"
             )
             assert stack.arapi_stub.update_calls == 1
+        finally:
+            await stack.aclose()
+
+    run(scenario())
+
+
+@pytest.mark.parametrize("changed_field", [FIELD_DESCRIPTION, FIELD_DATASET])
+def test_value_precondition_detects_same_timestamp_change(
+    changed_field,
+) -> None:
+    async def scenario():
+        stack = IntegrationStack()
+        try:
+            plan = await stack.writes.plan_update(
+                environment="dev",
+                form=FORM,
+                request=UpdateValuesRequest(
+                    entry_id=ENTRY_ID,
+                    values={FIELD_DESCRIPTION: "approved value"},
+                    reason="check same-second concurrency",
+                ),
+            )
+            stamp = stack.arapi_stub.modified_date
+            stack.arapi_stub.records[ENTRY_ID][changed_field] = (
+                "concurrent value"
+            )
+            request = ApplyWriteRequest(
+                plan_id=plan.plan_id, plan_digest=plan.plan_digest
+            )
+            if changed_field == FIELD_DESCRIPTION:
+                with pytest.raises(FormWriteConflictError):
+                    await stack.writes.apply_update(
+                        environment="dev", request=request
+                    )
+                assert stack.arapi_stub.update_calls == 0
+                assert stack.arapi_stub.modified_date == stamp
+                assert (
+                    stack.arapi_stub.records[ENTRY_ID][changed_field]
+                    == "concurrent value"
+                )
+                assert "/v1/entries/verify" not in stack.arapi_stub.calls
+            else:
+                result = await stack.writes.apply_update(
+                    environment="dev", request=request
+                )
+                assert result.verification.status == "matched"
+                assert (
+                    stack.arapi_stub.records[ENTRY_ID][changed_field]
+                    == "concurrent value"
+                )
+        finally:
+            await stack.aclose()
+
+    run(scenario())
+
+
+@pytest.mark.parametrize("operation", ["create", "update"])
+@pytest.mark.parametrize("outcome", ["matched", "different", "unavailable"])
+def test_post_write_verification_does_not_replay_a_successful_write(
+    operation, outcome
+) -> None:
+    async def scenario():
+        stack = IntegrationStack()
+        try:
+            values = {FIELD_DESCRIPTION: "approved value"}
+            if operation == "create":
+                plan = await stack.writes.plan_create_for_form(
+                    environment="dev",
+                    form=FORM,
+                    request=WriteValuesRequest(
+                        values=values, reason="verify approved create outcome"
+                    ),
+                )
+                apply = stack.writes.apply_create
+            else:
+                plan = await stack.writes.plan_update(
+                    environment="dev",
+                    form=FORM,
+                    request=UpdateValuesRequest(
+                        entry_id=ENTRY_ID,
+                        values=values,
+                        reason="verify approved update outcome",
+                    ),
+                )
+                apply = stack.writes.apply_update
+            if outcome == "different":
+                stack.arapi_stub.rewrite_values = {
+                    FIELD_DESCRIPTION: "workflow result never logged"
+                }
+            stack.arapi_stub.verification_fails = outcome == "unavailable"
+            request = ApplyWriteRequest(
+                plan_id=plan.plan_id, plan_digest=plan.plan_digest
+            )
+            result = await apply(environment="dev", request=request)
+            assert result.status is WritePlanStatus.APPLIED
+            assert result.verification.status == outcome
+            if outcome != "unavailable":
+                provenance = result.verification.provenance
+                assert provenance.environment.value == "dev"
+                assert provenance.source.form == FORM
+                assert provenance.source.entry_id == result.entry_id
+                assert provenance.data_read_at == result.verification.read_at
+                assert provenance.policy_versions["dev"].startswith("sha256:")
+            else:
+                assert result.verification.provenance is None
+            if outcome == "different":
+                assert result.verification.differing_fields == (
+                    FIELD_DESCRIPTION,
+                )
+            if outcome == "unavailable":
+                assert result.verification.reason == "read_failed"
+            assert "approved value" not in result.model_dump_json()
+            assert (
+                "workflow result never logged" not in result.model_dump_json()
+            )
+            assert "private read failure" not in repr(result)
+            calls = list(stack.arapi_stub.calls)
+            repeated = await apply(environment="dev", request=request)
+            assert repeated.reused_result
+            assert repeated.verification == result.verification
+            assert stack.arapi_stub.calls == calls
+            assert (
+                stack.arapi_stub.create_calls + stack.arapi_stub.update_calls
+                == 1
+            )
         finally:
             await stack.aclose()
 

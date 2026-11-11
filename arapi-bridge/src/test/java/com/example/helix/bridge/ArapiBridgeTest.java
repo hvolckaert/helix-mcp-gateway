@@ -1,4 +1,5 @@
 package com.example.helix.bridge;
+import com.example.helix.bridge.ArapiBridge.WriteValueSnapshot;
 
 import com.bmc.arsys.api.ARException;
 import com.bmc.arsys.api.ARServerUser;
@@ -66,6 +67,8 @@ public final class ArapiBridgeTest {
         run("typed write values", ArapiBridgeTest::testTypedWriteValues);
         run("modified date handling", ArapiBridgeTest::testModifiedDate);
         run("conditional update", ArapiBridgeTest::testConditionalUpdate);
+        run("exact write snapshots", ArapiBridgeTest::testWriteSnapshots);
+        run("post-write comparison", ArapiBridgeTest::testWriteVerification);
         run("session cleanup", ArapiBridgeTest::testSessionCleanup);
         run("HTTP protocol", ArapiBridgeTest::testHttpProtocol);
         run("SQL validation and encoding", ArapiBridgeTest::testSql);
@@ -482,6 +485,10 @@ public final class ArapiBridgeTest {
     private static void testConditionalUpdate() throws Exception {
         Entry values = new Entry();
         values.put(100, new Value("new value"));
+        List<Field> fields = List.of(new Field(100, "Name", DataType.CHAR.getValue()));
+        Entry original = entryWithModifiedDate(100);
+        original.put(100, new Value("original value"));
+        String fingerprint = WriteValueSnapshot.fingerprint(original, fields, new int[] {100});
 
         ARServerUser stale = new ARServerUser();
         stale.setEntryForTest(entryWithModifiedDate(100));
@@ -493,18 +500,18 @@ public final class ArapiBridgeTest {
                 String.class,
                 String.class,
                 Entry.class,
-                long.class
+                long.class, String.class, List.class
             ),
             stale,
             "Form",
             "1",
             values,
-            99L
+            99L, fingerprint, fields
         );
         assertEquals(false, stale.isSetEntryCalled());
 
         ARServerUser current = new ARServerUser();
-        current.setEntryForTest(entryWithModifiedDate(100));
+        current.setEntryForTest(original);
         ServerInfoMap serverInfo = new ServerInfoMap();
         serverInfo.put(
             Constants.AR_SERVER_INFO_SERVER_TIME,
@@ -518,16 +525,75 @@ public final class ArapiBridgeTest {
                 String.class,
                 String.class,
                 Entry.class,
-                long.class
+                long.class, String.class, List.class
             ),
             current,
             "Form",
             "1",
             values,
-            100L
+            100L, fingerprint, fields
         );
         assertEquals(true, current.isSetEntryCalled());
         assertEquals(101L, current.getLastGetTime().getValue());
+
+        // A concurrent writer changes a planned field in the same timestamp tick.
+        ARServerUser sameSecond = new ARServerUser();
+        Entry changed = entryWithModifiedDate(100);
+        changed.put(100, new Value("concurrent value"));
+        sameSecond.setEntryForTest(changed);
+        assertFailure("Conflict", "conditionallyUpdate",
+            types(ARServerUser.class, String.class, String.class, Entry.class,
+                long.class, String.class, List.class),
+            sameSecond, "Form", "1", values, 100L, fingerprint, fields);
+        assertEquals(false, sameSecond.isSetEntryCalled());
+    }
+
+    private static void testWriteSnapshots() {
+        List<Field> fields = List.of(new Field(100, "Amount", DataType.DECIMAL.getValue()));
+        Entry first = new Entry();
+        first.put(100, new Value(new BigDecimal("123456789.123456789")));
+        String original = WriteValueSnapshot.fingerprint(first, fields, new int[] {100});
+        first.put(101, new Value("unrelated field"));
+        assertEquals(original, WriteValueSnapshot.fingerprint(first, fields, new int[] {100}));
+        first.put(100, new Value(new BigDecimal("123456789.123456788")));
+        assertEquals(false, original.equals(WriteValueSnapshot.fingerprint(first, fields, new int[] {100})));
+        assertEquals(true, WriteValueSnapshot.equivalent(new Value(1000), new Value(new BigDecimal("1000.00"))));
+        assertEquals(true, WriteValueSnapshot.equivalent(new Value(new Timestamp(42)), new Value(42L)));
+        assertEquals(true, WriteValueSnapshot.equivalent(new Value(null), null));
+        assertEquals(false, WriteValueSnapshot.equivalent(new Value(null), new Value("")));
+        assertEquals(false, WriteValueSnapshot.equivalent(new Value(false), new Value(0)));
+        assertEquals(false, WriteValueSnapshot.equivalent(new Value("1"), new Value(1)));
+        assertEquals(false, WriteValueSnapshot.equivalent(new Value(" "), new Value("")));
+        for (Object unsupported : List.of(new Object(), Double.NaN, "x".repeat(8193))) {
+            try {
+                WriteValueSnapshot.equivalent(new Value(unsupported), new Value(unsupported));
+                throw new AssertionError("unsupported value was treated as equal");
+            } catch (IllegalArgumentException expected) { }
+        }
+    }
+
+    private static void testWriteVerification() throws Exception {
+        ARServerUser user = new ARServerUser();
+        user.setFieldsForTest(List.of(new Field(100, "Name", DataType.CHAR.getValue())));
+        Entry entry = new Entry();
+        entry.put(100, new Value("workflow value"));
+        user.setEntryForTest(entry);
+        Object handler = newHandler("VerifyEntryHandler");
+        Method method = handler.getClass().getDeclaredMethod("execute", ARServerUser.class, Map.class);
+        method.setAccessible(true);
+        Map<String, String> input = Map.of("form", "Form", "entry_id", "1", "value_count", "1",
+            "field_0", "Name", "value_type_0", "string", "value_0", "approved value");
+        String result = (String) method.invoke(handler, user, input);
+        assertEquals(true, result.contains("\"differing_fields\":[\"Name\"]"));
+        assertEquals(false, result.contains("workflow value"));
+        assertEquals(false, result.contains("approved value"));
+        entry.put(100, new Value("approved value"));
+        result = (String) method.invoke(handler, user, input);
+        assertEquals(true, result.contains("\"matched_fields\":[\"Name\"]"));
+        entry.clear();
+        result = (String) method.invoke(handler, user, input);
+        assertEquals(true, result.contains("\"unverified_fields\":[\"Name\"]"));
+        assertEquals(false, user.isSetEntryCalled());
     }
 
     private static void testSessionCleanup() throws Exception {

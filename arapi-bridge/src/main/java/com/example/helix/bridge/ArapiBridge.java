@@ -40,10 +40,13 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -134,7 +137,8 @@ public final class ArapiBridge {
             new PrepareUpdateHandler()
         );
         server.createContext("/v1/entries/create", new CreateEntryHandler());
-        server.createContext("/v1/entries/update", new UpdateEntryHandler());
+        server.createContext("/v1/entries/update-checked", new UpdateEntryHandler());
+        server.createContext("/v1/entries/verify", new VerifyEntryHandler());
         server.createContext("/v1/sql/query", new SqlQueryHandler());
         server.setExecutor(Executors.newFixedThreadPool(threads));
         server.start();
@@ -687,7 +691,8 @@ public final class ArapiBridge {
                 entryId,
                 entry,
                 selected,
-                precondition
+                precondition,
+                WriteValueSnapshot.fingerprint(entry, fields, selected.ids)
             );
         }
     }
@@ -712,7 +717,7 @@ public final class ArapiBridge {
 
     private static final class UpdateEntryHandler extends ArapiHandler {
         UpdateEntryHandler() {
-            super("/v1/entries/update");
+            super("/v1/entries/update-checked");
         }
 
         @Override
@@ -734,15 +739,70 @@ public final class ArapiBridge {
             );
             List<Field> fields = loadFields(user, form);
             Entry values = parseWriteValues(input, fields);
+            String fingerprint = requiredText(input, "values_fingerprint", 64);
+            if (!fingerprint.matches("[0-9a-f]{64}")) throw new BadRequest();
             conditionallyUpdate(
                 user,
                 form,
                 entryId,
                 values,
-                precondition
+                precondition,
+                fingerprint,
+                fields
             );
             return encodeWriteResult(entryId);
         }
+    }
+
+    private static final class VerifyEntryHandler extends ArapiHandler {
+        VerifyEntryHandler() { super("/v1/entries/verify"); }
+
+        @Override
+        protected String execute(ARServerUser user, Map<String, String> input)
+            throws ARException, BadRequest {
+            String form = requiredText(input, "form", MAX_NAME_LENGTH);
+            String entryId = requiredText(input, "entry_id", MAX_NAME_LENGTH);
+            List<Field> fields = loadFields(user, form);
+            Entry expected = parseWriteValues(input, fields);
+            int[] ids = expected.keySet().stream().mapToInt(Integer::intValue).sorted().toArray();
+            Entry observed = user.getEntry(form, entryId, ids);
+            List<String> matched = new ArrayList<>();
+            List<String> differing = new ArrayList<>();
+            List<String> unverified = new ArrayList<>();
+            for (int id : ids) {
+                Field field = fields.stream().filter(f -> f.getFieldID() == id)
+                    .findFirst().orElseThrow(IllegalStateException::new);
+                String name = field.getName().strip();
+                // Diary writes append an item rather than replacing the complete value.
+                if (!observed.containsKey(id) || DataType.DIARY.equals(DataType.toDataType(field.getDataType()))) {
+                    unverified.add(name);
+                    continue;
+                }
+                try {
+                    (WriteValueSnapshot.equivalent(expected.get(id), observed.get(id))
+                        ? matched : differing).add(name);
+                } catch (IllegalArgumentException error) {
+                    unverified.add(name);
+                }
+            }
+            StringBuilder out = new StringBuilder("{\"entry_id\":");
+            appendJsonString(out, entryId);
+            out.append(",\"read_at\":");
+            appendJsonString(out, java.time.Instant.now().toString());
+            appendVerificationFields(out, "matched_fields", matched);
+            appendVerificationFields(out, "differing_fields", differing);
+            appendVerificationFields(out, "unverified_fields", unverified);
+            return out.append('}').toString();
+        }
+    }
+
+    private static void appendVerificationFields(StringBuilder out, String key, List<String> fields) {
+        out.append(",\"").append(key).append("\":[");
+        for (int i = 0; i < fields.size(); i++) {
+            if (i > 0) out.append(',');
+            appendJsonString(out, fields.get(i));
+        }
+        out.append(']');
     }
 
     private static <T> T withUser(
@@ -847,16 +907,22 @@ public final class ArapiBridge {
         String form,
         String entryId,
         Entry values,
-        long precondition
+        long precondition,
+        String fingerprint,
+        List<Field> fields
     ) throws ARException {
         synchronized (updateLock(form, entryId)) {
+            int[] ids = values.keySet().stream().mapToInt(Integer::intValue).toArray();
             Entry current = user.getEntry(
                 form,
                 entryId,
-                new int[] {Constants.AR_CORE_MODIFIED_DATE}
+                includeModifiedDate(ids)
             );
             long modifiedDate = readModifiedDate(current);
             if (modifiedDate != precondition) {
+                throw new Conflict();
+            }
+            if (!fingerprint.equals(WriteValueSnapshot.fingerprint(current, fields, ids))) {
                 throw new Conflict();
             }
             long getTime = readServerTime(user);
@@ -2366,19 +2432,86 @@ public final class ArapiBridge {
         return output.toString();
     }
 
+    /** Exact, bounded snapshots of the fields authorized by a single write plan. */
+    static final class WriteValueSnapshot {
+        private WriteValueSnapshot() { }
+
+        static String fingerprint(Entry entry, List<Field> fields, int[] ids) {
+            StringBuilder canonical = new StringBuilder("helix-write-values-v1;");
+            for (int id : Arrays.stream(ids).sorted().toArray()) {
+                Field field = fields.stream().filter(f -> f.getFieldID() == id)
+                    .findFirst().orElseThrow(IllegalArgumentException::new);
+                String scalar = scalar(entry.get(id));
+                canonical.append(id).append(':').append(field.getDataType()).append(':')
+                    .append(entry.containsKey(id) ? '1' : '0').append(':')
+                    .append(scalar.length()).append(':').append(scalar).append(';');
+                if (canonical.length() > 131072) throw new IllegalArgumentException("write snapshot too large");
+            }
+            try {
+                return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.toString().getBytes(StandardCharsets.UTF_8)));
+            } catch (NoSuchAlgorithmException error) {
+                throw new IllegalStateException("SHA-256 unavailable", error);
+            }
+        }
+
+        static boolean equivalent(Value expected, Value observed) {
+            return scalar(expected).equals(scalar(observed));
+        }
+
+        static Object reviewValue(Value value) {
+            scalar(value); // Validate before exposing a value for approval.
+            Object raw = value == null ? null : value.getValue();
+            if (raw instanceof BigDecimal decimal) return decimal.toString();
+            if (raw instanceof Timestamp time) return time.getValue();
+            if (raw instanceof DateInfo date) return date.getValue();
+            if (raw instanceof Time time) return time.getValue();
+            return raw;
+        }
+
+        private static String scalar(Value value) {
+            Object raw = value == null ? null : value.getValue();
+            if (raw == null) return "null";
+            if (raw instanceof Timestamp time) raw = time.getValue();
+            else if (raw instanceof DateInfo date) raw = date.getValue();
+            else if (raw instanceof Time time) raw = time.getValue();
+            if (raw instanceof String text && text.length() <= 8192) return "string:" + text;
+            if (raw instanceof Boolean flag) return "boolean:" + flag;
+            if (raw instanceof BigDecimal number) return "number:" + number.stripTrailingZeros().toString();
+            if (raw instanceof BigInteger || raw instanceof Byte || raw instanceof Short
+                || raw instanceof Integer || raw instanceof Long)
+                return "number:" + new BigDecimal(raw.toString()).stripTrailingZeros().toString();
+            if (raw instanceof Double number && Double.isFinite(number))
+                return "number:" + BigDecimal.valueOf(number).stripTrailingZeros().toString();
+            if (raw instanceof Float number && Float.isFinite(number))
+                return "number:" + new BigDecimal(number.toString()).stripTrailingZeros().toString();
+            throw new IllegalArgumentException("write value cannot be compared safely");
+        }
+    }
+
     private static String encodePreparedEntry(
         String entryId,
         Entry entry,
         FieldSelection selected,
-        long precondition
+        long precondition,
+        String fingerprint
     ) {
         StringBuilder output = new StringBuilder();
         output.append("{\"entry_id\":");
         appendJsonString(output, entryId);
         output.append(",\"entry\":");
-        appendEntry(output, entry, selected);
+        output.append("{\"values\":{");
+        for (int i = 0; i < selected.names.size(); i++) {
+            if (i > 0) output.append(',');
+            appendJsonString(output, selected.names.get(i));
+            output.append(':');
+            appendJsonValue(output, WriteValueSnapshot.reviewValue(entry.get(selected.ids[i])));
+        }
+        output.append("}}");
         output.append(",\"precondition\":");
         appendJsonString(output, Long.toString(precondition));
+        output.append(",\"values_fingerprint\":");
+        appendJsonString(output, fingerprint);
         output.append('}');
         return output.toString();
     }

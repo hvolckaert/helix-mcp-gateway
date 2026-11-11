@@ -3,6 +3,22 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
+## 0.18.0 - 2026-11-11
+
+- Bind a bounded, exact fingerprint of the requested original field values into
+  update plans and recheck it with Modified Date inside the bridge's update lock.
+  Detect planned-field changes even when the timestamp is unchanged; reject
+  legacy update plans without this precondition and never fall back to an older
+  bridge's unchecked update route.
+- Read back the written fields after a successful create/update and return
+  `verification` metadata distinguishing matches, differences and unavailable
+  verification. Preserve the applied result and its original verification on
+  replay, without sending another write or retaining observed business values.
+- Preserve explicit nulls and exact decimal strings in original values shown
+  for update approval. Document unsupported comparisons, migration and the
+  remaining concurrency window; add isolated Java, client, persistence and MCP
+  regression coverage.
+
 ## 0.17.3 - 2026-11-11
 
 - Renew an expired Dashboard session without reloading the page or discarding
