@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from helix_mcp import server
-from helix_mcp.config import RuntimeSettings, Transport
+from helix_mcp.config import HttpServerConfig, RuntimeSettings, Transport
 
 
 class StartupFailure(RuntimeError):
@@ -95,3 +95,42 @@ def test_run_server_configures_the_optional_audit_sink(
         )
     ]
     assert transports == ["stdio"]
+
+
+def test_run_server_preserves_http_binding_and_request_limits(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    application = SimpleNamespace(
+        settings=SimpleNamespace(
+            log_level="INFO",
+            transport=Transport.STREAMABLE_HTTP,
+            http=HttpServerConfig(host="127.0.0.1", port=8123),
+        ),
+        runtime=SimpleNamespace(
+            settings=RuntimeSettings(config_path=tmp_path / "helix.yaml"),
+        ),
+        closed=True,
+    )
+    calls = []
+    monkeypatch.setattr(server, "load_application", lambda path: application)
+    monkeypatch.setattr(server, "configure_logging", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        server,
+        "create_mcp_server",
+        lambda app: SimpleNamespace(run=lambda **kw: calls.append(kw)),
+    )
+
+    server.run_server(tmp_path / ".env")
+
+    assert calls == [
+        {
+            "transport": "streamable-http",
+            "host": "127.0.0.1",
+            "port": 8123,
+            "streamable_http_path": "/mcp",
+            "json_response": True,
+            "stateless_http": True,
+            "max_request_body_size": 1_048_576,
+        }
+    ]

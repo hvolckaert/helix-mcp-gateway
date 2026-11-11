@@ -236,8 +236,8 @@ async def _write_plan_restart_flow(
                         "reason": "verify persistence across MCP restart",
                     },
                 )
-                assert plan.isError is False
-                persisted = dict(plan.structuredContent)
+                assert plan.is_error is False
+                persisted = dict(plan.structured_content)
         except BaseExceptionGroup as exc:
             stderr.seek(0)
             raise AssertionError(stderr.read()) from exc
@@ -256,9 +256,11 @@ async def _write_plan_restart_flow(
                         "plan_id": persisted["plan_id"],
                     },
                 )
-                assert recovered.isError is False
-                assert recovered.structuredContent["status"] == "pending"
-                assert recovered.structuredContent["proposed_values"] == values
+                assert recovered.is_error is False
+                assert recovered.structured_content["status"] == "pending"
+                assert (
+                    recovered.structured_content["proposed_values"] == values
+                )
                 applied = await session.call_tool(
                     "apply_create_entry",
                     {
@@ -267,9 +269,9 @@ async def _write_plan_restart_flow(
                         "plan_digest": persisted["plan_digest"],
                     },
                 )
-                assert applied.isError is False
+                assert applied.is_error is False
                 assert (
-                    applied.structuredContent["entry_id"] == CREATED_ENTRY_ID
+                    applied.structured_content["entry_id"] == CREATED_ENTRY_ID
                 )
         except BaseExceptionGroup as exc:
             stderr.seek(0)
@@ -288,10 +290,10 @@ async def _assert_targets_and_health(session: ClientSession) -> None:
         "list_targets",
         {"include_disabled": False},
     )
-    assert targets.isError is False
+    assert targets.is_error is False
     by_environment = {
         item["environment"]: item
-        for item in targets.structuredContent["targets"]
+        for item in targets.structured_content["targets"]
     }
     assert set(by_environment) == {"dev", "qa", "prod"}
     assert by_environment["dev"]["backends"] == ["arapi"]
@@ -305,10 +307,10 @@ async def _assert_targets_and_health(session: ClientSession) -> None:
         "health_check",
         {"environment": "dev", "force_refresh": True},
     )
-    assert health.isError is False
+    assert health.is_error is False
     checks = {
         check["component"]: check
-        for check in health.structuredContent["checks"]
+        for check in health.structured_content["checks"]
     }
     assert checks["arapi_bridge"]["status"] == "healthy"
 
@@ -322,9 +324,9 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
             "limit": 10,
         },
     )
-    assert forms.isError is False
-    assert forms.structuredContent["forms"] == [{"name": FORM}]
-    assert forms.structuredContent["total"] == 1
+    assert forms.is_error is False
+    assert forms.structured_content["forms"] == [{"name": FORM}]
+    assert forms.structured_content["total"] == 1
 
     fields = await session.call_tool(
         "list_form_fields",
@@ -335,9 +337,9 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
             "limit": 10,
         },
     )
-    assert fields.isError is False
+    assert fields.is_error is False
     assert [
-        field["name"] for field in fields.structuredContent["fields"]
+        field["name"] for field in fields.structured_content["fields"]
     ] == list(FIELDS)
 
     selection = await session.call_tool(
@@ -348,8 +350,8 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
             "field_id": 4,
         },
     )
-    assert selection.isError is False
-    assert selection.structuredContent["field"] == {
+    assert selection.is_error is False
+    assert selection.structured_content["field"] == {
         "id": 4,
         "name": "Enabled",
         "datatype": "ENUM",
@@ -368,8 +370,8 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
             "field_id": 2,
         },
     )
-    assert menu.isError is False
-    assert menu.structuredContent["field"] == {
+    assert menu.is_error is False
+    assert menu.structured_content["field"] == {
         "id": 2,
         "name": "Name",
         "datatype": "CHAR",
@@ -387,8 +389,8 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
             "limit": 10,
         },
     )
-    assert menu_values.isError is False
-    assert menu_values.structuredContent["field"] == {
+    assert menu_values.is_error is False
+    assert menu_values.structured_content["field"] == {
         "id": 2,
         "name": "Name",
         "datatype": "CHAR",
@@ -424,9 +426,9 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
             "include_total": True,
         },
     )
-    assert query.isError is False
-    assert query.structuredContent["total"] == 1
-    assert query.structuredContent["entries"][0]["values"] == {
+    assert query.is_error is False
+    assert query.structured_content["total"] == 1
+    assert query.structured_content["entries"][0]["values"] == {
         "Request ID": ENTRY_ID,
         "Name": "sample-system",
         "Count": 7,
@@ -481,18 +483,18 @@ async def _assert_two_phase_writes(session: ClientSession) -> None:
             "reason": "reproducible local E2E create",
         },
     )
-    assert create.isError is False
-    assert create.structuredContent["status"] == "pending"
-    plan_id = create.structuredContent["plan_id"]
-    plan_digest = create.structuredContent["plan_digest"]
+    assert create.is_error is False
+    assert create.structured_content["status"] == "pending"
+    plan_id = create.structured_content["plan_id"]
+    plan_digest = create.structured_content["plan_digest"]
 
     stored = await session.call_tool(
         "get_write_plan",
         {"environment": "dev", "plan_id": plan_id},
     )
-    assert stored.isError is False
-    assert stored.structuredContent["status"] == "pending"
-    assert stored.structuredContent["plan_digest"] == plan_digest
+    assert stored.is_error is False
+    assert stored.structured_content["status"] == "pending"
+    assert stored.structured_content["plan_digest"] == plan_digest
     applied = await session.call_tool(
         "apply_create_entry",
         {
@@ -501,10 +503,10 @@ async def _assert_two_phase_writes(session: ClientSession) -> None:
             "plan_digest": plan_digest,
         },
     )
-    assert applied.isError is False
-    assert applied.structuredContent["status"] == "applied"
-    assert applied.structuredContent["entry_id"] == CREATED_ENTRY_ID
-    assert applied.structuredContent["reused_result"] is False
+    assert applied.is_error is False
+    assert applied.structured_content["status"] == "applied"
+    assert applied.structured_content["entry_id"] == CREATED_ENTRY_ID
+    assert applied.structured_content["reused_result"] is False
 
     replay = await session.call_tool(
         "apply_create_entry",
@@ -514,8 +516,8 @@ async def _assert_two_phase_writes(session: ClientSession) -> None:
             "plan_digest": plan_digest,
         },
     )
-    assert replay.isError is False
-    assert replay.structuredContent["reused_result"] is True
+    assert replay.is_error is False
+    assert replay.structured_content["reused_result"] is True
     created = await _get_entry(session, CREATED_ENTRY_ID)
     assert created["Name"] == "local-e2e-created"
     assert created["Enabled"] == 0
@@ -526,8 +528,8 @@ async def _assert_two_phase_writes(session: ClientSession) -> None:
         reason="reproducible local E2E update",
     )
     updated = await _apply_update(session, update)
-    assert updated.isError is False
-    assert updated.structuredContent["entry_id"] == ENTRY_ID
+    assert updated.is_error is False
+    assert updated.structured_content["entry_id"] == ENTRY_ID
     assert (await _get_entry(session, ENTRY_ID))["Description"] == (
         "updated through local E2E"
     )
@@ -542,7 +544,7 @@ async def _assert_two_phase_writes(session: ClientSession) -> None:
         values={"Name": "stale-concurrent-update"},
         reason="second reproducible conflict plan",
     )
-    assert (await _apply_update(session, first)).isError is False
+    assert (await _apply_update(session, first)).is_error is False
     conflict = await _apply_update(session, stale)
     _assert_tool_error(conflict, "FORM_WRITE_CONFLICT")
 
@@ -555,16 +557,16 @@ async def _assert_two_phase_writes(session: ClientSession) -> None:
             "reason": "reproducible local E2E cancellation",
         },
     )
-    assert cancellable.isError is False
+    assert cancellable.is_error is False
     cancelled = await session.call_tool(
         "cancel_write_plan",
         {
             "environment": "dev",
-            "plan_id": cancellable.structuredContent["plan_id"],
+            "plan_id": cancellable.structured_content["plan_id"],
         },
     )
-    assert cancelled.isError is False
-    assert cancelled.structuredContent["status"] == "cancelled"
+    assert cancelled.is_error is False
+    assert cancelled.structured_content["status"] == "cancelled"
 
     production_write = await session.call_tool(
         "plan_create_entry",
@@ -584,33 +586,33 @@ async def _assert_two_phase_sql(session: ClientSession) -> None:
         "plan_sql_query",
         {"environment": "dev", "sql": sql, "limit": 10},
     )
-    assert planned.isError is False
-    assert planned.structuredContent["sql"] == sql
-    assert planned.structuredContent["status"] == "pending"
+    assert planned.is_error is False
+    assert planned.structured_content["sql"] == sql
+    assert planned.structured_content["status"] == "pending"
 
     stored = await session.call_tool(
         "get_sql_query_plan",
         {
             "environment": "dev",
-            "plan_id": planned.structuredContent["plan_id"],
+            "plan_id": planned.structured_content["plan_id"],
         },
     )
-    assert stored.isError is False
+    assert stored.is_error is False
     assert (
-        stored.structuredContent["plan_digest"]
-        == (planned.structuredContent["plan_digest"])
+        stored.structured_content["plan_digest"]
+        == (planned.structured_content["plan_digest"])
     )
     executed = await session.call_tool(
         "execute_sql_query",
         {
             "environment": "dev",
-            "plan_id": planned.structuredContent["plan_id"],
-            "plan_digest": planned.structuredContent["plan_digest"],
+            "plan_id": planned.structured_content["plan_id"],
+            "plan_digest": planned.structured_content["plan_digest"],
         },
     )
-    assert executed.isError is False
-    assert executed.structuredContent["columns"] == ["id", "name"]
-    assert executed.structuredContent["rows"] == [
+    assert executed.is_error is False
+    assert executed.structured_content["columns"] == ["id", "name"]
+    assert executed.structured_content["rows"] == [
         {"id": 7, "name": "sample-system"}
     ]
 
@@ -637,9 +639,9 @@ async def _plan_update(
             "reason": reason,
         },
     )
-    assert result.isError is False
-    assert result.structuredContent["status"] == "pending"
-    return result.structuredContent
+    assert result.is_error is False
+    assert result.structured_content["status"] == "pending"
+    return result.structured_content
 
 
 async def _apply_update(
@@ -669,13 +671,13 @@ async def _get_entry(
             "fields": list(FIELDS),
         },
     )
-    assert result.isError is False
-    assert result.structuredContent["entry_id"] == entry_id
-    return result.structuredContent["entry"]["values"]
+    assert result.is_error is False
+    assert result.structured_content["entry_id"] == entry_id
+    return result.structured_content["entry"]["values"]
 
 
 def _assert_tool_error(result: Any, code: str) -> None:
-    assert result.isError is True
+    assert result.is_error is True
     text = " ".join(getattr(item, "text", "") for item in result.content)
     assert f"code={code}" in text
     assert FORM not in text

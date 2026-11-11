@@ -103,10 +103,10 @@ async def _stdio_read_only_flow() -> None:
                 "list_targets",
                 {"include_disabled": False},
             )
-            assert targets.isError is False
+            assert targets.is_error is False
             assert any(
                 target["environment"] == environment
-                for target in targets.structuredContent["targets"]
+                for target in targets.structured_content["targets"]
             )
 
             if database_object:
@@ -124,11 +124,11 @@ async def _stdio_read_only_flow() -> None:
                         "limit": 10,
                     },
                 )
-                assert database_objects.isError is False
+                assert database_objects.is_error is False
                 assert any(
                     item["schema_name"] == schema
                     and item["name"] == object_name
-                    for item in database_objects.structuredContent["objects"]
+                    for item in database_objects.structured_content["objects"]
                 )
 
                 database_columns = await session.call_tool(
@@ -140,8 +140,8 @@ async def _stdio_read_only_flow() -> None:
                         "limit": 10,
                     },
                 )
-                assert database_columns.isError is False
-                assert database_columns.structuredContent["columns"]
+                assert database_columns.is_error is False
+                assert database_columns.structured_content["columns"]
 
                 database_description = await session.call_tool(
                     "describe_database_object",
@@ -151,15 +151,15 @@ async def _stdio_read_only_flow() -> None:
                         "object_name": object_name,
                     },
                 )
-                assert database_description.isError is False
+                assert database_description.is_error is False
                 assert (
-                    database_description.structuredContent["object"][
+                    database_description.structured_content["object"][
                         "schema_name"
                     ]
                     == schema
                 )
                 assert (
-                    database_description.structuredContent["object"]["name"]
+                    database_description.structured_content["object"]["name"]
                     == object_name
                 )
 
@@ -170,7 +170,7 @@ async def _stdio_read_only_flow() -> None:
                     "force_refresh": True,
                 },
             )
-            assert health.isError is False
+            assert health.is_error is False
 
             forms = await session.call_tool(
                 "list_forms",
@@ -181,12 +181,12 @@ async def _stdio_read_only_flow() -> None:
                     "limit": 10,
                 },
             )
-            assert forms.isError is False
-            assert forms.structuredContent["offset"] == 0
-            assert forms.structuredContent["limit"] == 10
+            assert forms.is_error is False
+            assert forms.structured_content["offset"] == 0
+            assert forms.structured_content["limit"] == 10
             assert any(
                 item["name"] == form
-                for item in forms.structuredContent["forms"]
+                for item in forms.structured_content["forms"]
             )
 
             field_metadata = await session.call_tool(
@@ -199,12 +199,12 @@ async def _stdio_read_only_flow() -> None:
                     "limit": 10,
                 },
             )
-            assert field_metadata.isError is False
-            assert field_metadata.structuredContent["offset"] == 0
-            assert field_metadata.structuredContent["limit"] == 10
+            assert field_metadata.is_error is False
+            assert field_metadata.structured_content["offset"] == 0
+            assert field_metadata.structured_content["limit"] == 10
             assert any(
                 item["name"] == fields[0]
-                for item in field_metadata.structuredContent["fields"]
+                for item in field_metadata.structured_content["fields"]
             )
 
             id_metadata = await session.call_tool(
@@ -216,10 +216,10 @@ async def _stdio_read_only_flow() -> None:
                     "limit": 1,
                 },
             )
-            assert id_metadata.isError is False
+            assert id_metadata.is_error is False
             id_fields = [
                 item["name"]
-                for item in id_metadata.structuredContent["fields"]
+                for item in id_metadata.structured_content["fields"]
                 if item["id"] == 1
             ]
             assert len(id_fields) == 1
@@ -243,11 +243,11 @@ async def _stdio_read_only_flow() -> None:
                     "include_total": False,
                 },
             )
-            assert query.isError is False
-            assert query.structuredContent["offset"] == 0
-            assert query.structuredContent["limit"] == 1
-            assert len(query.structuredContent["entries"]) == 1
-            queried_values = query.structuredContent["entries"][0]["values"]
+            assert query.is_error is False
+            assert query.structured_content["offset"] == 0
+            assert query.structured_content["limit"] == 1
+            assert len(query.structured_content["entries"]) == 1
+            queried_values = query.structured_content["entries"][0]["values"]
             assert set(queried_values).issubset(query_fields)
             queried_entry_id = queried_values[id_field]
             entry_id = configured_entry_id or queried_entry_id
@@ -264,9 +264,9 @@ async def _stdio_read_only_flow() -> None:
                     "fields": list(fields),
                 },
             )
-            assert entry.isError is False
-            assert entry.structuredContent["entry_id"] == entry_id
-            returned = entry.structuredContent["entry"]["values"]
+            assert entry.is_error is False
+            assert entry.structured_content["entry_id"] == entry_id
+            returned = entry.structured_content["entry"]["values"]
             assert set(returned).issubset(fields)
 
             over_limit = await session.call_tool(
@@ -279,7 +279,7 @@ async def _stdio_read_only_flow() -> None:
                     "limit": 100_000,
                 },
             )
-            assert over_limit.isError is True
+            assert over_limit.is_error is True
             failure_text = " ".join(
                 getattr(item, "text", "") for item in over_limit.content
             )
@@ -298,20 +298,20 @@ async def _stdio_read_only_flow() -> None:
                         "reason": "opt-in live write-plan validation",
                     },
                 )
-                assert write_plan.isError is False
-                assert write_plan.structuredContent["status"] == "pending"
-                assert write_plan.structuredContent["proposed_values"] == (
+                assert write_plan.is_error is False
+                assert write_plan.structured_content["status"] == "pending"
+                assert write_plan.structured_content["proposed_values"] == (
                     write_plan_values
                 )
                 cancelled = await session.call_tool(
                     "cancel_write_plan",
                     {
                         "environment": environment,
-                        "plan_id": write_plan.structuredContent["plan_id"],
+                        "plan_id": write_plan.structured_content["plan_id"],
                     },
                 )
-                assert cancelled.isError is False
-                assert cancelled.structuredContent["status"] == "cancelled"
+                assert cancelled.is_error is False
+                assert cancelled.structured_content["status"] == "cancelled"
 
         stderr.seek(0)
         captured = stderr.read()

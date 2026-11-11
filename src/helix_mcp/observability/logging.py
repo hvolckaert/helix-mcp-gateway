@@ -24,7 +24,7 @@ _EVENT_FIELDS = (
     "error_category",
     "sqlstate",
 )
-_NOISY_LOGGERS = ("httpx", "httpcore")
+_NOISY_LOGGERS = ("httpx", "httpcore", "httpx2", "httpcore2")
 _AUDIT_LOGGER = "helix_mcp.audit"
 _AUDIT_SINK_LOGGER = "helix_mcp.audit_sink"
 _MANAGED_HANDLER_MARKER = "_helix_mcp_managed_audit_handler"
