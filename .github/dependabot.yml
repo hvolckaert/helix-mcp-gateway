@@ -5,9 +5,32 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      python-development:
+        patterns:
+          - "build"
+          - "hatchling"
+          - "mypy"
+          - "pytest*"
+          - "ruff"
+          - "types-*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: "mcp"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      github-actions-routine:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
