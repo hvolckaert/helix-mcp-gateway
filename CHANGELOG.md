@@ -5,12 +5,16 @@ Semantic Versioning.
 
 ## Unreleased
 
+## 0.15.0 - 2026-11-11
+
 - Migrate to MCP Python SDK 2.3+ with the same 22 tools, policy enforcement,
   sanitized errors, and audited approval flows. Preserve stdio and authenticated
   loopback HTTP support for legacy and modern MCP clients.
 - Preserve the HTTP binding, stateless JSON responses, and 1 MiB request limit
   using the SDK's new transport configuration API. Resume MCP major-version
   proposals in Dependabot for explicit review.
+- Refresh GitHub Actions and Python development dependencies, group routine
+  Dependabot updates, and use the project's build-tool pin for releases.
 
 ## 0.14.0 - 2026-09-29
 
