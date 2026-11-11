@@ -350,6 +350,10 @@ public class ARServerUser {
         entry = value;
     }
 
+    public void setFieldsForTest(List<Field> value) {
+        fields = value;
+    }
+
     public void setServerInfoForTest(ServerInfoMap value) {
         serverInfo = value;
     }

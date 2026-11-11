@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from helix_mcp.services.writes import (
     WritePlanPersistenceError,
     WritePlanStatus,
 )
+from helix_mcp.services.writes.models import WriteVerification
 
 TARGET = TargetKey(environment=Environment.DEV)
 FORM = "Example:PersistentForm"
@@ -105,6 +107,11 @@ def test_applied_result_remains_idempotent_after_restart(
         environment=Environment.DEV,
         form=FORM,
         entry_id="000000000000001",
+        verification=WriteVerification(
+            status="different",
+            differing_fields=("Name",),
+            read_at=datetime.now(UTC),
+        ),
     )
     run(store.complete(plan.plan_id, result))
 
@@ -122,8 +129,65 @@ def test_applied_result_remains_idempotent_after_restart(
     assert replay.reused_result is not None
     assert replay.reused_result.entry_id == result.entry_id
     assert replay.reused_result.reused_result is True
+    assert replay.reused_result.verification == result.verification
     database = (tmp_path / "write-plans.sqlite3").read_bytes()
     assert BUSINESS_VALUE.encode() not in database
+
+
+def test_value_fingerprint_is_digest_bound_encrypted_and_cleared(tmp_path):
+    store = build_store(tmp_path)
+
+    async def scenario():
+        args = dict(
+            operation=WriteOperation.UPDATE,
+            target=TARGET,
+            form=FORM,
+            entry_id="1",
+            current_values={"Name": BUSINESS_VALUE},
+            proposed_values={"Name": "new value"},
+            reason="verify original values fingerprint",
+            precondition="1000",
+        )
+        first = await store.create(**args, values_fingerprint="a" * 64)
+        second = await store.create(**args, values_fingerprint="b" * 64)
+        assert first.plan_digest != second.plan_digest
+        restarted = build_store(tmp_path)
+        acquired = await restarted.acquire(
+            plan_id=first.plan_id,
+            plan_digest=first.plan_digest,
+            operation=WriteOperation.UPDATE,
+            target=TARGET,
+        )
+        assert acquired.plan.values_fingerprint == "a" * 64
+        assert b"a" * 64 not in (tmp_path / "write-plans.sqlite3").read_bytes()
+        result = ApplyWriteResult(
+            plan_id=first.plan_id,
+            operation=WriteOperation.UPDATE,
+            environment="dev",
+            form=FORM,
+            entry_id="1",
+            verification=WriteVerification(
+                status="matched",
+                matched_fields=("Name",),
+                read_at=datetime.now(UTC),
+            ),
+        )
+        await restarted.complete(first.plan_id, result)
+        # Terminal records retain comparison metadata, but erase payloads and hashes.
+        with sqlite3.connect(tmp_path / "write-plans.sqlite3") as conn:
+            conn.row_factory = sqlite3.Row
+            stored = restarted._decode(
+                conn.execute(
+                    "SELECT * FROM write_plans WHERE plan_id=?",
+                    (first.plan_id,),
+                ).fetchone()
+            )
+        assert stored.current_values == {}
+        assert stored.proposed_values == {}
+        assert stored.values_fingerprint is None
+        assert stored.result.verification == result.verification
+
+    run(scenario())
 
 
 def test_applying_plan_becomes_outcome_unknown_after_restart(

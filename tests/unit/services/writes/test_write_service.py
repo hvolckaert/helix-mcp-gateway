@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -14,6 +15,7 @@ from helix_mcp.clients.arapi import (
     ArapiEntry,
     ArapiPreparedUpdate,
 )
+from helix_mcp.clients.arapi.models import ArapiWriteVerification
 from helix_mcp.config import (
     ArapiBackendConfig,
     BackendKind,
@@ -32,8 +34,10 @@ from helix_mcp.services.writes import (
     FormWriteFormNotAllowedError,
     FormWriteService,
     UpdateValuesRequest,
+    WriteOperation,
     WriteOutcomeUnknownError,
     WritePlanMismatchError,
+    WritePlanStateError,
     WritePlanStatus,
     WritePlanStore,
     WriteValuesRequest,
@@ -100,6 +104,7 @@ class FakeClient:
         entry_id: str,
         values: dict[str, object],
         precondition: str,
+        values_fingerprint: str,
     ) -> None:
         outcome = self._next(
             "update_entry",
@@ -108,9 +113,13 @@ class FakeClient:
                 "entry_id": entry_id,
                 "values": values,
                 "precondition": precondition,
+                "values_fingerprint": values_fingerprint,
             },
         )
         assert outcome is None
+
+    async def verify_entry(self, *, form, entry_id, values):
+        return ArapiWriteVerification(datetime.now(UTC), tuple(values), (), ())
 
 
 class FakeProvider:
@@ -204,6 +213,7 @@ def prepared(values: dict[str, object]) -> ArapiPreparedUpdate:
         entry_id=ENTRY_ID,
         entry=ArapiEntry(values=values),
         precondition=PRECONDITION,
+        values_fingerprint="a" * 64,
     )
 
 
@@ -502,6 +512,7 @@ def test_update_plan_reads_values_and_applies_server_precondition() -> None:
                 "entry_id": ENTRY_ID,
                 "values": {"DatasetId": "TEST.SAMPLE"},
                 "precondition": PRECONDITION,
+                "values_fingerprint": "a" * 64,
             },
         ),
     ]
@@ -752,3 +763,57 @@ def test_update_precondition_failure_requires_a_new_plan() -> None:
             )
         )
     assert len(client.calls) == 2
+
+
+def test_legacy_update_plan_requires_new_review_without_writing():
+    client = FakeClient([])
+    service, _ = build_service(client)
+    plan = run(
+        service._plans.create(
+            operation=WriteOperation.UPDATE,
+            target=TargetKey(environment="dev"),
+            form=FORM,
+            entry_id=ENTRY_ID,
+            current_values={"Name": "old"},
+            proposed_values={"Name": "new"},
+            reason="legacy plan without value preconditions",
+            precondition=PRECONDITION,
+        )
+    )
+    with pytest.raises(WritePlanStateError, match="new plan"):
+        run(
+            service.apply_update(
+                environment="dev",
+                request=ApplyWriteRequest(
+                    plan_id=plan.plan_id, plan_digest=plan.plan_digest
+                ),
+            )
+        )
+    assert client.calls == []
+
+
+def test_create_without_entry_id_is_applied_but_not_verified():
+    client = FakeClient([None])
+    service, _ = build_service(client)
+    plan = run(
+        service.plan_create_for_form(
+            environment="dev",
+            form=FORM,
+            request=WriteValuesRequest(
+                values={"Name": "new"},
+                reason="create without addressable result",
+            ),
+        )
+    )
+    result = run(
+        service.apply_create(
+            environment="dev",
+            request=ApplyWriteRequest(
+                plan_id=plan.plan_id, plan_digest=plan.plan_digest
+            ),
+        )
+    )
+    assert result.status == "applied"
+    assert result.verification.status == "unavailable"
+    assert result.verification.reason == "entry_id_unavailable"
+    assert len(client.calls) == 1

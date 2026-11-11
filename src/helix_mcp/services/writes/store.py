@@ -37,11 +37,12 @@ class StoredWritePlan:
     target: TargetKey
     form: str
     entry_id: str | None
-    current_values: dict[str, JsonScalar] | None = field(repr=False)
+    current_values: dict[str, JsonScalar | None] | None = field(repr=False)
     proposed_values: dict[str, JsonScalar] = field(repr=False)
     reason: str = field(repr=False)
     precondition: str | None = field(repr=False)
     expires_at: float
+    values_fingerprint: str | None = field(default=None, repr=False)
     status: WritePlanStatus = WritePlanStatus.PENDING
     result: ApplyWriteResult | None = None
 
@@ -77,10 +78,11 @@ class WritePlanStore:
         target: TargetKey,
         form: str,
         entry_id: str | None,
-        current_values: dict[str, JsonScalar] | None,
+        current_values: dict[str, JsonScalar | None] | None,
         proposed_values: dict[str, JsonScalar],
         reason: str,
         precondition: str | None,
+        values_fingerprint: str | None = None,
     ) -> WritePlanResult:
         async with self._lock:
             self._purge_expired()
@@ -103,6 +105,7 @@ class WritePlanStore:
                 proposed_values=proposed_values,
                 reason=reason,
                 precondition=precondition,
+                values_fingerprint=values_fingerprint,
             )
             plan = StoredWritePlan(
                 plan_id=plan_id,
@@ -117,6 +120,7 @@ class WritePlanStore:
                 proposed_values=dict(proposed_values),
                 reason=reason,
                 precondition=precondition,
+                values_fingerprint=values_fingerprint,
                 expires_at=self._clock() + self._ttl,
             )
             self._plans[plan_id] = plan
@@ -273,6 +277,7 @@ def _clear_payload(plan: StoredWritePlan) -> None:
     plan.proposed_values.clear()
     plan.reason = ""
     plan.precondition = None
+    plan.values_fingerprint = None
 
 
 def _digest(
@@ -281,10 +286,11 @@ def _digest(
     target: TargetKey,
     form: str,
     entry_id: str | None,
-    current_values: dict[str, JsonScalar] | None,
+    current_values: dict[str, JsonScalar | None] | None,
     proposed_values: dict[str, JsonScalar],
     reason: str,
     precondition: str | None,
+    values_fingerprint: str | None = None,
 ) -> str:
     canonical = json.dumps(
         {
@@ -296,6 +302,11 @@ def _digest(
             "proposed_values": proposed_values,
             "reason": reason,
             "precondition": precondition,
+            **(
+                {"values_fingerprint": values_fingerprint}
+                if values_fingerprint is not None
+                else {}
+            ),
         },
         ensure_ascii=False,
         sort_keys=True,

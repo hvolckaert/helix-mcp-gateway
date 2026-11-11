@@ -86,6 +86,12 @@ The server exposes 25 MCP tools:
 
 See the complete [MCP tool catalog](docs/mcp-tools.md).
 
+Approved updates check both Modified Date and the original requested-field
+snapshot before writing. Successful writes include a bounded post-write
+comparison identifying matching, differing or unverified fields. These are
+optimistic checks and observations, not transaction or rollback guarantees.
+See [write verification and limitations](docs/form-writes.md#verification).
+
 All 18 read tools include a required `provenance` block with the environment,
 authorized source identifiers, UTC read/acquisition times and fingerprints of
 the applied policies. Cached results retain their original acquisition time;

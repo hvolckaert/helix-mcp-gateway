@@ -32,6 +32,7 @@ from helix_mcp.services.writes.models import (
     WriteOperation,
     WritePlanResult,
     WritePlanStatus,
+    WriteVerification,
 )
 from helix_mcp.services.writes.store import (
     AcquiredWritePlan,
@@ -92,10 +93,11 @@ class PersistentWritePlanStore:
         target: TargetKey,
         form: str,
         entry_id: str | None,
-        current_values: dict[str, JsonScalar] | None,
+        current_values: dict[str, JsonScalar | None] | None,
         proposed_values: dict[str, JsonScalar],
         reason: str,
         precondition: str | None,
+        values_fingerprint: str | None = None,
     ) -> WritePlanResult:
         async with self._lock:
 
@@ -124,6 +126,7 @@ class PersistentWritePlanStore:
                     proposed_values=proposed_values,
                     reason=reason,
                     precondition=precondition,
+                    values_fingerprint=values_fingerprint,
                 )
                 plan = StoredWritePlan(
                     plan_id=plan_id,
@@ -140,6 +143,7 @@ class PersistentWritePlanStore:
                     proposed_values=dict(proposed_values),
                     reason=reason,
                     precondition=precondition,
+                    values_fingerprint=values_fingerprint,
                     expires_at=self._clock() + self._ttl,
                 )
                 nonce, encrypted = self._encrypt(plan)
@@ -394,6 +398,13 @@ class PersistentWritePlanStore:
                 "proposed_values": plan.proposed_values,
                 "reason": plan.reason,
                 "precondition": plan.precondition,
+                "values_fingerprint": plan.values_fingerprint,
+                "verification": (
+                    plan.result.verification.model_dump(mode="json")
+                    if plan.result is not None
+                    and plan.result.verification is not None
+                    else None
+                ),
                 "result_stored": plan.result is not None,
                 "result_entry_id": (
                     None if plan.result is None else plan.result.entry_id
@@ -450,6 +461,9 @@ class PersistentWritePlanStore:
                 proposed_values=_required_values(payload, "proposed_values"),
                 reason=_required_string(payload, "reason", allow_empty=True),
                 precondition=_optional_string(payload, "precondition"),
+                values_fingerprint=_optional_string(
+                    payload, "values_fingerprint"
+                ),
                 expires_at=metadata.expires_at,
                 status=status,
             )
@@ -461,6 +475,13 @@ class PersistentWritePlanStore:
                     form=plan.form,
                     status=WritePlanStatus.APPLIED,
                     entry_id=_optional_string(payload, "result_entry_id"),
+                    verification=(
+                        WriteVerification.model_validate(
+                            payload["verification"]
+                        )
+                        if payload.get("verification") is not None
+                        else None
+                    ),
                 )
             elif payload.get("result_stored") is not False:
                 raise ValueError
@@ -627,13 +648,20 @@ def _required_values(
 def _optional_values(
     payload: dict[str, Any],
     key: str,
-) -> dict[str, JsonScalar] | None:
+) -> dict[str, JsonScalar | None] | None:
     value = payload.get(key)
     if value is None:
         return None
     if not isinstance(value, dict):
         raise ValueError
-    return _validated_values(value)
+    if not all(isinstance(k, str) and k for k in value):
+        raise ValueError
+    if not all(
+        v is None or isinstance(v, (str, int, float, bool))
+        for v in value.values()
+    ):
+        raise ValueError
+    return dict(value)
 
 
 def _validated_values(value: dict[Any, Any]) -> dict[str, JsonScalar]:

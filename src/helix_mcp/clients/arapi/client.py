@@ -7,8 +7,10 @@ import hashlib
 import hmac
 import json
 import math
+import re
 import secrets
 from collections.abc import Awaitable, Callable, Mapping
+from datetime import datetime
 from typing import Any, TypeGuard
 
 import httpx
@@ -43,6 +45,7 @@ from helix_mcp.clients.arapi.models import (
     ArapiScalar,
     ArapiSelectionValue,
     ArapiSqlResult,
+    ArapiWriteVerification,
 )
 from helix_mcp.config import ArapiBackendConfig, TargetKey
 from helix_mcp.secrets import SecretResolver
@@ -335,17 +338,19 @@ class ArapiBridgeClient:
         entry_id: str,
         values: Mapping[str, ArapiScalar],
         precondition: str,
+        values_fingerprint: str,
     ) -> None:
-        """Conditionally update one entry using an AR server timestamp."""
+        """Update one entry only when timestamp and value preconditions match."""
 
         data = {
             "form": form,
             "entry_id": entry_id,
             "precondition": precondition,
+            "values_fingerprint": values_fingerprint,
         }
         data.update(_encode_write_values(values))
         payload, status_code = await self._post(
-            "/v1/entries/update",
+            "/v1/entries/update-checked",
             data,
         )
         returned_id = _parse_write_result(
@@ -355,6 +360,25 @@ class ArapiBridgeClient:
         )
         if returned_id != entry_id:
             raise _protocol_error(self._target, status_code)
+
+    async def verify_entry(
+        self,
+        *,
+        form: str,
+        entry_id: str,
+        values: Mapping[str, ArapiScalar],
+    ) -> ArapiWriteVerification:
+        """Read only the written fields and return a value-free comparison."""
+        data = {"form": form, "entry_id": entry_id}
+        data.update(_encode_write_values(values))
+        payload, status = await self._post("/v1/entries/verify", data)
+        return _parse_verification(
+            self._target,
+            payload,
+            status,
+            entry_id=entry_id,
+            fields=tuple(values),
+        )
 
     async def query_sql(
         self,
@@ -1027,6 +1051,12 @@ def _parse_prepared_update(
     ):
         raise _protocol_error(target, status_code)
     precondition = payload.get("precondition")
+    fingerprint = payload.get("values_fingerprint")
+    if (
+        not isinstance(fingerprint, str)
+        or re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None
+    ):
+        raise _protocol_error(target, status_code)
     if (
         not isinstance(precondition, str)
         or not precondition.isascii()
@@ -1038,7 +1068,56 @@ def _parse_prepared_update(
         entry_id=entry_id,
         entry=_parse_entry(target, payload["entry"], status_code, fields),
         precondition=precondition,
+        values_fingerprint=fingerprint,
     )
+
+
+def _parse_verification(
+    target: TargetKey,
+    payload: Any,
+    status_code: int,
+    *,
+    entry_id: str,
+    fields: tuple[str, ...],
+) -> ArapiWriteVerification:
+    keys = ("matched_fields", "differing_fields", "unverified_fields")
+    if not isinstance(payload, dict) or set(payload) != {
+        "entry_id",
+        "read_at",
+        *keys,
+    }:
+        raise _protocol_error(target, status_code)
+    if payload["entry_id"] != entry_id or not isinstance(
+        payload["read_at"], str
+    ):
+        raise _protocol_error(target, status_code)
+    try:
+        read_at = datetime.fromisoformat(payload["read_at"])
+        if read_at.utcoffset() is None:
+            raise ValueError
+    except ValueError:
+        raise _protocol_error(target, status_code) from None
+    expected = {name.casefold(): name for name in fields}
+    seen: set[str] = set()
+    groups: dict[str, tuple[str, ...]] = {}
+    for key in keys:
+        group = payload[key]
+        if not isinstance(group, list) or len(group) > len(fields):
+            raise _protocol_error(target, status_code)
+        names = []
+        for name in group:
+            if (
+                not isinstance(name, str)
+                or name.casefold() not in expected
+                or name.casefold() in seen
+            ):
+                raise _protocol_error(target, status_code)
+            seen.add(name.casefold())
+            names.append(expected[name.casefold()])
+        groups[key] = tuple(names)
+    if seen != set(expected):
+        raise _protocol_error(target, status_code)
+    return ArapiWriteVerification(read_at=read_at, **groups)
 
 
 def _parse_write_result(

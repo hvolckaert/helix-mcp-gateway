@@ -116,6 +116,7 @@ def test_failed_readiness_sends_no_credentials_or_operation(
                         entry_id="1",
                         values={"Name": "example"},
                         precondition="1000",
+                        values_fingerprint="a" * 64,
                     )
 
     run(scenario())
@@ -162,6 +163,7 @@ def test_lost_write_response_never_restarts_or_replays_the_operation(
                         entry_id="1",
                         values={"Name": "example"},
                         precondition="1000",
+                        values_fingerprint="a" * 64,
                     )
 
     run(scenario())
@@ -1119,6 +1121,7 @@ def test_prepare_create_and_update_write_contracts() -> None:
                         }
                     },
                     "precondition": "1785502800",
+                    "values_fingerprint": "a" * 64,
                 },
             )
         if request.url.path == "/v1/entries/create":
@@ -1159,6 +1162,7 @@ def test_prepare_create_and_update_write_contracts() -> None:
             entry_id="000000000000123",
             values={"ShortDescription": "updated"},
             precondition=prepared.precondition,
+            values_fingerprint=prepared.values_fingerprint,
         )
         await client.aclose()
         return prepared, created
@@ -1174,7 +1178,7 @@ def test_prepare_create_and_update_write_contracts() -> None:
     assert [request.url.path for request in requests] == [
         "/v1/entries/prepare-update",
         "/v1/entries/create",
-        "/v1/entries/update",
+        "/v1/entries/update-checked",
     ]
     create_form = parse_qs(
         requests[1].content.decode("ascii"),
@@ -1281,6 +1285,7 @@ def test_update_conflict_is_distinct_and_sanitized() -> None:
                 entry_id="000000000000123",
                 values={"ShortDescription": "updated"},
                 precondition="1785502800",
+                values_fingerprint="a" * 64,
             )
         assert "must-not-escape" not in str(exc_info.value)
         await client.aclose()
@@ -1396,11 +1401,13 @@ def test_malformed_arerr_303_remains_a_protocol_error(payload) -> None:
             "entry_id": "000000000000123",
             "entry": {"values": {"ShortDescription": "old"}},
             "precondition": "not-a-time",
+            "values_fingerprint": "a" * 64,
         },
         {
             "entry_id": "000000000000123",
             "entry": {"values": {"Unexpected": "old"}},
             "precondition": "1785502800",
+            "values_fingerprint": "a" * 64,
         },
     ],
 )
@@ -1428,6 +1435,123 @@ def test_prepare_update_rejects_invalid_payload(payload) -> None:
         await client.aclose()
 
     run(scenario())
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"matched_fields": ["Unexpected"]},
+        {"differing_fields": ["Name"]},
+        {"matched_fields": []},
+        {"entry_id": "wrong"},
+        {"read_at": "not a date"},
+        {"read_at": "2026-11-11T12:00:00"},
+        {"unverified_fields": ["Name"]},
+        {"observed_values": {"Name": "private payload"}},
+    ],
+)
+def test_verification_contract_rejects_ambiguous_or_unscoped_results(change):
+    payload = {
+        "entry_id": "1",
+        "read_at": "2026-11-11T12:00:00Z",
+        "matched_fields": ["Name"],
+        "differing_fields": [],
+        "unverified_fields": [],
+    }
+    payload.update(change)
+
+    async def scenario():
+        transport = httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, json=payload)
+            ),
+        )
+        client = ArapiBridgeClient(
+            target=TARGET,
+            config=config(),
+            secrets=secrets(),
+            http_client=transport,
+        )
+        try:
+            with pytest.raises(ArapiBridgeProtocolError) as error:
+                await client.verify_entry(
+                    form="Example:Form",
+                    entry_id="1",
+                    values={"Name": "approved"},
+                )
+            assert "private payload" not in str(error.value)
+        finally:
+            await client.aclose()
+
+    run(scenario())
+
+
+@pytest.mark.parametrize("fingerprint", [None, "", "a" * 63, "z" * 64, 123])
+def test_preparation_requires_valid_value_fingerprint(fingerprint):
+    payload = {
+        "entry_id": "1",
+        "entry": {"values": {"Name": "old"}},
+        "precondition": "1000",
+        "values_fingerprint": fingerprint,
+    }
+
+    async def scenario():
+        transport = httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, json=payload)
+            ),
+        )
+        client = ArapiBridgeClient(
+            target=TARGET,
+            config=config(),
+            secrets=secrets(),
+            http_client=transport,
+        )
+        try:
+            with pytest.raises(ArapiBridgeProtocolError):
+                await client.prepare_update(
+                    form="Example:Form", entry_id="1", fields=("Name",)
+                )
+        finally:
+            await client.aclose()
+
+    run(scenario())
+
+
+def test_checked_update_never_falls_back_to_legacy_bridge_route():
+    paths = []
+
+    def old_bridge(request):
+        paths.append(request.url.path)
+        return httpx.Response(405, json={"error": "method not allowed"})
+
+    async def scenario():
+        transport = httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(old_bridge),
+        )
+        client = ArapiBridgeClient(
+            target=TARGET,
+            config=config(),
+            secrets=secrets(),
+            http_client=transport,
+        )
+        try:
+            with pytest.raises(ArapiBridgeProtocolError):
+                await client.update_entry(
+                    form="Example:Form",
+                    entry_id="1",
+                    values={"Name": "new"},
+                    precondition="1000",
+                    values_fingerprint="a" * 64,
+                )
+        finally:
+            await client.aclose()
+
+    run(scenario())
+    assert paths == ["/v1/entries/update-checked"]
 
 
 def test_probe_bridge_validates_the_liveness_contract() -> None:

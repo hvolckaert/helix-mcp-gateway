@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from helix_mcp.clients.arapi import (
     ArapiBridgeClient,
@@ -15,6 +15,12 @@ from helix_mcp.clients.arapi import (
     ArapiBridgeTransportError,
 )
 from helix_mcp.config import AccessMode, BackendKind, Environment, TargetKey
+from helix_mcp.provenance import (
+    ReadProvenance,
+    ReadSource,
+    policy_version,
+    utc_now,
+)
 from helix_mcp.services.rate_limit import (
     RateLimitPersistenceError,
     SlidingWindowCounter,
@@ -27,6 +33,7 @@ from helix_mcp.services.writes.errors import (
     FormWriteRateLimitError,
     FormWriteReasonRequiredError,
     WriteOutcomeUnknownError,
+    WritePlanStateError,
 )
 from helix_mcp.services.writes.models import (
     ApplyWriteRequest,
@@ -37,6 +44,7 @@ from helix_mcp.services.writes.models import (
     WritePlanResult,
     WritePlanStatus,
     WriteValuesRequest,
+    WriteVerification,
 )
 from helix_mcp.services.writes.persistent_store import PersistentWritePlanStore
 from helix_mcp.services.writes.store import WritePlanStore
@@ -125,6 +133,7 @@ class FormWriteService:
             proposed_values=values,
             reason=request.reason,
             precondition=prepared.precondition,
+            values_fingerprint=prepared.values_fingerprint,
         )
 
     async def apply_create(
@@ -209,11 +218,16 @@ class FormWriteService:
             else:
                 assert plan.entry_id is not None
                 assert plan.precondition is not None
+                if plan.values_fingerprint is None:
+                    raise WritePlanStateError(
+                        "update plan needs value preconditions; create and approve a new plan"
+                    )
                 await client.update_entry(
                     form=plan.form,
                     entry_id=plan.entry_id,
                     values=values,
                     precondition=plan.precondition,
+                    values_fingerprint=plan.values_fingerprint,
                 )
                 entry_id = plan.entry_id
             write_succeeded = True
@@ -224,6 +238,9 @@ class FormWriteService:
                 form=plan.form,
                 status=WritePlanStatus.APPLIED,
                 entry_id=entry_id,
+                verification=await _verify_write(
+                    client, target, plan.form, entry_id, values
+                ),
             )
             return await self._plans.complete(request.plan_id, result)
         except ArapiBridgeConflictError:
@@ -354,18 +371,78 @@ def _enforce_write(
 def _parse_current_values(
     raw_values: Mapping[str, object],
     requested: Mapping[str, JsonScalar],
-) -> dict[str, JsonScalar]:
+) -> dict[str, JsonScalar | None]:
     by_name = {
         str(field).casefold(): value
         for field, value in raw_values.items()
         if isinstance(field, str)
     }
-    current: dict[str, JsonScalar] = {}
+    current: dict[str, JsonScalar | None] = {}
     for field in requested:
         value = by_name.get(field.casefold())
-        if isinstance(value, (str, int, float, bool)):
+        if value is None or isinstance(value, (str, int, float, bool)):
             current[field] = value
     return current
+
+
+async def _verify_write(
+    client: ArapiBridgeClient,
+    target: ResolvedTarget,
+    form: str,
+    entry_id: str | None,
+    values: Mapping[str, JsonScalar],
+) -> WriteVerification:
+    if entry_id is None:
+        return WriteVerification(
+            status="unavailable",
+            unverified_fields=tuple(values),
+            reason="entry_id_unavailable",
+        )
+    try:
+        observed = await client.verify_entry(
+            form=form, entry_id=entry_id, values=values
+        )
+        status: Literal["matched", "different", "unavailable"] = (
+            "different"
+            if observed.differing_fields
+            else "unavailable"
+            if observed.unverified_fields
+            else "matched"
+        )
+        return WriteVerification(
+            status=status,
+            read_at=observed.read_at,
+            provenance=ReadProvenance(
+                environment=target.key.environment,
+                source=ReadSource(
+                    operation="verify_write",
+                    backend="arapi",
+                    form=form,
+                    entry_id=entry_id,
+                ),
+                read_at=utc_now(),
+                data_read_at=observed.read_at,
+                cached=False,
+                cache_reads=(),
+                policy_versions={
+                    target.key.environment: policy_version(target.policy)
+                },
+            ),
+            matched_fields=observed.matched_fields,
+            differing_fields=observed.differing_fields,
+            unverified_fields=observed.unverified_fields,
+            reason="unsupported_or_unavailable_values"
+            if observed.unverified_fields
+            else None,
+        )
+    except Exception:
+        # The write already succeeded. A verification error must not suggest a
+        # failed write, leak backend data, or trigger another write attempt.
+        return WriteVerification(
+            status="unavailable",
+            unverified_fields=tuple(values),
+            reason="read_failed",
+        )
 
 
 def _arapi_outcome_unknown(error: ArapiBridgeError) -> bool:
