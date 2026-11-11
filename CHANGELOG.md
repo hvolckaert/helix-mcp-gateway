@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
-## Unreleased
+## 0.18.0 - 2026-11-11
 
 - Bind a bounded, exact fingerprint of the requested original field values into
   update plans and recheck it with Modified Date inside the bridge's update lock.
