@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from datetime import datetime
 from time import monotonic
 from typing import Protocol
 
 from helix_mcp.clients.arapi import ArapiBridgeClient
 from helix_mcp.config import BackendKind, Environment, TargetKey
+from helix_mcp.provenance import record_cache_read, utc_now
 from helix_mcp.services.forms.errors import (
     FormQueryLimitError,
     FormReadDisabledError,
@@ -58,7 +60,9 @@ class FormCatalogService:
         self._targets = targets
         self._clients = clients
         self._limiter = limiter or FormRateLimiter(time_source)
-        self._cache: dict[TargetKey, tuple[float, tuple[str, ...]]] = {}
+        self._cache: dict[
+            TargetKey, tuple[float, tuple[str, ...], datetime]
+        ] = {}
         self._cache_lock = asyncio.Lock()
         self._cache_ttl = metadata_cache_ttl_seconds
         self._time = time_source
@@ -116,7 +120,9 @@ class FormCatalogService:
         target: ResolvedTarget,
     ) -> tuple[str, ...]:
         if self._cache_ttl == 0:
-            return await self._clients.get(target).list_forms()
+            names = await self._clients.get(target).list_forms()
+            record_cache_read("form_catalog", utc_now(), cached=False)
+            return names
         cached = self._cached_names(target.key)
         if cached is not None:
             return cached
@@ -125,6 +131,8 @@ class FormCatalogService:
             if cached is not None:
                 return cached
             names = tuple(await self._clients.get(target).list_forms())
+            acquired_at = utc_now()
+            record_cache_read("form_catalog", acquired_at, cached=False)
             if len(self._cache) >= _MAX_METADATA_CACHE_ENTRIES:
                 oldest = min(
                     self._cache,
@@ -134,6 +142,7 @@ class FormCatalogService:
             self._cache[target.key] = (
                 self._time() + self._cache_ttl,
                 names,
+                acquired_at,
             )
             return names
 
@@ -141,8 +150,9 @@ class FormCatalogService:
         cached = self._cache.get(key)
         if cached is None:
             return None
-        expires_at, names = cached
+        expires_at, names, acquired_at = cached
         if expires_at <= self._time():
             self._cache.pop(key, None)
             return None
+        record_cache_read("form_catalog", acquired_at, cached=True)
         return names

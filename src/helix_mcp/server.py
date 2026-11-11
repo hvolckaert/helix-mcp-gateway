@@ -35,7 +35,10 @@ SERVER_INSTRUCTIONS = (
     "bounded menu values are needed. Never infer menu or selection metadata "
     "from the field datatype alone. Every "
     "operation must specify dev, qa or prod explicitly. Never infer or "
-    "retain an active environment. Use list_database_objects before querying "
+    "retain an active environment. Preserve read provenance when reusing "
+    "results: environment, source, UTC acquisition times and policy versions. "
+    "Cached acquisition times are not refreshed by returning a response. "
+    "Use list_database_objects before querying "
     "unknown database objects and list_database_columns when their columns "
     "are unknown. Every SQL query requires plan_sql_query. Show its exact "
     "environment, SQL, limit and digest in the visible response, "
@@ -109,6 +112,7 @@ def create_mcp_server(application: ApplicationContext) -> MCPServer:
         health=application.health_tools,
         writes=application.write_tools,
         audit=application.tool_auditor,
+        registry=application.runtime.registry,
     )
     return server
 

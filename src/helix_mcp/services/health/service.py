@@ -6,9 +6,11 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from datetime import datetime
 from typing import Protocol
 
 from helix_mcp.config import BackendKind, Environment, TargetKey
+from helix_mcp.provenance import record_cache_read, utc_now
 from helix_mcp.services.health.models import (
     HealthCheckResult,
     HealthComponent,
@@ -57,7 +59,9 @@ class HealthCheckService:
         self._cache_ttl = cache_ttl_seconds
         self._clock = clock
         self._tcp_probe = tcp_probe or _open_tcp_connection
-        self._cache: dict[TargetKey, tuple[float, HealthCheckResult]] = {}
+        self._cache: dict[
+            TargetKey, tuple[float, HealthCheckResult, datetime]
+        ] = {}
         self._locks: dict[TargetKey, asyncio.Lock] = {}
 
     async def check(
@@ -79,10 +83,13 @@ class HealthCheckService:
             if cached is not None:
                 return cached
             result = await self._check_target(target)
+            acquired_at = utc_now()
+            record_cache_read("health", acquired_at, cached=False)
             if self._cache_ttl > 0:
                 self._cache[target.key] = (
                     self._clock() + self._cache_ttl,
                     result,
+                    acquired_at,
                 )
             return result
 
@@ -97,10 +104,11 @@ class HealthCheckService:
         entry = self._cache.get(key)
         if entry is None:
             return None
-        expires_at, result = entry
+        expires_at, result, acquired_at = entry
         if expires_at <= self._clock():
             self._cache.pop(key, None)
             return None
+        record_cache_read("health", acquired_at, cached=True)
         return result.model_copy(update={"cached": True})
 
     async def _check_target(

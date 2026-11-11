@@ -330,6 +330,20 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
     assert forms.is_error is False
     assert forms.structured_content["forms"] == [{"name": FORM}]
     assert forms.structured_content["total"] == 1
+    provenance = forms.structured_content["provenance"]
+    assert provenance["environment"] == "dev"
+    assert provenance["cached"] is False
+    assert set(provenance["policy_versions"]) == {"dev"}
+    cached_forms = await session.call_tool(
+        "list_forms", {"environment": "dev", "limit": 10}
+    )
+    assert cached_forms.is_error is False
+    cached_provenance = cached_forms.structured_content["provenance"]
+    assert cached_provenance["cached"] is True
+    assert cached_provenance["data_read_at"] == provenance["data_read_at"]
+    assert (
+        cached_provenance["policy_versions"] == provenance["policy_versions"]
+    )
 
     fields = await session.call_tool(
         "list_form_fields",
@@ -364,6 +378,15 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
         },
     )
     assert view.is_error is False
+    view_provenance = view.structured_content["provenance"]
+    assert view_provenance["source"]["view_id"] == 101
+    assert view_provenance["source"]["form"] == FORM
+    assert view_provenance["cached"] is False
+    assert view_provenance["cache_reads"][0]["cached"] is True
+    assert (
+        view_provenance["cache_reads"][0]["read_at"]
+        == (fields.structured_content["provenance"]["data_read_at"])
+    )
     assert (
         view.structured_content["view"]["view_type"]["name"]
         == "AR_VUI_TYPE_PROGRESSIVE"
@@ -810,7 +833,7 @@ def _write_config(path: Path, bridge_port: int) -> None:
 server:
   transport: stdio
   log_level: INFO
-  metadata_cache_ttl_seconds: 0
+  metadata_cache_ttl_seconds: 60
   health_cache_ttl_seconds: 0
   write_plan_ttl_seconds: 600
   max_pending_write_plans: 20

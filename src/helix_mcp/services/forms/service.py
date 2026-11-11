@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from datetime import datetime
 from difflib import SequenceMatcher
 from time import monotonic
 from typing import NoReturn, Protocol
@@ -18,6 +19,7 @@ from helix_mcp.clients.arapi.definitions import (
     FieldDefinition,
 )
 from helix_mcp.config import BackendKind, Environment, TargetKey
+from helix_mcp.provenance import record_cache_read, utc_now
 from helix_mcp.services.forms.errors import (
     FormFieldNotAllowedError,
     FormNotAllowedError,
@@ -97,7 +99,7 @@ class FormQueryService:
         self._limiter = limiter or FormRateLimiter(time_source)
         self._metadata_cache: dict[
             tuple[TargetKey, str],
-            tuple[float, tuple[FormFieldMetadata, ...]],
+            tuple[float, tuple[FormFieldMetadata, ...], datetime],
         ] = {}
         self._metadata_cache_lock = asyncio.Lock()
         self._metadata_cache_ttl = metadata_cache_ttl_seconds
@@ -478,7 +480,9 @@ class FormQueryService:
         form: str,
     ) -> tuple[FormFieldMetadata, ...]:
         if self._metadata_cache_ttl == 0:
-            return await self._load_field_metadata(target, form)
+            fields = await self._load_field_metadata(target, form)
+            record_cache_read("field_catalog", utc_now(), cached=False)
+            return fields
         key = (target.key, form)
         cached = self._cached_field_metadata(key)
         if cached is not None:
@@ -488,6 +492,8 @@ class FormQueryService:
             if cached is not None:
                 return cached
             fields = await self._load_field_metadata(target, form)
+            acquired_at = utc_now()
+            record_cache_read("field_catalog", acquired_at, cached=False)
             if len(self._metadata_cache) >= _MAX_METADATA_CACHE_ENTRIES:
                 oldest = min(
                     self._metadata_cache,
@@ -497,6 +503,7 @@ class FormQueryService:
             self._metadata_cache[key] = (
                 self._time() + self._metadata_cache_ttl,
                 fields,
+                acquired_at,
             )
             return fields
 
@@ -542,10 +549,11 @@ class FormQueryService:
         cached = self._metadata_cache.get(key)
         if cached is None:
             return None
-        expires_at, fields = cached
+        expires_at, fields, acquired_at = cached
         if expires_at <= self._time():
             self._metadata_cache.pop(key, None)
             return None
+        record_cache_read("field_catalog", acquired_at, cached=True)
         return fields
 
     async def search(

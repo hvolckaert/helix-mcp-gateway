@@ -73,7 +73,7 @@ the database, and the user-supplied proprietary BMC libraries remain local.
 
 ## Capabilities
 
-The server exposes 22 MCP tools:
+The server exposes 25 MCP tools:
 
 | Area | Tools | External effect |
 | --- | --- | --- |
@@ -85,6 +85,12 @@ The server exposes 22 MCP tools:
 | Write-plan lifecycle | `get_write_plan`, `cancel_write_plan` | Inspection or cancellation of temporary plans |
 
 See the complete [MCP tool catalog](docs/mcp-tools.md).
+
+All 18 read tools include a required `provenance` block with the environment,
+authorized source identifiers, UTC read/acquisition times and fingerprints of
+the applied policies. Cached results retain their original acquisition time;
+cached metadata used by a fresh read is identified separately. See the
+[read provenance contract](docs/mcp-tools.md#read-provenance).
 
 ## Security model
 

@@ -40,6 +40,53 @@ permissions reduce it.
 The metadata and SQL administrator requirement comes from AR API. All form
 operations still require the ordinary permissions of the selected BMC account.
 
+## Read provenance
+
+All 18 tools with the MCP read-only annotation return a required `provenance`
+object alongside their existing result fields. This includes
+`execute_sql_query`, `get_sql_query_plan` and `get_write_plan`. Tool inputs,
+authorization, approval digests and the seven mutation/planning responses do
+not change. Consumers with closed response schemas must accept this additional
+field when adopting a release containing this change.
+
+| Field | Meaning |
+| --- | --- |
+| `schema_version` | Provenance contract version, initially `1`. |
+| `environment` | Explicit `dev`, `qa` or `prod`; `null` only for the multi-environment `list_targets` catalog. |
+| `source` | Tool operation, backend (`arapi`, `gateway` or `health`) and applicable authorized identifiers: form, entry, field, view, database object or plan/digest. Unavailable identifiers are `null`; none are inferred. |
+| `read_at` | UTC time when this Gateway read operation completed. |
+| `data_read_at` | Original Gateway acquisition time for a cached primary result; otherwise the current read completion time. Neither timestamp is a BMC modification time or a transactional snapshot guarantee. |
+| `cached` | Whether the primary result was served from a Gateway cache. |
+| `cache_reads` | Consulted form, field or health caches, each with its original `read_at` and hit flag. A fresh field/view definition can have `cached=false` while relying on cached field metadata. |
+| `policy_versions` | Map from environment to `sha256:` fingerprint of its effective policy rules. A normal read has one entry. `list_targets` includes exactly the returned environments, even when disabled environments are explicitly requested. An empty catalog has an empty map. |
+
+Cache acquisition timestamps are stored with the cache entries, including when
+the cache was populated outside an MCP call. Hits retain them; expiration and
+explicit health refresh acquire a new timestamp. Cache TTLs still use the
+monotonic clock. Timestamps describe the Gateway's observations only: upstream
+AR API or BMC caches and source-record update times are not observable here.
+
+Policy fingerprints hash the complete validated policy rules with sorted map
+keys and unordered allowlist/denylist entries, under the `helix-policy-v1`
+hashing contract. Policy labels, connection endpoints and credentials are not
+part of the fingerprint. Changing rule values changes the fingerprint; merely
+renaming the policy or reordering its lists does not. These hashes identify
+Gateway policy configuration, not effective BMC account permissions, proof of
+ownership, a signature or permission for a subsequent operation.
+
+Source identifiers come from the authorized result. Provenance does not copy
+SQL text, qualifications, field values, menu values, credentials or complete
+policy rules. For SQL execution the approved plan ID and digest identify the
+query. For collections, the block applies to the returned page; existing row,
+field and view identities stay in the payload rather than being duplicated.
+`get_*_plan` timestamps describe reading the local plan store, not refreshing
+any Helix values captured when the plan was created. Failed/cancelled calls
+retain the existing sanitized error contract and do not emit success provenance.
+
+Clients should preserve this block with exported or reused results and should
+not substitute `read_at` for an older cached acquisition timestamp. No new
+Gateway configuration, migration, network call or credential is needed.
+
 ## Target and health tools
 
 ### `list_targets`
