@@ -14,7 +14,9 @@ from helix_mcp.clients.arapi import (
     ArapiBridgeClient,
     ArapiBridgeClosedError,
     ArapiBridgeConflictError,
+    ArapiBridgeProcessError,
     ArapiBridgeProtocolError,
+    ArapiBridgeTransportError,
     ArapiFieldAmbiguousError,
     ArapiFieldNotQueryableError,
     ArapiFormNotFoundError,
@@ -67,6 +69,128 @@ def secrets() -> SecretResolver:
             )
         ]
     )
+
+
+@pytest.mark.parametrize("operation", ("read", "create", "update", "health"))
+def test_failed_readiness_sends_no_credentials_or_operation(
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    async def unavailable() -> None:
+        raise ArapiBridgeProcessError("bridge unavailable")
+
+    async def forbidden_secret(*args, **kwargs):
+        raise AssertionError(
+            "credentials must not be resolved before readiness"
+        )
+
+    def forbidden_http(request):
+        raise AssertionError("operation must not be sent before readiness")
+
+    monkeypatch.setattr(SecretResolver, "resolve", forbidden_secret)
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(forbidden_http),
+        ) as transport:
+            client = ArapiBridgeClient(
+                target=TARGET,
+                config=config(),
+                secrets=secrets(),
+                http_client=transport,
+                ensure_bridge=unavailable,
+            )
+            with pytest.raises(ArapiBridgeProcessError):
+                if operation == "read":
+                    await client.list_forms()
+                elif operation == "health":
+                    await client.probe_bridge()
+                elif operation == "create":
+                    await client.create_entry(
+                        form="Example:Form", values={"Name": "example"}
+                    )
+                else:
+                    await client.update_entry(
+                        form="Example:Form",
+                        entry_id="1",
+                        values={"Name": "example"},
+                        precondition="1000",
+                    )
+
+    run(scenario())
+
+
+@pytest.mark.parametrize("operation", ("create", "update"))
+def test_lost_write_response_never_restarts_or_replays_the_operation(
+    operation: str,
+) -> None:
+    readiness_checks = 0
+    sent_operations = 0
+
+    async def ready() -> None:
+        nonlocal readiness_checks
+        readiness_checks += 1
+
+    def handler(request):
+        nonlocal sent_operations
+        assert readiness_checks == 1
+        sent_operations += 1
+        # The server may have committed before the response was lost.
+        raise httpx.ReadTimeout("response lost", request=request)
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(handler),
+        ) as transport:
+            client = ArapiBridgeClient(
+                target=TARGET,
+                config=config(),
+                secrets=secrets(),
+                http_client=transport,
+                ensure_bridge=ready,
+            )
+            with pytest.raises(ArapiBridgeTransportError):
+                if operation == "create":
+                    await client.create_entry(
+                        form="Example:Form", values={"Name": "example"}
+                    )
+                else:
+                    await client.update_entry(
+                        form="Example:Form",
+                        entry_id="1",
+                        values={"Name": "example"},
+                        precondition="1000",
+                    )
+
+    run(scenario())
+    assert readiness_checks == sent_operations == 1
+
+
+def test_client_closed_during_readiness_sends_no_request() -> None:
+    async def scenario() -> None:
+        async def ready() -> None:
+            await client.aclose()
+
+        def forbidden(request):
+            raise AssertionError("closed clients must not send requests")
+
+        async with httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(forbidden),
+        ) as transport:
+            client = ArapiBridgeClient(
+                target=TARGET,
+                config=config(),
+                secrets=secrets(),
+                http_client=transport,
+                ensure_bridge=ready,
+            )
+            with pytest.raises(ArapiBridgeClosedError):
+                await client.list_forms()
+
+    run(scenario())
 
 
 def test_view_metadata_uses_bounded_exact_field_ids() -> None:

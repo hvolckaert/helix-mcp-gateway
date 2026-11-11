@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
+## Unreleased
+
+- Recover an unavailable AR API bridge before a surviving client's next
+  backend request or fresh health probe, including when the original owner
+  exits or its Java child dies. Serialize recovery and shutdown within each
+  application, preserve authentication, and never replay an operation after
+  it has been sent. Record sanitized bridge ownership and recovery events.
+
 ## 0.17.1 - 2026-11-11
 
 - Keep checking authenticated bridge readiness when a concurrently started

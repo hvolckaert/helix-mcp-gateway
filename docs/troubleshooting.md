@@ -158,6 +158,34 @@ child from a running child that never became healthy. It does not include
 Java output, credentials, or local paths. A cancelled readiness wait cleans
 up its own child. These checks require no configuration changes.
 
+### Tools remain connected after the bridge owner closes
+
+The process that starts Java owns that child and stops it during shutdown.
+Other MCP clients and the dashboard can reuse the same authenticated bridge,
+so closing its owner can leave those clients running after Java has exited.
+The concurrent-startup fix in 0.17.1 handles a port bind race at startup;
+it does not restore the bridge for clients that were already connected.
+
+The gateway now checks authenticated readiness before each backend request
+and fresh bridge health probe. A surviving client can start or reuse a
+replacement bridge before sending the operation. Recovery is serialized
+within each application and keeps the existing bounded startup checks across
+processes. An owned child that is still running but fails a health check is
+reported as unavailable, without killing or replacing it. A closed application
+cannot restart Java.
+
+No request is replayed after transmission. If Java stops while a create or
+update is in flight, its outcome may be uncertain; recovery does not bypass
+the existing planning, approval, conflict, or single-use execution rules.
+This change adds one local readiness probe to backend requests. Cached reads
+retain their existing acquisition timestamps and cache behavior.
+
+The operational log records `arapi_bridge_started`, `arapi_bridge_exited`,
+`arapi_bridge_owner_stopping`, `arapi_bridge_recovery_started`, and
+`arapi_bridge_recovered`. These events contain no credentials, backend data,
+local paths, or endpoint addresses. Older logs do not establish which client
+owned a bridge that disappeared.
+
 ## Safe evidence for a report
 
 Include:

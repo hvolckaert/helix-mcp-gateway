@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 from helix_mcp.clients.arapi.client import ArapiBridgeClient
 from helix_mcp.clients.arapi.errors import (
     ArapiBridgeClosedError,
@@ -15,16 +17,24 @@ from helix_mcp.targeting import ResolvedTarget
 class ArapiBridgeClientPool:
     """Create at most one bridge client per ARAPI target."""
 
-    __slots__ = ("_bridge_token", "_clients", "_closed", "_secrets")
+    __slots__ = (
+        "_bridge_token",
+        "_clients",
+        "_closed",
+        "_ensure_bridge",
+        "_secrets",
+    )
 
     def __init__(
         self,
         secrets: SecretResolver,
         *,
         bridge_token: str | None = None,
+        ensure_bridge: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._secrets = secrets
         self._bridge_token = bridge_token
+        self._ensure_bridge = ensure_bridge
         self._clients: dict[TargetKey, ArapiBridgeClient] = {}
         self._closed = False
 
@@ -49,6 +59,7 @@ class ArapiBridgeClientPool:
                 config=target.config.arapi,
                 secrets=self._secrets,
                 bridge_token=self._bridge_token,
+                ensure_bridge=self._ensure_bridge,
             )
             self._clients[target.key] = client
         return client

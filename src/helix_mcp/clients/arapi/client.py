@@ -8,7 +8,7 @@ import hmac
 import json
 import math
 import secrets
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeGuard
 
 import httpx
@@ -68,6 +68,7 @@ class ArapiBridgeClient:
         "_client",
         "_closed",
         "_config",
+        "_ensure_bridge",
         "_secrets",
         "_target",
     )
@@ -80,12 +81,14 @@ class ArapiBridgeClient:
         secrets: SecretResolver,
         http_client: httpx.AsyncClient | None = None,
         bridge_token: str | None = None,
+        ensure_bridge: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._target = target
         self._config = config
         self._secrets = secrets
         self._closed = False
         self._bridge_token = bridge_token
+        self._ensure_bridge = ensure_bridge
         self._client = http_client or httpx.AsyncClient(
             base_url=str(config.bridge_base_url),
             timeout=httpx.Timeout(config.request_timeout_seconds),
@@ -388,6 +391,9 @@ class ArapiBridgeClient:
         """Validate the local bridge liveness endpoint without credentials."""
 
         self._ensure_open()
+        if self._ensure_bridge is not None:
+            await self._ensure_bridge()
+            self._ensure_open()
         challenge = secrets.token_urlsafe(24)
         try:
             response = await self._client.get(
@@ -466,6 +472,11 @@ class ArapiBridgeClient:
         timeout_seconds: int | None = None,
     ) -> tuple[Any, int]:
         self._ensure_open()
+        if self._ensure_bridge is not None:
+            # Recover before resolving credentials or sending business data.
+            # Never retry a POST: a transport failure may follow a commit.
+            await self._ensure_bridge()
+            self._ensure_open()
         secret = await self._secrets.resolve(
             self._config.credentials,
             required_fields=("username", "password"),
