@@ -1843,6 +1843,89 @@ def test_http_surface_is_local_english_and_csrf_protected(
         thread.join(timeout=2)
 
 
+@pytest.mark.integration
+def test_dashboard_session_renewal_requires_same_origin_request(
+    tmp_path: Path,
+) -> None:
+    service = DashboardService(_installation(tmp_path), process_environment={})
+    server = DashboardHTTPServer(("127.0.0.1", 0), service, "fresh-token")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    connection = http.client.HTTPConnection(
+        "127.0.0.1", server.server_port, timeout=5
+    )
+    dispatched = []
+    service.configure = lambda payload: dispatched.append(payload) or {}  # type: ignore[method-assign]
+    try:
+        for headers in (
+            {},
+            {"X-Helix-Dashboard-Reconnect": "0"},
+            {
+                "X-Helix-Dashboard-Reconnect": "1",
+                "Origin": "https://untrusted.example",
+            },
+            {
+                "X-Helix-Dashboard-Reconnect": "1",
+                "Host": "untrusted.example",
+            },
+        ):
+            connection.request("GET", "/api/session", headers=headers)
+            response = connection.getresponse()
+            assert response.status == 403
+            assert b"fresh-token" not in response.read()
+            assert response.getheader("Access-Control-Allow-Origin") is None
+
+        connection.request(
+            "POST",
+            "/api/configuration",
+            body="{}",
+            headers={
+                "Content-Type": "application/json",
+                "X-Helix-Dashboard-Token": "old-token",
+            },
+        )
+        response = connection.getresponse()
+        assert response.status == 403
+        assert (
+            json.loads(response.read())["error_code"]
+            == "DASHBOARD_TOKEN_INVALID"
+        )
+        assert dispatched == []
+
+        connection.request(
+            "GET",
+            "/api/session",
+            headers={
+                "X-Helix-Dashboard-Reconnect": "1",
+                "Origin": f"http://127.0.0.1:{server.server_port}",
+            },
+        )
+        response = connection.getresponse()
+        assert response.status == 200
+        assert response.getheader("Cache-Control") == "no-store"
+        assert response.getheader("Access-Control-Allow-Origin") is None
+        session = json.loads(response.read())
+        assert session == {**service.identity(), "token": "fresh-token"}
+        connection.request(
+            "POST",
+            "/api/configuration",
+            body="{}",
+            headers={
+                "Content-Type": "application/json",
+                "X-Helix-Dashboard-Token": session["token"],
+            },
+        )
+        response = connection.getresponse()
+        assert response.status == 200
+        response.read()
+        assert dispatched == [{}]
+    finally:
+        connection.close()
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+
 class FakeDashboardProcess:
     pid = 8_765
 

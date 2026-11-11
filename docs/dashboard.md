@@ -242,7 +242,9 @@ launcher.
 
 The update runs in a detached worker because the dashboard's own Python runtime
 may be replaced. The page temporarily loses its loopback connection, polls for
-the new dashboard process, and reloads state after it returns. The worker
+the new dashboard process, and renews its session before refreshing metadata.
+If there are unsaved changes, the live controls and original configuration
+revision stay intact; otherwise the page loads the current saved state. The worker
 uses the private GitHub CLI provisioned by setup, verifies the GitHub release
 digest and signed build provenance, installs an isolated runtime, backs up
 local configuration and state, rebuilds the Java bridge, runs readiness checks,
@@ -256,6 +258,30 @@ For OpenClaw-managed installations, the update reads the exposed-tool catalog
 from the newly installed runtime before replacing the OpenClaw definition.
 This ensures that tools introduced by the target release are included in the
 automatic reload rather than inheriting the previous release's filter.
+
+## Reconnecting without losing edits
+
+When a Dashboard restart or update invalidates the page's token, the page
+renews its session for the same installation and retries the rejected request
+once. Concurrent rejected requests share one renewal. Only the explicit
+`DASHBOARD_TOKEN_INVALID` response permits a retry: the server returns it
+before dispatching the operation. Connection failures, lost responses, other
+403 responses and configuration conflicts do not replay a save or update.
+
+The connection notice explains recovery and offers **Reconnect without losing
+changes** if renewal fails. Keep the page open while retrying. Recovery does
+not reload the page or replace dirty controls, so incomplete values, field/form
+selections and replacement credentials remain available. Credentials and drafts
+are not copied into local storage, session storage, URLs or logs. Closing or
+manually reloading the page still discards unsaved edits.
+Pages opened on a release predating this recovery code must first load the
+updated page; already downloaded browser code cannot gain recovery retroactively.
+
+Managed-update reconnection refreshes visible metadata selectors, including
+writable forms, while retaining selections and edits on other tabs. The
+original configuration revision is preserved: if saved configuration changed
+elsewhere, the existing conflict check prevents an overwrite. Recovery does
+not automatically save edits, resolve conflicts or approve a new operation.
 
 ## Save transaction
 
@@ -289,6 +315,9 @@ The dashboard:
 - validates the `Host` and browser `Origin` headers;
 - requires a process-local random token for every POST request and embeds it in
   the loopback-served page, so opening the normal dashboard URL needs no token;
+- renews that token through the no-store `/api/session` GET, which requires a
+  non-simple reconnect header, validates any supplied Origin, and sends no CORS
+  permission; the browser also checks the installation identity before reuse;
 - bounds JSON request bodies to 64 KiB;
 - serves restrictive CSP, no-store, no-referrer, and anti-framing headers;
 - suppresses HTTP request logging;

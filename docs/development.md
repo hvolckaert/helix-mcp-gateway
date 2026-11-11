@@ -59,6 +59,22 @@ byte for byte, and packaged regular files use mode `0644`.
 
 ## Continuous integration
 
+The opt-in Dashboard browser regression uses Chromium against the real
+Dashboard HTML and HTTP handler, temporary configuration and fictional metadata:
+
+```text
+.venv/bin/python -m pip install -e ".[test,browser-test]"
+.venv/bin/python -m playwright install --with-deps chromium
+HELIX_DASHBOARD_BROWSER_TESTS=1 \
+.venv/bin/python -m pytest -q -m dashboard_browser tests/e2e/test_dashboard_browser.py
+```
+
+It restarts the loopback server on the same port with a new token and verifies
+selectors, unsaved edits, credential handling, bounded retries and save
+conflicts. Update installation is simulated; no release is installed and no
+user configuration or live Helix service is accessed. CI has a dedicated browser
+job, and the Release workflow runs these regressions before publishing.
+
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main`. Python
 is checked on Linux and Windows. A Java 17 job runs the isolated bridge suite,
 and CI also executes the loopback Python/Java contract and reproducible stdio

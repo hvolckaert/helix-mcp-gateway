@@ -39,7 +39,7 @@ jobs:
       - name: Install build and test dependencies
         run: |
           python -m pip install --upgrade "pip==26.2.1"
-          python -m pip install ".[test]"
+          python -m pip install ".[test,browser-test]"
 
       - name: Set reproducible build timestamp
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
@@ -90,6 +90,14 @@ jobs:
         run: >-
           python -m pytest -q -s -m local_e2e
           tests/e2e/test_stdio_local.py
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Test dashboard recovery and post-update selectors
+        env:
+          HELIX_DASHBOARD_BROWSER_TESTS: "1"
+        run: python -m pytest -q -m dashboard_browser tests/e2e/test_dashboard_browser.py
 
       - name: Build wheel and source distribution
         run: python -m build
