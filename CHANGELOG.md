@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
-## Unreleased
+## 0.17.0 - 2026-11-11
 
 - Add required, additive `provenance` to all 18 MCP read-tool responses:
   explicit environment, authorized source identity, UTC read/acquisition
