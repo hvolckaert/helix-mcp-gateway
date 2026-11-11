@@ -10,6 +10,7 @@ import os
 import re
 import secrets
 import zipfile
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -167,13 +168,27 @@ class ArapiBridgeProcess:
                 "ARAPI bridge process could not be started"
             ) from None
 
-        for _ in range(50):
-            if self._process.returncode is not None:
-                break
-            if await self._healthy():
-                return
-            await asyncio.sleep(0.1)
+        try:
+            for _ in range(50):
+                # Another client may win the bind race. Even if our child
+                # exits, give that bridge the normal authenticated readiness
+                # window; an exited child alone does not imply unavailability.
+                if await self._healthy():
+                    if self._process.returncode is not None:
+                        await self._process.wait()
+                        self._process = None
+                    return
+                await asyncio.sleep(0.1)
+        except BaseException:
+            await self.aclose()
+            raise
+        exited = self._process.returncode is not None
         await self.aclose()
+        if exited:
+            raise ArapiBridgeProcessError(
+                "ARAPI bridge process exited and no healthy bridge became "
+                "available"
+            )
         raise ArapiBridgeProcessError("ARAPI bridge did not become healthy")
 
     async def check_startup_requirements(self) -> None:
@@ -202,7 +217,9 @@ class ArapiBridgeProcess:
         self._process = None
         if process is None or process.returncode is not None:
             return
-        process.terminate()
+        # The child may exit between the returncode check and termination.
+        with suppress(ProcessLookupError):
+            process.terminate()
         try:
             await asyncio.wait_for(process.wait(), timeout=5)
         except TimeoutError:

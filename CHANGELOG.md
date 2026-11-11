@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
+## Unreleased
+
+- Keep checking authenticated bridge readiness when a concurrently started
+  Java child exits, so clients can reuse the bridge that won the port bind.
+  Preserve the bounded retry window and process ownership, clean up owned
+  children when readiness is cancelled, and distinguish child exit from a
+  running bridge that never becomes healthy without exposing process output.
+
 ## 0.17.0 - 2026-11-11
 
 - Add required, additive `provenance` to all 18 MCP read-tool responses:

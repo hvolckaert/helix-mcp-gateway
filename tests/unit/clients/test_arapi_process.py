@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import os
 import stat
 import zipfile
 from pathlib import Path
 
+import httpx
 import pytest
 
 from helix_mcp.clients.arapi import (
@@ -90,6 +94,257 @@ def test_healthy_external_bridge_is_not_owned(
     run(manager.start())
     run(manager.aclose())
 
+    assert manager.owned is False
+
+
+@pytest.mark.parametrize("pending_checks", (0, 3))
+def test_exited_child_reuses_a_concurrent_bridge(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pending_checks: int,
+) -> None:
+    health_checks = 0
+    sleeps = 0
+
+    class ExitedProcess:
+        returncode = 1
+
+        async def wait(self) -> int:
+            return self.returncode
+
+        def terminate(self) -> None:
+            raise AssertionError("the exited child must not be terminated")
+
+    async def create(*args, **kwargs):
+        return ExitedProcess()
+
+    async def healthy(self) -> bool:
+        nonlocal health_checks
+        health_checks += 1
+        # The first check precedes process creation. The other client may
+        # still be starting its listener when our child loses the bind race.
+        return health_checks > 1 + pending_checks
+
+    async def sleep(delay: float) -> None:
+        nonlocal sleeps
+        sleeps += 1
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create)
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
+    monkeypatch.setattr(
+        "helix_mcp.clients.arapi.process.jdk_executable",
+        lambda executable: "/runtime/java",
+    )
+    manager = ArapiBridgeProcess(
+        settings(tmp_path),
+        ("http://127.0.0.1:8097/",),
+        bridge_token="bridge-test-token",
+    )
+
+    run(manager.start())
+    assert manager.owned is False
+    run(manager.aclose())
+    assert health_checks == pending_checks + 2
+    assert sleeps == pending_checks
+
+
+class StartupChild:
+    returncode: int | None = None
+    terminated = False
+
+    def terminate(self) -> None:
+        assert self.returncode is None
+        self.terminated = True
+        self.returncode = -15
+
+    async def wait(self) -> int:
+        assert self.returncode is not None
+        return self.returncode
+
+
+@pytest.fixture
+def starting_bridge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    child = StartupChild()
+
+    async def create(*args, **kwargs):
+        return child
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create)
+    monkeypatch.setattr(
+        "helix_mcp.clients.arapi.process.jdk_executable",
+        lambda executable: "/runtime/java",
+    )
+    manager = ArapiBridgeProcess(
+        settings(tmp_path),
+        ("http://127.0.0.1:8097/",),
+        bridge_token="bridge-test-token",
+    )
+    return manager, child
+
+
+def test_child_exiting_during_health_check_is_not_owned(
+    starting_bridge,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, child = starting_bridge
+    checks = 0
+
+    async def healthy(self) -> bool:
+        nonlocal checks
+        checks += 1
+        if checks == 1:
+            return False
+        child.returncode = 1
+        return True
+
+    monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
+    run(manager.start())
+    assert manager.owned is False
+    run(manager.aclose())
+    assert child.terminated is False
+
+
+@pytest.mark.parametrize("child_exited", (False, True))
+def test_unavailable_bridge_has_bounded_retries_and_cleans_up(
+    starting_bridge,
+    monkeypatch: pytest.MonkeyPatch,
+    child_exited: bool,
+) -> None:
+    manager, child = starting_bridge
+    child.returncode = 1 if child_exited else None
+    checks = 0
+
+    async def unhealthy(self) -> bool:
+        nonlocal checks
+        checks += 1
+        assert checks < 100, "readiness retries must be bounded"
+        return False
+
+    async def sleep(delay: float) -> None:
+        pass
+
+    monkeypatch.setattr(ArapiBridgeProcess, "_healthy", unhealthy)
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    with pytest.raises(ArapiBridgeProcessError) as failure:
+        run(manager.start())
+
+    assert 1 < checks < 100
+    assert failure.value.code == "ARAPI_BRIDGE_PROCESS_ERROR"
+    assert ("process exited" in str(failure.value)) is child_exited
+    assert manager.owned is False
+    assert child.terminated is (not child_exited)
+
+
+@pytest.mark.parametrize("proof", ("valid", "invalid", "missing"))
+def test_concurrent_bridge_still_requires_authenticated_health(
+    starting_bridge,
+    monkeypatch: pytest.MonkeyPatch,
+    proof: str,
+) -> None:
+    manager, child = starting_bridge
+    child.returncode = 1
+    requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        assert requests < 100, "authentication failures must stop retrying"
+        if requests == 1:
+            raise httpx.ConnectError("listener is not ready", request=request)
+        challenge = request.headers["X-Helix-Bridge-Challenge"]
+        token = b"bridge-test-token" if proof == "valid" else b"another-token"
+        signature = (
+            base64.urlsafe_b64encode(
+                hmac.new(token, challenge.encode(), hashlib.sha256).digest()
+            )
+            .rstrip(b"=")
+            .decode()
+        )
+        headers = (
+            {} if proof == "missing" else {"X-Helix-Bridge-Proof": signature}
+        )
+        return httpx.Response(200, json={"status": "ok"}, headers=headers)
+
+    async_client = httpx.AsyncClient
+
+    def client(**kwargs):
+        assert kwargs["trust_env"] is False
+        return async_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    async def sleep(delay: float) -> None:
+        pass
+
+    monkeypatch.setattr(httpx, "AsyncClient", client)
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    if proof == "valid":
+        run(manager.start())
+    else:
+        with pytest.raises(ArapiBridgeProcessError):
+            run(manager.start())
+    run(manager.aclose())
+    assert requests > 1
+    assert manager.owned is False
+    assert child.terminated is False
+
+
+def test_cancelled_readiness_wait_cleans_up_owned_child(
+    starting_bridge,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, child = starting_bridge
+
+    async def scenario() -> None:
+        polling = asyncio.Event()
+        checks = 0
+
+        async def healthy(self) -> bool:
+            nonlocal checks
+            checks += 1
+            if checks == 1:
+                return False
+            polling.set()
+            await asyncio.Future()
+            raise AssertionError("readiness wait should be cancelled")
+
+        monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
+        task = asyncio.create_task(manager.start())
+        try:
+            await asyncio.wait_for(polling.wait(), timeout=5)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert manager.owned is False
+            assert child.terminated is True
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            await manager.aclose()
+
+    run(scenario())
+
+
+def test_child_exit_during_cleanup_does_not_hide_startup_failure(
+    starting_bridge,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, child = starting_bridge
+
+    async def unhealthy(self) -> bool:
+        return False
+
+    async def sleep(delay: float) -> None:
+        pass
+
+    def terminate() -> None:
+        child.returncode = 1
+        raise ProcessLookupError
+
+    monkeypatch.setattr(ArapiBridgeProcess, "_healthy", unhealthy)
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    monkeypatch.setattr(child, "terminate", terminate)
+    with pytest.raises(ArapiBridgeProcessError):
+        run(manager.start())
     assert manager.owned is False
 
 

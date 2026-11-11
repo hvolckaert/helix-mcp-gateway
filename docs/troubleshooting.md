@@ -140,6 +140,24 @@ On native Windows the command ends in `Scripts\helix-mcp.exe`. Restart the
 MCP client after changing its server configuration. Run the same command from
 a terminal to distinguish client registration from gateway preflight errors.
 
+### Several clients start the Java bridge at the same time
+
+The dashboard and MCP clients may all see the local bridge as unavailable
+before any of their Java children has opened the configured port. One child
+can then exit because another child acquired that port first.
+
+During startup, the gateway continues its bounded readiness checks even if
+its child exits. It reuses the available bridge only after the normal health
+and authentication checks succeed, and does not take ownership of a bridge
+started by another client. Closing that borrower leaves the other bridge
+running. The original owner still controls the bridge's lifetime.
+
+If no acceptable bridge becomes ready, startup still fails with
+`ARAPI_BRIDGE_PROCESS_ERROR`. Its sanitized message distinguishes an exited
+child from a running child that never became healthy. It does not include
+Java output, credentials, or local paths. A cancelled readiness wait cleans
+up its own child. These checks require no configuration changes.
+
 ## Safe evidence for a report
 
 Include:
