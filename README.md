@@ -107,6 +107,13 @@ a real environment.
 
 ## Requirements
 
+The gateway uses the official MCP Python SDK `>=2.3.0,<3`. It supports legacy
+MCP initialization and the 2026-07-28 protocol through the same 22 tools, over
+stdio or authenticated loopback Streamable HTTP. Existing client launchers and
+gateway configuration do not need to change. Managed installations receive the
+SDK migration when updating to a release containing this change; installing
+SDK 2.x into an older gateway runtime is not supported.
+
 - Python 3.12;
 - a Java 17 or later JDK with the required compiler modules;
 - an authorized BMC Developer Studio / AR System Java API installation;

@@ -7,8 +7,9 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
-from mcp.shared.memory import create_connected_server_and_client_session
+import pytest
+from mcp.client import Client
+from mcp.server.mcpserver import MCPServer
 
 from helix_mcp.bootstrap import ApplicationContext
 from helix_mcp.config import (
@@ -463,15 +464,16 @@ def _apply_result(operation: WriteOperation) -> ApplyWriteResult:
     )
 
 
-def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
-    None
-):
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
+    mode,
+) -> None:
     config, _ = target_config(allow_reads=True)
     fake_forms = FakeFormService()
     fake_health = FakeHealthService()
     fake_writes = FakeWriteTools()
     fake_database = FakeDatabaseTools()
-    server = FastMCP("contract-test")
+    server = MCPServer("contract-test")
     register_mcp_tools(
         server,
         targets=TargetToolAdapter(TargetRegistry(config)),
@@ -483,9 +485,7 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
     )
 
     async def scenario() -> None:
-        async with create_connected_server_and_client_session(
-            server
-        ) as client:
+        async with Client(server, mode=mode) as client:
             listed = await client.list_tools()
             by_name = {tool.name: tool for tool in listed.tools}
             assert set(by_name) == {
@@ -541,73 +541,73 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                 )
 
             catalog = by_name["list_targets"]
-            assert catalog.annotations.readOnlyHint is True
-            assert catalog.annotations.destructiveHint is False
-            assert catalog.annotations.openWorldHint is False
-            assert catalog.outputSchema is not None
+            assert catalog.annotations.read_only_hint is True
+            assert catalog.annotations.destructive_hint is False
+            assert catalog.annotations.open_world_hint is False
+            assert catalog.output_schema is not None
 
             query_tool = by_name["query_form"]
-            assert query_tool.annotations.readOnlyHint is True
-            assert query_tool.annotations.destructiveHint is False
-            assert query_tool.annotations.openWorldHint is True
-            assert set(query_tool.inputSchema["required"]) == {
+            assert query_tool.annotations.read_only_hint is True
+            assert query_tool.annotations.destructive_hint is False
+            assert query_tool.annotations.open_world_hint is True
+            assert set(query_tool.input_schema["required"]) == {
                 "environment",
                 "form",
                 "fields",
             }
 
             update_plan_tool = by_name["plan_update_entry"]
-            assert update_plan_tool.annotations.readOnlyHint is False
-            assert update_plan_tool.annotations.destructiveHint is False
-            assert update_plan_tool.annotations.openWorldHint is True
+            assert update_plan_tool.annotations.read_only_hint is False
+            assert update_plan_tool.annotations.destructive_hint is False
+            assert update_plan_tool.annotations.open_world_hint is True
 
             sql_plan_tool = by_name["plan_sql_query"]
-            assert sql_plan_tool.annotations.readOnlyHint is False
-            assert sql_plan_tool.annotations.destructiveHint is False
-            assert sql_plan_tool.annotations.openWorldHint is False
-            assert set(sql_plan_tool.inputSchema["required"]) == {
+            assert sql_plan_tool.annotations.read_only_hint is False
+            assert sql_plan_tool.annotations.destructive_hint is False
+            assert sql_plan_tool.annotations.open_world_hint is False
+            assert set(sql_plan_tool.input_schema["required"]) == {
                 "environment",
                 "sql",
             }
 
             sql_execute_tool = by_name["execute_sql_query"]
-            assert sql_execute_tool.annotations.readOnlyHint is True
-            assert sql_execute_tool.annotations.destructiveHint is False
-            assert sql_execute_tool.annotations.openWorldHint is True
-            assert set(sql_execute_tool.inputSchema["required"]) == {
+            assert sql_execute_tool.annotations.read_only_hint is True
+            assert sql_execute_tool.annotations.destructive_hint is False
+            assert sql_execute_tool.annotations.open_world_hint is True
+            assert set(sql_execute_tool.input_schema["required"]) == {
                 "environment",
                 "plan_id",
                 "plan_digest",
             }
 
             objects_tool = by_name["list_database_objects"]
-            assert objects_tool.annotations.readOnlyHint is True
-            assert objects_tool.annotations.destructiveHint is False
-            assert set(objects_tool.inputSchema["required"]) == {
+            assert objects_tool.annotations.read_only_hint is True
+            assert objects_tool.annotations.destructive_hint is False
+            assert set(objects_tool.input_schema["required"]) == {
                 "environment",
             }
 
             columns_tool = by_name["list_database_columns"]
-            assert columns_tool.annotations.readOnlyHint is True
-            assert set(columns_tool.inputSchema["required"]) == {
+            assert columns_tool.annotations.read_only_hint is True
+            assert set(columns_tool.input_schema["required"]) == {
                 "environment",
                 "schema",
                 "object_name",
             }
 
             describe_tool = by_name["describe_database_object"]
-            assert describe_tool.annotations.readOnlyHint is True
-            assert set(describe_tool.inputSchema["required"]) == {
+            assert describe_tool.annotations.read_only_hint is True
+            assert set(describe_tool.input_schema["required"]) == {
                 "environment",
                 "schema",
                 "object_name",
             }
 
             entry_tool = by_name["get_entry"]
-            assert entry_tool.annotations.readOnlyHint is True
-            assert entry_tool.annotations.destructiveHint is False
-            assert entry_tool.annotations.openWorldHint is True
-            assert set(entry_tool.inputSchema["required"]) == {
+            assert entry_tool.annotations.read_only_hint is True
+            assert entry_tool.annotations.destructive_hint is False
+            assert entry_tool.annotations.open_world_hint is True
+            assert set(entry_tool.input_schema["required"]) == {
                 "environment",
                 "form",
                 "entry_id",
@@ -615,86 +615,87 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
             }
 
             field_tool = by_name["list_form_fields"]
-            assert field_tool.annotations.readOnlyHint is True
-            assert field_tool.annotations.destructiveHint is False
-            assert field_tool.annotations.openWorldHint is True
-            assert set(field_tool.inputSchema["required"]) == {
+            assert field_tool.annotations.read_only_hint is True
+            assert field_tool.annotations.destructive_hint is False
+            assert field_tool.annotations.open_world_hint is True
+            assert set(field_tool.input_schema["required"]) == {
                 "environment",
                 "form",
             }
 
             selection_tool = by_name["get_form_field_selection_values"]
-            assert selection_tool.annotations.readOnlyHint is True
-            assert selection_tool.annotations.destructiveHint is False
-            assert selection_tool.annotations.openWorldHint is True
-            assert set(selection_tool.inputSchema["required"]) == {
+            assert selection_tool.annotations.read_only_hint is True
+            assert selection_tool.annotations.destructive_hint is False
+            assert selection_tool.annotations.open_world_hint is True
+            assert set(selection_tool.input_schema["required"]) == {
                 "environment",
                 "form",
                 "field_id",
             }
 
             menu_tool = by_name["get_form_field_menu_metadata"]
-            assert menu_tool.annotations.readOnlyHint is True
-            assert menu_tool.annotations.destructiveHint is False
-            assert menu_tool.annotations.openWorldHint is True
-            assert set(menu_tool.inputSchema["required"]) == {
+            assert menu_tool.annotations.read_only_hint is True
+            assert menu_tool.annotations.destructive_hint is False
+            assert menu_tool.annotations.open_world_hint is True
+            assert set(menu_tool.input_schema["required"]) == {
                 "environment",
                 "form",
                 "field_id",
             }
 
             menu_values_tool = by_name["resolve_form_field_menu_values"]
-            assert menu_values_tool.annotations.readOnlyHint is True
-            assert menu_values_tool.annotations.destructiveHint is False
-            assert menu_values_tool.annotations.openWorldHint is True
-            assert set(menu_values_tool.inputSchema["required"]) == {
+            assert menu_values_tool.annotations.read_only_hint is True
+            assert menu_values_tool.annotations.destructive_hint is False
+            assert menu_values_tool.annotations.open_world_hint is True
+            assert set(menu_values_tool.input_schema["required"]) == {
                 "environment",
                 "form",
                 "field_id",
             }
 
             forms_tool = by_name["list_forms"]
-            assert forms_tool.annotations.readOnlyHint is True
-            assert forms_tool.annotations.destructiveHint is False
-            assert forms_tool.annotations.openWorldHint is True
-            assert set(forms_tool.inputSchema["required"]) == {
+            assert forms_tool.annotations.read_only_hint is True
+            assert forms_tool.annotations.destructive_hint is False
+            assert forms_tool.annotations.open_world_hint is True
+            assert set(forms_tool.input_schema["required"]) == {
                 "environment",
             }
 
             health_tool = by_name["health_check"]
-            assert health_tool.annotations.readOnlyHint is True
-            assert health_tool.annotations.destructiveHint is False
-            assert health_tool.annotations.openWorldHint is True
-            assert set(health_tool.inputSchema["required"]) == {
+            assert health_tool.annotations.read_only_hint is True
+            assert health_tool.annotations.destructive_hint is False
+            assert health_tool.annotations.open_world_hint is True
+            assert set(health_tool.input_schema["required"]) == {
                 "environment",
             }
 
             plan_tool = by_name["plan_create_entry"]
-            assert plan_tool.annotations.readOnlyHint is False
-            assert plan_tool.annotations.destructiveHint is False
-            assert set(plan_tool.inputSchema["required"]) == {
+            assert plan_tool.annotations.read_only_hint is False
+            assert plan_tool.annotations.destructive_hint is False
+            assert set(plan_tool.input_schema["required"]) == {
                 "environment",
                 "form",
                 "values",
                 "reason",
             }
             apply_tool = by_name["apply_create_entry"]
-            assert apply_tool.annotations.readOnlyHint is False
-            assert apply_tool.annotations.destructiveHint is True
-            assert apply_tool.annotations.idempotentHint is True
+            assert apply_tool.annotations.read_only_hint is False
+            assert apply_tool.annotations.destructive_hint is True
+            assert apply_tool.annotations.idempotent_hint is True
 
             targets = await client.call_tool(
                 "list_targets",
                 {"include_disabled": False},
             )
-            assert targets.isError is False
-            serialized = json.dumps(targets.structuredContent)
+            assert targets.is_error is False
+            serialized = json.dumps(targets.structured_content)
             assert "helix.example.invalid" not in serialized
             assert "HELIX_CREDENTIAL" not in serialized
             assert (
-                targets.structuredContent["targets"][0]["environment"] == "dev"
+                targets.structured_content["targets"][0]["environment"]
+                == "dev"
             )
-            assert "instance" not in targets.structuredContent["targets"][0]
+            assert "instance" not in targets.structured_content["targets"][0]
 
             health = await client.call_tool(
                 "health_check",
@@ -703,8 +704,8 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "force_refresh": True,
                 },
             )
-            assert health.isError is False
-            assert health.structuredContent == {
+            assert health.is_error is False
+            assert health.structured_content == {
                 "environment": "dev",
                 "status": "healthy",
                 "cached": False,
@@ -727,9 +728,9 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "reason": "contract test write",
                 },
             )
-            assert plan.isError is False
-            assert plan.structuredContent["status"] == "pending"
-            assert plan.structuredContent["proposed_values"] == {
+            assert plan.is_error is False
+            assert plan.structured_content["status"] == "pending"
+            assert plan.structured_content["proposed_values"] == {
                 "Field": "review-value"
             }
 
@@ -741,11 +742,11 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "limit": 10,
                 },
             )
-            assert forms.isError is False
-            assert forms.structuredContent["forms"] == [
+            assert forms.is_error is False
+            assert forms.structured_content["forms"] == [
                 {"name": "Example:HelpDesk"}
             ]
-            assert forms.structuredContent["total"] == 1
+            assert forms.structured_content["total"] == 1
 
             fields = await client.call_tool(
                 "list_form_fields",
@@ -756,15 +757,15 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "limit": 10,
                 },
             )
-            assert fields.isError is False
-            assert fields.structuredContent["fields"] == [
+            assert fields.is_error is False
+            assert fields.structured_content["fields"] == [
                 {
                     "id": 1,
                     "name": "Incident Number",
                     "datatype": "CHAR",
                 }
             ]
-            assert fields.structuredContent["total"] == 1
+            assert fields.structured_content["total"] == 1
 
             selection = await client.call_tool(
                 "get_form_field_selection_values",
@@ -774,8 +775,8 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "field_id": 7,
                 },
             )
-            assert selection.isError is False
-            assert selection.structuredContent == {
+            assert selection.is_error is False
+            assert selection.structured_content == {
                 "environment": "dev",
                 "form": "Example:HelpDesk",
                 "field": {
@@ -798,8 +799,8 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "field_id": 2,
                 },
             )
-            assert menu.isError is False
-            assert menu.structuredContent == {
+            assert menu.is_error is False
+            assert menu.structured_content == {
                 "environment": "dev",
                 "form": "Example:HelpDesk",
                 "field": {
@@ -821,8 +822,8 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "limit": 10,
                 },
             )
-            assert menu_values.isError is False
-            assert menu_values.structuredContent == {
+            assert menu_values.is_error is False
+            assert menu_values.structured_content == {
                 "environment": "dev",
                 "form": "Example:HelpDesk",
                 "field": {
@@ -862,12 +863,12 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "include_total": True,
                 },
             )
-            assert result.isError is False
-            assert result.structuredContent["entries"][0]["values"] == {
+            assert result.is_error is False
+            assert result.structured_content["entries"][0]["values"] == {
                 "Incident Number": "INC0001",
                 "Status": "Assigned",
             }
-            assert result.structuredContent["total"] == 1
+            assert result.structured_content["total"] == 1
 
             sql_plan = await client.call_tool(
                 "plan_sql_query",
@@ -877,11 +878,11 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "limit": 5,
                 },
             )
-            assert sql_plan.isError is False
-            assert sql_plan.structuredContent["sql"] == (
+            assert sql_plan.is_error is False
+            assert sql_plan.structured_content["sql"] == (
                 "SELECT status AS status FROM allowed_table"
             )
-            assert sql_plan.structuredContent["status"] == "pending"
+            assert sql_plan.structured_content["status"] == "pending"
 
             sql_result = await client.call_tool(
                 "execute_sql_query",
@@ -891,8 +892,8 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "plan_digest": "2" * 64,
                 },
             )
-            assert sql_result.isError is False
-            assert sql_result.structuredContent == {
+            assert sql_result.is_error is False
+            assert sql_result.structured_content == {
                 "plan_id": "1" * 32,
                 "plan_digest": "2" * 64,
                 "environment": "dev",
@@ -913,8 +914,8 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "limit": 5,
                 },
             )
-            assert objects.isError is False
-            assert objects.structuredContent["objects"] == [
+            assert objects.is_error is False
+            assert objects.structured_content["objects"] == [
                 {
                     "schema_name": "public",
                     "name": "example_base_element",
@@ -931,8 +932,8 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "limit": 5,
                 },
             )
-            assert columns.isError is False
-            assert columns.structuredContent["columns"][0]["name"] == (
+            assert columns.is_error is False
+            assert columns.structured_content["columns"][0]["name"] == (
                 "instanceid"
             )
 
@@ -944,8 +945,8 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "object_name": "example_base_element",
                 },
             )
-            assert description.isError is False
-            assert description.structuredContent["object"]["kind"] == "view"
+            assert description.is_error is False
+            assert description.structured_content["object"]["kind"] == "view"
 
             entry = await client.call_tool(
                 "get_entry",
@@ -956,8 +957,8 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
                     "fields": ["Incident Number", "Status"],
                 },
             )
-            assert entry.isError is False
-            assert entry.structuredContent == {
+            assert entry.is_error is False
+            assert entry.structured_content == {
                 "environment": "dev",
                 "form": "Example:HelpDesk",
                 "entry_id": "INC0001",
@@ -984,13 +985,14 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs() -> (
     assert fake_writes.calls == ["plan_create_entry"]
 
 
-def test_invalid_tool_query_is_sanitized_before_service_call() -> None:
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+def test_invalid_tool_query_is_sanitized_before_service_call(mode) -> None:
     config, _ = target_config(allow_reads=True)
     fake_forms = FakeFormService()
     fake_health = FakeHealthService()
     fake_writes = FakeWriteTools()
     fake_database = FakeDatabaseTools()
-    server = FastMCP("contract-test")
+    server = MCPServer("contract-test")
     register_mcp_tools(
         server,
         targets=TargetToolAdapter(TargetRegistry(config)),
@@ -1002,8 +1004,9 @@ def test_invalid_tool_query_is_sanitized_before_service_call() -> None:
     )
 
     async def scenario() -> None:
-        async with create_connected_server_and_client_session(
+        async with Client(
             server,
+            mode=mode,
             raise_exceptions=False,
         ) as client:
             result = await client.call_tool(
@@ -1015,7 +1018,7 @@ def test_invalid_tool_query_is_sanitized_before_service_call() -> None:
                     "qualification": "'Secret'=\"private-value\"",
                 },
             )
-            assert result.isError is True
+            assert result.is_error is True
             assert "code=TOOL_INPUT_INVALID" in result.content[0].text
             assert "operation_id=" in result.content[0].text
             assert "private-value" not in result.content[0].text
@@ -1024,9 +1027,10 @@ def test_invalid_tool_query_is_sanitized_before_service_call() -> None:
     assert fake_forms.calls == []
 
 
-def test_application_server_lifespan_closes_clients_and_keeps_policy_locked() -> (
-    None
-):
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+def test_application_server_lifespan_closes_clients_and_keeps_policy_locked(
+    mode,
+) -> None:
     config, target = target_config(allow_reads=False)
     runtime = RuntimeTargetContext(
         settings=RuntimeSettings(
@@ -1064,8 +1068,9 @@ def test_application_server_lifespan_closes_clients_and_keeps_policy_locked() ->
     server = create_mcp_server(application)
 
     async def scenario() -> None:
-        async with create_connected_server_and_client_session(
+        async with Client(
             server,
+            mode=mode,
             raise_exceptions=False,
         ) as client:
             result = await client.call_tool(
@@ -1076,7 +1081,7 @@ def test_application_server_lifespan_closes_clients_and_keeps_policy_locked() ->
                     "fields": ["Status"],
                 },
             )
-            assert result.isError is True
+            assert result.is_error is True
             assert "code=FORM_READ_DISABLED" in result.content[0].text
             assert "operation_id=" in result.content[0].text
             assert len(application.arapi_clients) == 0

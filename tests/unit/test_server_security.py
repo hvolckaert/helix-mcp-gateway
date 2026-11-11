@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -86,3 +88,106 @@ def test_http_transport_uses_constant_time_static_token_verifier(
 
     assert asyncio.run(unauthorized_request()).status_code == 401
     asyncio.run(application.aclose())
+
+
+@pytest.mark.parametrize("protocol", ["2025-11-25", "2026-07-28"])
+def test_http_requests_preserve_auth_wire_schema_limits_and_lifespan(
+    tmp_path,
+    protocol,
+) -> None:
+    application = ApplicationContext(_runtime(tmp_path, token="x" * 32))
+    bridge = SimpleNamespace(start=AsyncMock(), aclose=AsyncMock())
+    application.arapi_bridge = bridge
+    server = create_mcp_server(application)
+    app = server.streamable_http_app(
+        host="127.0.0.1",
+        streamable_http_path="/mcp",
+        json_response=True,
+        stateless_http=True,
+        max_request_body_size=1_048_576,
+    )
+
+    async def scenario() -> None:
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://127.0.0.1:8000",
+                headers={
+                    "Authorization": "Bearer " + "x" * 32,
+                    "Accept": "application/json, text/event-stream",
+                    "MCP-Protocol-Version": protocol,
+                    "MCP-Method": "tools/list",
+                },
+            ) as client,
+        ):
+            meta = (
+                {
+                    "_meta": {
+                        "io.modelcontextprotocol/protocolVersion": protocol,
+                        "io.modelcontextprotocol/clientCapabilities": {},
+                    }
+                }
+                if protocol == "2026-07-28"
+                else {}
+            )
+            request = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+                "params": meta,
+            }
+            denied = await client.post(
+                "/mcp",
+                json=request,
+                headers={"Authorization": "Bearer incorrect"},
+            )
+            assert denied.status_code == 401
+            listed = await client.post("/mcp", json=request)
+            assert listed.status_code == 200, listed.text
+            tools = listed.json()["result"]["tools"]
+            assert len(tools) == 22
+            read_tool = next(t for t in tools if t["name"] == "query_form")
+            assert read_tool["annotations"]["readOnlyHint"] is True
+            assert "inputSchema" in read_tool
+            assert "outputSchema" in read_tool
+            for request_id in (2, 3):
+                result = await client.post(
+                    "/mcp",
+                    headers={
+                        "MCP-Method": "tools/call",
+                        "MCP-Name": "list_targets",
+                    },
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "list_targets",
+                            "arguments": {},
+                            **meta,
+                        },
+                    },
+                )
+                assert result.status_code == 200
+                payload = result.json()["result"]
+                assert payload["isError"] is False
+                assert "structuredContent" in payload
+                assert application.closed is False
+            invalid_host = await client.post(
+                "/mcp",
+                json=request,
+                headers={"Host": "attacker.test"},
+            )
+            assert invalid_host.status_code == 421
+            oversized = await client.post(
+                "/mcp",
+                content=b" " * 1_048_577,
+                headers={"Content-Type": "application/json"},
+            )
+            assert oversized.status_code == 413
+        assert application.closed is True
+        bridge.start.assert_awaited_once()
+        bridge.aclose.assert_awaited_once()
+
+    asyncio.run(scenario())

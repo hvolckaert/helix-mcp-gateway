@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 
+from mcp.server.mcpserver.exceptions import ToolError
+
 PublicDetail = str | int | bool
 
 
-class ToolExecutionError(RuntimeError):
+class ToolExecutionError(ToolError):
     """Sanitized tool failure containing only a code and operation ID."""
 
     code = "TOOL_EXECUTION_FAILED"

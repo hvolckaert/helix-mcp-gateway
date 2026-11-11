@@ -6,13 +6,13 @@ import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from helix_mcp.bootstrap import ApplicationContext
 from helix_mcp.observability import public_error_code
 
 Lifespan = Callable[
-    [FastMCP],
+    [MCPServer],
     AbstractAsyncContextManager[ApplicationContext],
 ]
 
@@ -21,7 +21,7 @@ def application_lifespan(application: ApplicationContext) -> Lifespan:
     """Return a lifespan that always closes shared backend clients."""
 
     @asynccontextmanager
-    async def lifespan(_: FastMCP) -> AsyncIterator[ApplicationContext]:
+    async def lifespan(_: MCPServer) -> AsyncIterator[ApplicationContext]:
         logger = logging.getLogger("helix_mcp.lifecycle")
         logger.info(
             "application starting",

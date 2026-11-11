@@ -8,11 +8,10 @@ import logging
 import secrets
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal
 
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import AnyHttpUrl
 
 from helix_mcp.bootstrap import ApplicationContext, load_application
@@ -69,7 +68,7 @@ class _StaticTokenVerifier:
         )
 
 
-def create_mcp_server(application: ApplicationContext) -> FastMCP:
+def create_mcp_server(application: ApplicationContext) -> MCPServer:
     """Create the MCP protocol adapter without starting a transport."""
 
     settings = application.settings
@@ -89,16 +88,10 @@ def create_mcp_server(application: ApplicationContext) -> FastMCP:
             validate_token_resource=False,
         )
         token_verifier = _StaticTokenVerifier(token.get_secret_value())
-    server = FastMCP(
+    server = MCPServer(
         name=SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
         log_level=settings.log_level,
-        host=host,
-        port=port,
-        streamable_http_path="/mcp",
-        json_response=True,
-        stateless_http=True,
-        max_request_body_size=1_048_576,
         lifespan=application_lifespan(application),
         auth=auth,
         token_verifier=token_verifier,
@@ -133,12 +126,20 @@ def run_server(dotenv_path: str | Path = ".env") -> None:
             ),
         )
         server = create_mcp_server(application)
-        transport: Literal["stdio", "streamable-http"] = (
-            "stdio"
-            if application.settings.transport is Transport.STDIO
-            else "streamable-http"
-        )
-        server.run(transport=transport)
+        if application.settings.transport is Transport.STDIO:
+            server.run(transport="stdio")
+        else:
+            http = application.settings.http
+            assert http is not None
+            server.run(
+                transport="streamable-http",
+                host=http.host,
+                port=http.port,
+                streamable_http_path="/mcp",
+                json_response=True,
+                stateless_http=True,
+                max_request_body_size=1_048_576,
+            )
     finally:
         if not application.closed:
             asyncio.run(application.aclose())

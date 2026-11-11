@@ -5,6 +5,13 @@ Semantic Versioning.
 
 ## Unreleased
 
+- Migrate to MCP Python SDK 2.3+ with the same 22 tools, policy enforcement,
+  sanitized errors, and audited approval flows. Preserve stdio and authenticated
+  loopback HTTP support for legacy and modern MCP clients.
+- Preserve the HTTP binding, stateless JSON responses, and 1 MiB request limit
+  using the SDK's new transport configuration API. Resume MCP major-version
+  proposals in Dependabot for explicit review.
+
 ## 0.14.0 - 2026-09-29
 
 - Add the policy-filtered `resolve_form_field_menu_values` read tool so MCP
