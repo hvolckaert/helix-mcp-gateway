@@ -14,7 +14,12 @@ from typing import Any, TypeGuard
 import httpx
 from pydantic import ValidationError
 
-from helix_mcp.clients.arapi.definitions import FieldDefinition
+from helix_mcp.clients.arapi.definitions import (
+    FieldDefinition,
+    ViewCatalog,
+    ViewDefinition,
+    ViewSummary,
+)
 from helix_mcp.clients.arapi.errors import (
     ArapiAdminRequiredError,
     ArapiBridgeClosedError,
@@ -119,6 +124,36 @@ class ArapiBridgeClient:
             {"form": form},
         )
         return _parse_fields(self._target, payload, status_code)
+
+    async def list_views(self, form: str) -> tuple[ViewSummary, ...]:
+        """Return bounded view identities visible to the AR API account."""
+        payload, status_code = await self._post("/v1/views", {"form": form})
+        try:
+            return ViewCatalog.model_validate_json(json.dumps(payload)).views
+        except (ValidationError, TypeError, ValueError):
+            raise _protocol_error(self._target, status_code) from None
+
+    async def get_view_definition(
+        self, *, form: str, view_id: int, field_ids: tuple[int, ...]
+    ) -> ViewDefinition:
+        """Request display metadata only for previously authorized field IDs."""
+        payload, status_code = await self._post(
+            "/v1/views/definition",
+            {
+                "form": form,
+                "view_id": str(view_id),
+                "field_ids": ",".join(str(field_id) for field_id in field_ids),
+            },
+        )
+        try:
+            result = ViewDefinition.model_validate_json(json.dumps(payload))
+            if result.id != view_id or {f.id for f in result.fields} != set(
+                field_ids
+            ):
+                raise ValueError("view definition identity mismatch")
+            return result
+        except (ValidationError, TypeError, ValueError):
+            raise _protocol_error(self._target, status_code) from None
 
     async def get_field_definition(
         self, *, form: str, field_id: int

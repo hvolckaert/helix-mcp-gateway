@@ -2,7 +2,11 @@
 
 import json
 
-from helix_mcp.clients.arapi.definitions import FieldDefinition
+from helix_mcp.clients.arapi.definitions import (
+    FieldDefinition,
+    ViewDefinition,
+    ViewSummary,
+)
 
 
 def field_definition_payload(
@@ -49,4 +53,71 @@ def field_definition_payload(
 def field_definition(**kwargs):
     return FieldDefinition.model_validate_json(
         json.dumps(field_definition_payload(**kwargs))
+    )
+
+
+def view_summary_payload(view_id=100):
+    return {
+        "id": view_id,
+        "name": "Standard" if view_id == 100 else "Progressive",
+        "locale": "en_US",
+        "view_type": {
+            "code": 1 if view_id == 100 else 9,
+            "name": "AR_VUI_TYPE_STANDARD"
+            if view_id == 100
+            else "AR_VUI_TYPE_PROGRESSIVE",
+        },
+    }
+
+
+def view_summary(view_id=100):
+    return ViewSummary.model_validate_json(
+        json.dumps(view_summary_payload(view_id))
+    )
+
+
+def view_definition_payload(view_id=100, fields=None):
+    fields = (
+        fields
+        if fields is not None
+        else [{"id": 1, "name": "Incident Number", "datatype": "CHAR"}]
+    )
+    return view_summary_payload(view_id) | {
+        "properties": [],
+        "fields": [
+            item
+            | {
+                "present_in_view": True,
+                "shared_properties": [],
+                "view_properties": [
+                    {
+                        "id": 5,
+                        "name": "AR_DPROP_ENABLE",
+                        "value": {
+                            "status": "present",
+                            "datatype": "INTEGER",
+                            "value": 1,
+                        },
+                        "value_symbol": "AR_DVAL_ENABLE_READ_ONLY",
+                    },
+                    {
+                        "id": 20,
+                        "name": "AR_DPROP_LABEL",
+                        "value": {
+                            "status": "present",
+                            "datatype": "CHAR",
+                            "value": "PRIVATE-LABEL-SENTINEL",
+                        },
+                        "value_symbol": None,
+                    },
+                ],
+            }
+            for item in fields
+        ],
+    }
+
+
+def view_definition(**kwargs):
+    return ViewDefinition.model_validate_json(
+        json.dumps(view_definition_payload(**kwargs))
     )

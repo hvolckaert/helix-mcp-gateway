@@ -27,7 +27,11 @@ from helix_mcp.config import (
     TargetKey,
 )
 from helix_mcp.secrets import EnvironmentSecretProvider, SecretResolver
-from tests.support.metadata import field_definition_payload
+from tests.support.metadata import (
+    field_definition_payload,
+    view_definition_payload,
+    view_summary_payload,
+)
 
 TARGET = TargetKey(instance="helix", environment=Environment.DEV)
 SECRET_NAME = "HELIX_CREDENTIAL_DEV"
@@ -63,6 +67,129 @@ def secrets() -> SecretResolver:
             )
         ]
     )
+
+
+def test_view_metadata_uses_bounded_exact_field_ids() -> None:
+    async def scenario():
+        def handler(request):
+            if request.url.path == "/v1/views":
+                return httpx.Response(
+                    200, json={"views": [view_summary_payload()]}
+                )
+            assert request.url.path == "/v1/views/definition"
+            body = parse_qs(request.content.decode())
+            assert body["view_id"] == ["100"]
+            assert body["field_ids"] == ["1"]
+            return httpx.Response(200, json=view_definition_payload())
+
+        async with httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(handler),
+        ) as transport:
+            client = ArapiBridgeClient(
+                target=TARGET,
+                config=config(),
+                secrets=secrets(),
+                http_client=transport,
+            )
+            assert (await client.list_views("Example:HelpDesk"))[
+                0
+            ].name == "Standard"
+            result = await client.get_view_definition(
+                form="Example:HelpDesk", view_id=100, field_ids=(1,)
+            )
+            assert (
+                result.fields[0].view_properties[0].value_symbol
+                == "AR_DVAL_ENABLE_READ_ONLY"
+            )
+            assert "PRIVATE-LABEL-SENTINEL" not in repr(result)
+
+    run(scenario())
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "wrong_view",
+        "extra_field",
+        "missing_field",
+        "duplicate_field",
+        "duplicate_property",
+        "absent_with_properties",
+        "bad_coordinates",
+    ],
+)
+def test_view_definition_rejects_inconsistent_or_unrequested_metadata(
+    case,
+) -> None:
+    payload = view_definition_payload()
+    if case == "wrong_view":
+        payload["id"] = 999
+    elif case == "extra_field":
+        payload["fields"].append(payload["fields"][0] | {"id": 2})
+    elif case == "missing_field":
+        payload["fields"] = []
+    elif case == "duplicate_field":
+        payload["fields"].append(payload["fields"][0])
+    elif case == "duplicate_property":
+        payload["fields"][0]["view_properties"] *= 2
+    elif case == "absent_with_properties":
+        payload["fields"][0]["present_in_view"] = False
+    elif case == "bad_coordinates":
+        payload["fields"][0]["view_properties"][0]["value"] = {
+            "status": "present",
+            "datatype": "COORDS",
+            "value": [{"x": 1, "y": 2}] * 17,
+        }
+
+    async def scenario():
+        async with httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=payload)
+            ),
+        ) as transport:
+            client = ArapiBridgeClient(
+                target=TARGET,
+                config=config(),
+                secrets=secrets(),
+                http_client=transport,
+            )
+            with pytest.raises(ArapiBridgeProtocolError) as exc:
+                await client.get_view_definition(
+                    form="Example:HelpDesk", view_id=100, field_ids=(1,)
+                )
+            assert "SENTINEL" not in str(exc.value)
+
+    run(scenario())
+
+
+def test_view_catalog_rejects_duplicate_ids() -> None:
+    async def scenario():
+        async with httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json={
+                        "views": [
+                            view_summary_payload(),
+                            view_summary_payload(),
+                        ]
+                    },
+                )
+            ),
+        ) as transport:
+            client = ArapiBridgeClient(
+                target=TARGET,
+                config=config(),
+                secrets=secrets(),
+                http_client=transport,
+            )
+            with pytest.raises(ArapiBridgeProtocolError):
+                await client.list_views("Example:HelpDesk")
+
+    run(scenario())
 
 
 def test_field_definition_preserves_defaults_and_sends_exact_id() -> None:

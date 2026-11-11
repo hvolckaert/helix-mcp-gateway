@@ -17,15 +17,21 @@ from helix_mcp.services.forms import (
     FormQueryService,
     FormSort,
 )
-from helix_mcp.services.forms.models import FormFieldDefinitionQuery
+from helix_mcp.services.forms.models import (
+    FormFieldDefinitionQuery,
+    FormViewDefinitionQuery,
+    FormViewsQuery,
+)
 from helix_mcp.tools.errors import ToolInputError
 from helix_mcp.tools.models import (
     GetEntryOutput,
     GetFormFieldDefinitionOutput,
     GetFormFieldMenuMetadataOutput,
     GetFormFieldSelectionValuesOutput,
+    GetFormViewDefinitionOutput,
     ListFormFieldsOutput,
     ListFormsOutput,
+    ListFormViewsOutput,
     QueryFormOutput,
     ResolveFormFieldMenuValuesOutput,
 )
@@ -100,6 +106,70 @@ class FormToolAdapter:
             environment=environment,
             form=query.form,
             fields=result.fields,
+            offset=result.offset,
+            limit=result.limit,
+            total=result.total,
+        )
+
+    async def list_form_views(
+        self,
+        *,
+        environment: Environment,
+        form: str,
+        name_contains: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> ListFormViewsOutput:
+        try:
+            query = FormViewsQuery(
+                form=form,
+                name_contains=name_contains,
+                offset=offset,
+                limit=limit,
+            )
+        except ValidationError:
+            raise ToolInputError("list_form_views input is invalid") from None
+        result = await self._service.list_views(
+            environment=environment, query=query
+        )
+        return ListFormViewsOutput(
+            environment=environment,
+            form=query.form,
+            views=result.views,
+            offset=result.offset,
+            limit=result.limit,
+            total=result.total,
+        )
+
+    async def get_form_view_definition(
+        self,
+        *,
+        environment: Environment,
+        form: str,
+        view_id: int,
+        field_ids: tuple[int, ...] | None = None,
+        offset: int = 0,
+        limit: int = 25,
+    ) -> GetFormViewDefinitionOutput:
+        try:
+            query = FormViewDefinitionQuery(
+                form=form,
+                view_id=view_id,
+                field_ids=field_ids,
+                offset=offset,
+                limit=limit,
+            )
+        except ValidationError:
+            raise ToolInputError(
+                "get_form_view_definition input is invalid"
+            ) from None
+        result = await self._service.get_view_definition(
+            environment=environment, query=query
+        )
+        return GetFormViewDefinitionOutput(
+            environment=environment,
+            form=query.form,
+            view=result.view,
             offset=result.offset,
             limit=result.limit,
             total=result.total,

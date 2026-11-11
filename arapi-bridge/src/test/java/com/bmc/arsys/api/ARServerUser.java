@@ -176,6 +176,26 @@ public class ARServerUser {
         return fields;
     }
 
+    public List<View> getListViewObjects(String form, long changedSince, ViewCriteria criteria) throws ARException {
+        getListFieldObjects(form);
+        return List.of(new View(form, 100), new View(form, 101));
+    }
+
+    public View getView(String form, int id) throws ARException {
+        for (View view : getListViewObjects(form, 0L, new ViewCriteria())) {
+            if (view.getVUIId() == id) return view;
+        }
+        throw new ARException(List.of(new StatusInfo(302)));
+    }
+
+    public List<Field> getListFieldObjects(String form, int[] ids, FieldCriteria criteria) throws ARException {
+        List<Field> selected = new ArrayList<>();
+        for (Field field : getListFieldObjects(form)) {
+            for (int id : ids) if (id == field.getFieldID()) selected.add(field);
+        }
+        return selected;
+    }
+
     public Field getField(
         String form,
         int fieldId,

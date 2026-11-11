@@ -13,6 +13,23 @@ public final class Field {
     public int getSetFieldOptions() { return 0; }
     public int getAuditOption() { return 0; }
     public Value getDefaultValue() { return defaultValue; }
+    public DisplayInstanceMap getDisplayInstance() {
+        DisplayInstanceMap instances = new DisplayInstanceMap();
+        DisplayPropertyMap shared = new DisplayPropertyMap();
+        shared.put(Constants.AR_DPROP_ENABLE, new Value(1));
+        instances.put(0, shared);
+        DisplayPropertyMap properties = new DisplayPropertyMap();
+        properties.put(Constants.AR_DPROP_LABEL, new Value("Sample label"));
+        properties.put(Constants.AR_DPROP_ENABLE, new Value(2));
+        properties.put(Constants.AR_DPROP_PROGRESSIVE_WIDTH_DESKTOP, new Value(6));
+        properties.put(Constants.AR_DPROP_PROGRESSIVE_WIDTH_MOBILE, new Value(12));
+        properties.put(Constants.AR_DPROP_MOBILE_VISIBLE, new Value(0));
+        properties.put(Constants.AR_DPROP_BBOX, new Value(java.util.List.of(
+            new CoordinateInfo(10, 20), new CoordinateInfo(200, 40)), DataType.COORDS));
+        instances.put(100, properties);
+        if (fieldId != 3) instances.put(101, properties);
+        return instances;
+    }
     public void setDefaultValue(Value value) { defaultValue = value; }
     public java.util.List<PermissionInfo> getPermissions() {
         return java.util.List.of(new PermissionInfo(0, 1), new PermissionInfo(1, 2));

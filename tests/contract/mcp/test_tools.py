@@ -111,6 +111,28 @@ def target_config(*, allow_reads: bool) -> tuple[HelixConfig, TargetConfig]:
 
 
 class FakeFormService:
+    async def list_views(self, *, environment, query):
+        from helix_mcp.services.forms.models import FormViewsResult
+        from tests.support.metadata import view_summary
+
+        return FormViewsResult(
+            views=(view_summary(),),
+            offset=query.offset,
+            limit=query.limit,
+            total=1,
+        )
+
+    async def get_view_definition(self, *, environment, query):
+        from helix_mcp.services.forms.models import FormViewDefinitionResult
+        from tests.support.metadata import view_definition
+
+        return FormViewDefinitionResult(
+            view=view_definition(view_id=query.view_id),
+            offset=query.offset,
+            limit=query.limit,
+            total=1,
+        )
+
     async def get_field_definition(self, *, environment, query):
         from tests.support.metadata import field_definition
 
@@ -501,6 +523,8 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
                 "get_write_plan",
                 "get_entry",
                 "get_form_field_definition",
+                "list_form_views",
+                "get_form_view_definition",
                 "get_form_field_menu_metadata",
                 "get_form_field_selection_values",
                 "resolve_form_field_menu_values",
@@ -772,6 +796,42 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
                 }
             ]
             assert fields.structured_content["total"] == 1
+
+            for name in ("list_form_views", "get_form_view_definition"):
+                assert by_name[name].annotations.read_only_hint is True
+                assert by_name[name].annotations.destructive_hint is False
+            views = await client.call_tool(
+                "list_form_views",
+                {"environment": "dev", "form": "Example:HelpDesk"},
+            )
+            assert views.is_error is False
+            assert views.structured_content["views"][0]["id"] == 100
+            view = await client.call_tool(
+                "get_form_view_definition",
+                {
+                    "environment": "dev",
+                    "form": "Example:HelpDesk",
+                    "view_id": 100,
+                    "field_ids": [1],
+                },
+            )
+            assert view.is_error is False
+            assert (
+                view.structured_content["view"]["fields"][0][
+                    "view_properties"
+                ][0]["value_symbol"]
+                == "AR_DVAL_ENABLE_READ_ONLY"
+            )
+            invalid_view = await client.call_tool(
+                "get_form_view_definition",
+                {
+                    "environment": "dev",
+                    "form": "Example:HelpDesk",
+                    "view_id": 100,
+                    "field_ids": [1, 1],
+                },
+            )
+            assert invalid_view.is_error is True
 
             definition_tool = by_name["get_form_field_definition"]
             assert definition_tool.annotations.read_only_hint is True

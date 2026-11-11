@@ -30,12 +30,22 @@ class DefinitionModel(FrozenModel):
     )
 
 
+class MetadataCoordinate(DefinitionModel):
+    """One coordinate in the original AR API units."""
+
+    x: int = Field(ge=-2_147_483_648, le=2_147_483_647)
+    y: int = Field(ge=-2_147_483_648, le=2_147_483_647)
+
+
 class MetadataValue(DefinitionModel):
     """A typed value; unsupported values are never stringified implicitly."""
 
-    status: Literal["present", "unset", "unsupported"]
+    status: Literal["present", "unset", "unsupported", "redacted"]
     datatype: MetadataName | None
-    value: MetadataScalar = Field(repr=False)
+    value: (
+        MetadataScalar
+        | Annotated[tuple[MetadataCoordinate, ...], Field(max_length=16)]
+    ) = Field(repr=False)
 
     @model_validator(mode="after")
     def validate_presence(self) -> Self:
@@ -43,6 +53,8 @@ class MetadataValue(DefinitionModel):
             raise ValueError("metadata value presence is inconsistent")
         if self.status == "present" and self.datatype is None:
             raise ValueError("a present value requires a datatype")
+        if isinstance(self.value, tuple) and self.datatype != "COORDS":
+            raise ValueError("coordinate values require the COORDS datatype")
         return self
 
 
@@ -85,3 +97,73 @@ class FieldDefinition(DefinitionModel):
     permissions: tuple[DeclaredPermission, ...] = Field(
         max_length=4096, repr=False
     )
+
+
+class ViewSummary(DefinitionModel):
+    """Identity of one AR System VUI, including its declared view type."""
+
+    id: int = Field(ge=1, le=2_147_483_647)
+    name: MetadataName
+    locale: str | None = Field(max_length=64, pattern=r"^[^\x00-\x1f\x7f]*$")
+    view_type: DefinitionCode
+
+
+class ViewCatalog(DefinitionModel):
+    """Bounded bridge catalog; public pagination follows authorization."""
+
+    views: tuple[ViewSummary, ...] = Field(max_length=4096)
+
+    @model_validator(mode="after")
+    def unique_views(self) -> Self:
+        if len({view.id for view in self.views}) != len(self.views):
+            raise ValueError("duplicate view IDs")
+        return self
+
+
+class DisplayProperty(DefinitionModel):
+    """Configured display property with an exact ID and explicit coverage."""
+
+    id: int = Field(ge=0, le=2_147_483_647)
+    name: MetadataName | None
+    value: MetadataValue = Field(repr=False)
+    value_symbol: MetadataName | None
+
+
+DisplayProperties = Annotated[
+    tuple[DisplayProperty, ...], Field(max_length=512)
+]
+
+
+class FieldViewDefinition(DefinitionModel):
+    """A policy-visible field's shared and view-specific display properties."""
+
+    id: int = Field(ge=1, le=2_147_483_647)
+    name: MetadataName
+    datatype: MetadataName
+    present_in_view: bool
+    shared_properties: DisplayProperties = Field(repr=False)
+    view_properties: DisplayProperties = Field(repr=False)
+
+    @model_validator(mode="after")
+    def validate_properties(self) -> Self:
+        if not self.present_in_view and self.view_properties:
+            raise ValueError("absent fields cannot have view properties")
+        for props in (self.shared_properties, self.view_properties):
+            if len({p.id for p in props}) != len(props):
+                raise ValueError("duplicate display property IDs")
+        return self
+
+
+class ViewDefinition(ViewSummary):
+    """Declared view properties and one bounded set of authorized fields."""
+
+    properties: DisplayProperties = Field(repr=False)
+    fields: tuple[FieldViewDefinition, ...] = Field(max_length=128, repr=False)
+
+    @model_validator(mode="after")
+    def validate_uniqueness(self) -> Self:
+        if len({p.id for p in self.properties}) != len(self.properties):
+            raise ValueError("duplicate view property IDs")
+        if len({f.id for f in self.fields}) != len(self.fields):
+            raise ValueError("duplicate field IDs")
+        return self

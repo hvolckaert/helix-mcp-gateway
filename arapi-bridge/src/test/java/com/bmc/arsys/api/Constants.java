@@ -1,6 +1,16 @@
 package com.bmc.arsys.api;
 
 public final class Constants {
+    public static final int AR_DPROP_BBOX = 3;
+    public static final int AR_DPROP_VISIBLE = 4;
+    public static final int AR_DPROP_ENABLE = 5;
+    public static final int AR_DPROP_LABEL = 20;
+    public static final int AR_DPROP_VIEW_RTL = 5070;
+    public static final int AR_DPROP_PROGRESSIVE_WIDTH_DESKTOP = 5235;
+    public static final int AR_DPROP_PROGRESSIVE_WIDTH_MOBILE = 5245;
+    public static final int AR_DPROP_MOBILE_VISIBLE = 5248;
+    public static final int AR_VUI_TYPE_STANDARD = 1;
+    public static final int AR_VUI_TYPE_PROGRESSIVE = 9;
     public static final int AR_CORE_MODIFIED_DATE = 6;
     public static final int AR_SERVER_INFO_SERVER_TIME = 100;
     public static final int AR_JOIN_SETOPTION_NONE = 0;

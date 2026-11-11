@@ -5,6 +5,9 @@ import com.bmc.arsys.api.ARServerUser;
 import com.bmc.arsys.api.ARErrors;
 import com.bmc.arsys.api.CharacterFieldLimit;
 import com.bmc.arsys.api.Constants;
+import com.bmc.arsys.api.CoordinateInfo;
+import com.bmc.arsys.api.View;
+import com.bmc.arsys.api.ViewCriteria;
 import com.bmc.arsys.api.DataType;
 import com.bmc.arsys.api.DateInfo;
 import com.bmc.arsys.api.Entry;
@@ -59,6 +62,8 @@ public final class ArapiBridge {
     private static final int MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
     private static final int MAX_FORMS = 100_000;
     private static final int MAX_FIELDS = 100_000;
+    private static final int MAX_VIEWS = 4096;
+    private static final Map<Integer, String> DISPLAY_PROPERTY_NAMES = displayPropertyNames();
     private static final int MAX_SELECTION_VALUES = 4_096;
     private static final int MAX_MENU_VALUES = 500;
     private static final int MAX_MENU_DEPTH = 32;
@@ -108,6 +113,8 @@ public final class ArapiBridge {
         server.createContext("/v1/forms", new FormsHandler());
         server.createContext("/v1/fields", new FieldsHandler());
         server.createContext("/v1/fields/definition", new FieldDefinitionHandler());
+        server.createContext("/v1/views", new ViewsHandler());
+        server.createContext("/v1/views/definition", new ViewDefinitionHandler());
         server.createContext(
             "/v1/fields/selection-values",
             new FieldSelectionValuesHandler()
@@ -358,6 +365,67 @@ public final class ArapiBridge {
             String form = requiredText(input, "form", MAX_NAME_LENGTH);
             List<Field> fields = loadFields(user, form);
             return encodeFields(fields);
+        }
+    }
+
+    private static final class ViewsHandler extends ArapiHandler {
+        ViewsHandler() { super("/v1/views"); }
+
+        @Override
+        protected String execute(ARServerUser user, Map<String, String> input)
+            throws ARException, BadRequest {
+            String form = requiredText(input, "form", MAX_NAME_LENGTH);
+            ViewCriteria criteria = new ViewCriteria();
+            criteria.setPropertiesToRetrieve(ViewCriteria.VIEW_NAME | ViewCriteria.LOCALE | ViewCriteria.VUI_TYPE);
+            List<View> views = user.getListViewObjects(form, 0L, criteria);
+            if (views == null || views.size() > MAX_VIEWS) {
+                throw new IllegalStateException("invalid view catalog");
+            }
+            views = new ArrayList<>(views);
+            views.sort(Comparator.comparingInt(View::getVUIId));
+            StringBuilder out = new StringBuilder("{\"views\":[");
+            Set<Integer> ids = new HashSet<>();
+            for (View view : views) {
+                if (!ids.add(view.getVUIId())) throw new IllegalStateException("duplicate view ID");
+                if (ids.size() > 1) out.append(',');
+                appendViewIdentity(out, view);
+                out.append('}');
+            }
+            return out.append("]}").toString();
+        }
+    }
+
+    private static final class ViewDefinitionHandler extends ArapiHandler {
+        ViewDefinitionHandler() { super("/v1/views/definition"); }
+
+        @Override
+        protected String execute(ARServerUser user, Map<String, String> input)
+            throws ARException, BadRequest {
+            String form = requiredText(input, "form", MAX_NAME_LENGTH);
+            int viewId = boundedInteger(input, "view_id", 1, Integer.MAX_VALUE);
+            String requested = input.get("field_ids");
+            if (requested == null) throw new BadRequest();
+            List<String> parts = requested.isEmpty() ? List.of() : splitList(requested, MAX_SELECTED_FIELDS);
+            int[] ids = new int[parts.size()];
+            Set<Integer> expected = new HashSet<>();
+            for (int i = 0; i < parts.size(); i++) {
+                ids[i] = boundedInteger(Map.of("id", parts.get(i)), "id", 1, Integer.MAX_VALUE);
+                if (!expected.add(ids[i])) throw new BadRequest();
+            }
+            View view = user.getView(form, viewId);
+            if (view == null || view.getVUIId() != viewId || !form.equals(view.getFormName())) {
+                throw new IllegalStateException("view identity mismatch");
+            }
+            FieldCriteria criteria = new FieldCriteria();
+            criteria.setPropertiesToRetrieve(FieldCriteria.FIELD_NAME | FieldCriteria.DATATYPE | FieldCriteria.DISPLAY_INSTANCE_LIST);
+            List<Field> fields = ids.length == 0 ? List.of() : user.getListFieldObjects(form, ids, criteria);
+            if (fields == null || fields.size() != ids.length) throw new IllegalStateException("field identity mismatch");
+            Set<Integer> actual = new HashSet<>();
+            for (Field field : fields) {
+                if (!actual.add(field.getFieldID())) throw new IllegalStateException("duplicate field ID");
+            }
+            if (!actual.equals(expected)) throw new IllegalStateException("field identity mismatch");
+            return encodeViewDefinition(view, fields);
         }
     }
 
@@ -1515,6 +1583,108 @@ public final class ArapiBridge {
         return output.toString();
     }
 
+    private static void appendViewIdentity(StringBuilder out, View view) {
+        if (view == null || view.getVUIId() <= 0 || view.getName() == null
+            || view.getName().isBlank() || view.getName().length() > MAX_NAME_LENGTH
+            || containsControlCharacters(view.getName())) {
+            throw new IllegalStateException("invalid view identity");
+        }
+        out.append("{\"id\":").append(view.getVUIId()).append(",\"name\":");
+        appendJsonString(out, view.getName().strip());
+        out.append(",\"locale\":");
+        appendJsonValue(out, view.getLocale());
+        out.append(",\"view_type\":");
+        appendDefinitionCode(out, view.getVUIType(), "AR_VUI_TYPE_");
+    }
+
+    private static String encodeViewDefinition(View view, List<Field> fields) {
+        StringBuilder out = new StringBuilder();
+        appendViewIdentity(out, view);
+        out.append(",\"properties\":");
+        if (view.getDisplayProperties() == null) throw new IllegalStateException("view properties unavailable");
+        appendDisplayProperties(out, view.getDisplayProperties());
+        out.append(",\"fields\":[");
+        fields = new ArrayList<>(fields);
+        fields.sort(Comparator.comparingInt(Field::getFieldID));
+        for (int i = 0; i < fields.size(); i++) {
+            if (i > 0) out.append(',');
+            Field field = fields.get(i);
+            if (field.getDisplayInstance() == null) throw new IllegalStateException("field display instances unavailable");
+            out.append("{\"id\":").append(field.getFieldID()).append(",\"name\":");
+            appendJsonString(out, field.getName().strip());
+            out.append(",\"datatype\":");
+            appendJsonString(out, dataTypeName(field.getDataType()));
+            out.append(",\"present_in_view\":").append(field.getDisplayInstance().containsKey(view.getVUIId()));
+            out.append(",\"shared_properties\":");
+            appendDisplayProperties(out, field.getDisplayInstance().get(0));
+            out.append(",\"view_properties\":");
+            appendDisplayProperties(out, field.getDisplayInstance().get(view.getVUIId()));
+            out.append('}');
+        }
+        return out.append("]}").toString();
+    }
+
+    private static Map<Integer, String> displayPropertyNames() {
+        Map<Integer, String> result = new HashMap<>();
+        for (java.lang.reflect.Field constant : Constants.class.getFields()) {
+            if (constant.getName().startsWith("AR_DPROP_") && constant.getType() == int.class) {
+                try {
+                    result.merge(constant.getInt(null), constant.getName(),
+                        (left, right) -> left.compareTo(right) <= 0 ? left : right);
+                } catch (IllegalAccessException exc) {
+                    throw new IllegalStateException("cannot read ARAPI display constant", exc);
+                }
+            }
+        }
+        return Map.copyOf(result);
+    }
+
+    private static boolean supportedDisplayProperty(String name) {
+        if (name == null) return false;
+        if (Set.of("AR_DPROP_BBOX", "AR_DPROP_VISIBLE", "AR_DPROP_ENABLE",
+            "AR_DPROP_LABEL", "AR_DPROP_LABEL_BBOX", "AR_DPROP_DATA_BBOX",
+            "AR_DPROP_DISPLAY_PARENT", "AR_DPROP_TAB_ORDER", "AR_DPROP_VIEW_RTL",
+            "AR_DPROP_AUTO_LAYOUT", "AR_DPROP_LAYOUT_POLICY",
+            "AR_DPROP_DESKTOP_VISIBLE", "AR_DPROP_TABLET_VISIBLE", "AR_DPROP_MOBILE_VISIBLE"
+        ).contains(name)) return true;
+        return name.startsWith("AR_DPROP_PROGRESSIVE_")
+            || name.startsWith("AR_DPROP_PADDING_") || name.startsWith("AR_DPROP_MARGIN_")
+            || name.startsWith("AR_DPROP_ALIGN_PANEL_ITEM_");
+    }
+
+    private static void appendDisplayProperties(StringBuilder out, Map<Integer, Value> properties) {
+        if (properties == null) properties = Map.of();
+        if (properties.size() > 512) throw new IllegalStateException("display property list is too large");
+        out.append('[');
+        int index = 0;
+        for (Map.Entry<Integer, Value> entry : new java.util.TreeMap<>(properties).entrySet()) {
+            if (index++ > 0) out.append(',');
+            String name = DISPLAY_PROPERTY_NAMES.get(entry.getKey());
+            Value value = entry.getValue();
+            Object raw = value == null ? null : value.getValue();
+            String datatype = value == null || value.getDataType() == null ? null : dataTypeName(value.getDataType().toInt());
+            out.append("{\"id\":").append(entry.getKey()).append(",\"name\":");
+            appendJsonValue(out, name);
+            out.append(",\"value\":");
+            appendMetadataValue(out, supportedDisplayProperty(name) ? raw : new Object(), datatype);
+            out.append(",\"value_symbol\":");
+            String symbol = null;
+            if ("AR_DPROP_ENABLE".equals(name) && raw instanceof Integer code) {
+                symbol = switch (code) {
+                    case 0 -> "AR_DVAL_ENABLE_DEFAULT";
+                    case 1 -> "AR_DVAL_ENABLE_READ_ONLY";
+                    case 2 -> "AR_DVAL_ENABLE_READ_WRITE";
+                    case 3 -> "AR_DVAL_ENABLE_DISABLE";
+                    default -> null;
+                };
+            }
+            appendJsonValue(out, symbol);
+            out.append('}');
+            if (out.length() > MAX_RESPONSE_BYTES) throw new IllegalStateException("view metadata response is too large");
+        }
+        out.append(']');
+    }
+
     private static String encodeFieldDefinition(Field field) {
         if (field == null || field.getName() == null || field.getName().isBlank()
             || field.getName().length() > MAX_NAME_LENGTH
@@ -1599,7 +1769,9 @@ public final class ArapiBridge {
         else if (raw instanceof Timestamp timestamp) scalar = timestamp.getValue();
         else if (raw instanceof DateInfo date) scalar = date.getValue();
         else if (raw instanceof Time time) scalar = time.getValue();
-        boolean supported = scalar == null || scalar instanceof Boolean
+        boolean coordinates = "COORDS".equals(datatype) && raw instanceof List<?> points
+            && points.size() <= 16 && points.stream().allMatch(CoordinateInfo.class::isInstance);
+        boolean supported = coordinates || scalar == null || scalar instanceof Boolean
             || scalar instanceof Byte || scalar instanceof Short
             || scalar instanceof Integer || scalar instanceof Long
             || (scalar instanceof String text && text.length() <= 8192)
@@ -1610,7 +1782,16 @@ public final class ArapiBridge {
         out.append(",\"datatype\":");
         appendJsonValue(out, datatype);
         out.append(",\"value\":");
-        appendJsonValue(out, supported ? scalar : null);
+        if (coordinates && raw instanceof List<?> points) {
+            out.append('[');
+            for (int i = 0; i < points.size(); i++) {
+                if (i > 0) out.append(',');
+                CoordinateInfo point = (CoordinateInfo) points.get(i);
+                out.append("{\"x\":").append(point.getXCoordinate());
+                out.append(",\"y\":").append(point.getYCoordinate()).append('}');
+            }
+            out.append(']');
+        } else appendJsonValue(out, supported ? scalar : null);
         out.append('}');
     }
 

@@ -16,6 +16,8 @@ permissions reduce it.
 | `list_forms` | read | Reads visible form names | Medium | No |
 | `list_form_fields` | read | Reads policy-visible metadata | Medium | No |
 | `get_form_field_definition` | read | Reads one policy-visible stored field definition | Medium | No |
+| `list_form_views` | read | Lists views of an allowed form | Medium | No |
+| `get_form_view_definition` | read | Reads declared display properties of allowed fields | Medium | No |
 | `get_form_field_selection_values` | read | Reads one policy-visible ENUM definition | Medium | No |
 | `get_form_field_menu_metadata` | read | Reads one policy-visible CHAR menu association | Medium | No |
 | `resolve_form_field_menu_values` | read | Expands bounded values from an allowed field's CHAR menu | High | No |
@@ -100,6 +102,50 @@ workflow can impose additional restrictions. The service authorizes the form
 and field before requesting detailed values, rechecks field identity afterward,
 and applies the same sensitive-field exclusions and rate limits as other reads.
 Defaults and permission payloads are omitted from diagnostic representations.
+
+### `list_form_views`
+
+Requires `environment` and `form`; accepts `name_contains`, `offset`, and
+`limit` (default 100, additionally bounded by the target's maximum-row policy).
+Returns each view's numeric ID, name, locale, and AR API view-type code and
+symbol. Use the ID to distinguish standard and progressive views; a name alone
+does not establish whether a view is PWA. The catalog is bounded to 4096 views.
+
+### `get_form_view_definition`
+
+Requires `environment`, `form`, and an exact `view_id`. Accepts optional unique
+`field_ids` (1–128), `offset`, and `limit` (1–128, default 25, additionally
+bounded by the target's maximum-row policy). Without `field_ids`, pagination
+covers the policy-visible field catalog; with them, it covers the supplied
+IDs in request order. `total` counts those authorized fields, including fields
+absent from the selected view. Each field reports `present_in_view`. The
+returned field array is sorted by ID within each page. An offset beyond the
+catalog returns the view header and properties with an empty field array.
+
+The response preserves view-level properties and separates each field's
+`shared_properties` (display instance 0) from `view_properties`. It does not
+merge them or infer inherited defaults. Each configured property has its exact
+ID, known AR API constant name, typed value/status, and an optional value symbol.
+Supported properties include labels, visibility, editing mode (`AR_DPROP_ENABLE`),
+bounding boxes, tab order, layout/parent attributes, desktop/tablet/mobile
+visibility, and the progressive, padding, margin and panel-alignment families.
+Coordinates retain their original AR API units, without conversion to pixels.
+Editing codes distinguish default, read-only, read/write and disabled.
+
+This is bounded coverage of stored metadata, not a complete reconstruction of
+the rendered UI. Properties outside these families, complex values not yet
+implemented, and strings longer than 8192 characters return `unsupported`;
+their raw values are omitted. Configured null values return `unset`; a missing
+property is absent from the array. References to parent fields excluded by
+gateway policy return `redacted`. At most 512 properties per display instance
+are accepted. View and field identities are checked against their catalogs,
+and only authorized field IDs are sent to the detailed bridge lookup.
+
+View settings do not establish effective editability: field options, user
+permissions, gateway write policy and runtime workflow still apply. These
+tools neither run UI workflow nor read entries. Property values are excluded
+from diagnostic representations. The existing lightweight form/field catalogs
+and Dashboard selectors retain their existing behavior.
 
 ### `get_form_field_selection_values`
 
