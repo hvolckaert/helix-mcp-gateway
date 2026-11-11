@@ -20,6 +20,8 @@ public final class Field {
         instances.put(0, shared);
         DisplayPropertyMap properties = new DisplayPropertyMap();
         properties.put(Constants.AR_DPROP_LABEL, new Value("Sample label"));
+        properties.put(Constants.AR_DPROP_DATA_ROWS, new Value(1L, DataType.ULONG));
+        properties.put(Constants.AR_DPROP_FIELD_CUSTOMSTYLE, new Value("sample-field sample-company"));
         properties.put(Constants.AR_DPROP_ENABLE, new Value(2));
         properties.put(Constants.AR_DPROP_PROGRESSIVE_WIDTH_DESKTOP, new Value(6));
         properties.put(Constants.AR_DPROP_PROGRESSIVE_WIDTH_MOBILE, new Value(12));

@@ -5,6 +5,8 @@ public final class Constants {
     public static final int AR_DPROP_VISIBLE = 4;
     public static final int AR_DPROP_ENABLE = 5;
     public static final int AR_DPROP_LABEL = 20;
+    public static final int AR_DPROP_DATA_ROWS = 60;
+    public static final int AR_DPROP_FIELD_CUSTOMSTYLE = 5061;
     public static final int AR_DPROP_VIEW_RTL = 5070;
     public static final int AR_DPROP_PROGRESSIVE_WIDTH_DESKTOP = 5235;
     public static final int AR_DPROP_PROGRESSIVE_WIDTH_MOBILE = 5245;

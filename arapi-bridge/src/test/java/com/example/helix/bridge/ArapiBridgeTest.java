@@ -111,6 +111,10 @@ public final class ArapiBridgeTest {
                 new Field(3, "Count", DataType.INTEGER.getValue())));
         if (!json.contains("AR_VUI_TYPE_PROGRESSIVE")
             || !json.contains("AR_DPROP_PROGRESSIVE_WIDTH_MOBILE")
+            || !json.contains("\"name\":\"AR_DPROP_DATA_ROWS\",\"value\":{\"status\":\"present\",\"datatype\":\"ULONG\",\"value\":1}")) {
+            throw new AssertionError("view type, PWA width or row metadata missing");
+        }
+        if (!json.contains("sample-field sample-company")
             || !json.contains("AR_DVAL_ENABLE_READ_WRITE")
             || !json.contains("AR_DVAL_ENABLE_READ_ONLY")
             || !json.contains("\"present_in_view\":false")

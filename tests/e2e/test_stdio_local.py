@@ -382,6 +382,16 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
         {"x": 200, "y": 40},
     ]
     assert "PRIVATE-UNSUPPORTED-PROPERTY" not in str(view.structured_content)
+    assert properties["AR_DPROP_DATA_ROWS"]["value"] == {
+        "status": "present",
+        "datatype": "ULONG",
+        "value": 1,
+    }
+    assert properties["AR_DPROP_FIELD_CUSTOMSTYLE"]["value"] == {
+        "status": "present",
+        "datatype": "CHAR",
+        "value": "sample-field sample-company",
+    }
     empty_page = await session.call_tool(
         "get_form_view_definition",
         {
