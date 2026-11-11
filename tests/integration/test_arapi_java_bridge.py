@@ -276,3 +276,96 @@ def test_real_client_and_managed_java_bridge_contract(
         assert process.owned is False
 
     asyncio.run(scenario())
+
+
+def test_concurrent_java_startups_reuse_the_winning_bridge(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge_jar, library_dir = build_test_runtime(tmp_path)
+    base_url = f"http://127.0.0.1:{available_port()}"
+    settings = RuntimeSettings(
+        config_path=tmp_path / "helix.yaml",
+        arapi_bridge_jar_path=bridge_jar,
+        arapi_lib_dir=library_dir,
+    )
+    original_create = asyncio.create_subprocess_exec
+    original_healthy = ArapiBridgeProcess._healthy
+
+    async def scenario() -> None:
+        managers = [
+            ArapiBridgeProcess(
+                settings, (base_url,), bridge_token=BRIDGE_TOKEN
+            )
+            for _ in range(2)
+        ]
+        initial_checks: set[ArapiBridgeProcess] = set()
+        both_checked = asyncio.Event()
+        children_started = asyncio.Event()
+        bind_race_finished = asyncio.Event()
+        children: list[asyncio.subprocess.Process] = []
+
+        async def healthy(manager: ArapiBridgeProcess) -> bool:
+            if manager not in initial_checks:
+                initial_checks.add(manager)
+                if len(initial_checks) == 2:
+                    both_checked.set()
+                await both_checked.wait()
+                return False
+            return await original_healthy(manager)
+
+        async def create(*args, **kwargs):
+            child = await original_create(*args, **kwargs)
+            children.append(child)
+            if len(children) == 2:
+                children_started.set()
+            # Deterministically expose the losing child's nonzero returncode
+            # before either manager enters its readiness loop.
+            await bind_race_finished.wait()
+            return child
+
+        monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", create)
+        starts = [asyncio.create_task(manager.start()) for manager in managers]
+        exits: list[asyncio.Task[int]] = []
+        try:
+            async with asyncio.timeout(20):
+                await children_started.wait()
+                exits = [
+                    asyncio.create_task(child.wait()) for child in children
+                ]
+                finished, _ = await asyncio.wait(
+                    exits, return_when=asyncio.FIRST_COMPLETED
+                )
+                assert len(finished) == 1
+                assert next(iter(finished)).result() != 0
+                bind_race_finished.set()
+                await asyncio.gather(*starts)
+
+                owners = [manager for manager in managers if manager.owned]
+                borrowers = [
+                    manager for manager in managers if not manager.owned
+                ]
+                assert len(owners) == len(borrowers) == 1
+                await borrowers[0].aclose()
+                assert await original_healthy(owners[0]) is True
+                await owners[0].aclose()
+                assert all(child.returncode is not None for child in children)
+        finally:
+            bind_race_finished.set()
+            for task in starts:
+                task.cancel()
+            await asyncio.gather(*starts, return_exceptions=True)
+            for manager in managers:
+                await manager.aclose()
+            # Also clean up children if a test assertion failed before their
+            # managers acquired ownership from create_subprocess_exec.
+            for child in children:
+                if child.returncode is None:
+                    child.kill()
+                await child.wait()
+            for task in exits:
+                task.cancel()
+            await asyncio.gather(*exits, return_exceptions=True)
+
+    asyncio.run(scenario())
