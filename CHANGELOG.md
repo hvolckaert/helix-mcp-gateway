@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
-## Unreleased
+## 0.16.0 - 2026-11-11
 
 - Add `list_form_views` and `get_form_view_definition` for view identities,
   shared and view-specific field properties, editing modes, coordinates, and
