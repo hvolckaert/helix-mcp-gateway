@@ -10,11 +10,16 @@ from helix_mcp.observability import ToolAuditor
 from helix_mcp.services.database import DatabaseObjectKind
 from helix_mcp.services.forms import FormSort
 from helix_mcp.services.writes import JsonScalar
+from helix_mcp.targeting import TargetRegistry
 from helix_mcp.tools.database import DatabaseToolAdapter
 from helix_mcp.tools.forms import FormToolAdapter
 from helix_mcp.tools.health import HealthToolAdapter
 from helix_mcp.tools.models import (
     ApplyWriteOutput,
+    SqlQueryPlanOutput,
+    WritePlanOutput,
+)
+from helix_mcp.tools.read_models import (
     DescribeDatabaseObjectOutput,
     ExecuteSqlQueryOutput,
     GetEntryOutput,
@@ -22,6 +27,8 @@ from helix_mcp.tools.models import (
     GetFormFieldMenuMetadataOutput,
     GetFormFieldSelectionValuesOutput,
     GetFormViewDefinitionOutput,
+    GetSqlQueryPlanOutput,
+    GetWritePlanOutput,
     HealthCheckOutput,
     ListDatabaseColumnsOutput,
     ListDatabaseObjectsOutput,
@@ -31,9 +38,8 @@ from helix_mcp.tools.models import (
     ListTargetsOutput,
     QueryFormOutput,
     ResolveFormFieldMenuValuesOutput,
-    SqlQueryPlanOutput,
-    WritePlanOutput,
 )
+from helix_mcp.tools.reads import ReadToolRunner
 from helix_mcp.tools.targets import TargetToolAdapter
 from helix_mcp.tools.writes import FormWriteToolAdapter
 
@@ -96,8 +102,11 @@ def register_mcp_tools(
     health: HealthToolAdapter,
     writes: FormWriteToolAdapter,
     audit: ToolAuditor,
+    registry: TargetRegistry,
 ) -> None:
     """Register thin, typed functions without business rules."""
+
+    reads = ReadToolRunner(registry, audit)
 
     @server.tool(
         name="list_targets",
@@ -113,8 +122,9 @@ def register_mcp_tools(
     async def list_targets(
         include_disabled: bool = False,
     ) -> ListTargetsOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="list_targets",
+            output_type=ListTargetsOutput,
             operation=lambda: targets.list_targets(
                 include_disabled=include_disabled,
             ),
@@ -136,8 +146,9 @@ def register_mcp_tools(
         environment: Environment,
         force_refresh: bool = False,
     ) -> HealthCheckOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="health_check",
+            output_type=HealthCheckOutput,
             environment=environment,
             operation=lambda: health.health_check(
                 environment=environment,
@@ -195,8 +206,9 @@ def register_mcp_tools(
         plan_id: str,
         plan_digest: str,
     ) -> ExecuteSqlQueryOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="execute_sql_query",
+            output_type=ExecuteSqlQueryOutput,
             environment=environment,
             operation=lambda: database.execute_sql_query(
                 environment=environment,
@@ -218,9 +230,10 @@ def register_mcp_tools(
     async def get_sql_query_plan(
         environment: Environment,
         plan_id: str,
-    ) -> SqlQueryPlanOutput:
-        return await audit.execute(
+    ) -> GetSqlQueryPlanOutput:
+        return await reads.execute(
             tool="get_sql_query_plan",
+            output_type=GetSqlQueryPlanOutput,
             environment=environment,
             operation=lambda: database.get_sql_query_plan(
                 environment=environment,
@@ -270,8 +283,9 @@ def register_mcp_tools(
         offset: int = 0,
         limit: int = 100,
     ) -> ListDatabaseObjectsOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="list_database_objects",
+            output_type=ListDatabaseObjectsOutput,
             environment=environment,
             operation=lambda: database.list_database_objects(
                 environment=environment,
@@ -302,8 +316,9 @@ def register_mcp_tools(
         offset: int = 0,
         limit: int = 100,
     ) -> ListDatabaseColumnsOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="list_database_columns",
+            output_type=ListDatabaseColumnsOutput,
             environment=environment,
             operation=lambda: database.list_database_columns(
                 environment=environment,
@@ -330,8 +345,9 @@ def register_mcp_tools(
         schema: str,
         object_name: str,
     ) -> DescribeDatabaseObjectOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="describe_database_object",
+            output_type=DescribeDatabaseObjectOutput,
             environment=environment,
             operation=lambda: database.describe_database_object(
                 environment=environment,
@@ -356,8 +372,9 @@ def register_mcp_tools(
         offset: int = 0,
         limit: int = 100,
     ) -> ListFormsOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="list_forms",
+            output_type=ListFormsOutput,
             environment=environment,
             operation=lambda: forms.list_forms(
                 environment=environment,
@@ -384,8 +401,9 @@ def register_mcp_tools(
         offset: int = 0,
         limit: int = 100,
     ) -> ListFormFieldsOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="list_form_fields",
+            output_type=ListFormFieldsOutput,
             environment=environment,
             operation=lambda: forms.list_form_fields(
                 environment=environment,
@@ -410,8 +428,9 @@ def register_mcp_tools(
         offset: int = 0,
         limit: int = 100,
     ) -> ListFormViewsOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="list_form_views",
+            output_type=ListFormViewsOutput,
             environment=environment,
             operation=lambda: forms.list_form_views(
                 environment=environment,
@@ -441,8 +460,9 @@ def register_mcp_tools(
         offset: int = 0,
         limit: int = 25,
     ) -> GetFormViewDefinitionOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="get_form_view_definition",
+            output_type=GetFormViewDefinitionOutput,
             environment=environment,
             operation=lambda: forms.get_form_view_definition(
                 environment=environment,
@@ -471,8 +491,9 @@ def register_mcp_tools(
         form: str,
         field_id: int,
     ) -> GetFormFieldDefinitionOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="get_form_field_definition",
+            output_type=GetFormFieldDefinitionOutput,
             environment=environment,
             operation=lambda: forms.get_form_field_definition(
                 environment=environment,
@@ -498,8 +519,9 @@ def register_mcp_tools(
         form: str,
         field_id: int,
     ) -> GetFormFieldSelectionValuesOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="get_form_field_selection_values",
+            output_type=GetFormFieldSelectionValuesOutput,
             environment=environment,
             operation=lambda: forms.get_form_field_selection_values(
                 environment=environment,
@@ -525,8 +547,9 @@ def register_mcp_tools(
         form: str,
         field_id: int,
     ) -> GetFormFieldMenuMetadataOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="get_form_field_menu_metadata",
+            output_type=GetFormFieldMenuMetadataOutput,
             environment=environment,
             operation=lambda: forms.get_form_field_menu_metadata(
                 environment=environment,
@@ -554,8 +577,9 @@ def register_mcp_tools(
         field_id: int,
         limit: int = 100,
     ) -> ResolveFormFieldMenuValuesOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="resolve_form_field_menu_values",
+            output_type=ResolveFormFieldMenuValuesOutput,
             environment=environment,
             operation=lambda: forms.resolve_form_field_menu_values(
                 environment=environment,
@@ -586,8 +610,9 @@ def register_mcp_tools(
         limit: int = 100,
         include_total: bool = False,
     ) -> QueryFormOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="query_form",
+            output_type=QueryFormOutput,
             environment=environment,
             operation=lambda: forms.query_form(
                 environment=environment,
@@ -618,8 +643,9 @@ def register_mcp_tools(
         entry_id: str,
         fields: list[str],
     ) -> GetEntryOutput:
-        return await audit.execute(
+        return await reads.execute(
             tool="get_entry",
+            output_type=GetEntryOutput,
             environment=environment,
             operation=lambda: forms.get_entry(
                 environment=environment,
@@ -751,9 +777,10 @@ def register_mcp_tools(
     async def get_write_plan(
         environment: Environment,
         plan_id: str,
-    ) -> WritePlanOutput:
-        return await audit.execute(
+    ) -> GetWritePlanOutput:
+        return await reads.execute(
             tool="get_write_plan",
+            output_type=GetWritePlanOutput,
             environment=environment,
             operation=lambda: writes.get_write_plan(
                 environment=environment,

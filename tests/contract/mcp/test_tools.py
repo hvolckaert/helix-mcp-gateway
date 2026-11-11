@@ -509,6 +509,7 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
         health=HealthToolAdapter(fake_health),
         writes=fake_writes,
         audit=ToolAuditor(),
+        registry=TargetRegistry(config),
     )
 
     async def scenario() -> None:
@@ -736,6 +737,7 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
             )
             assert health.is_error is False
             assert health.structured_content == {
+                "provenance": health.structured_content["provenance"],
                 "environment": "dev",
                 "status": "healthy",
                 "cached": False,
@@ -872,6 +874,7 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
             )
             assert selection.is_error is False
             assert selection.structured_content == {
+                "provenance": selection.structured_content["provenance"],
                 "environment": "dev",
                 "form": "Example:HelpDesk",
                 "field": {
@@ -896,6 +899,7 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
             )
             assert menu.is_error is False
             assert menu.structured_content == {
+                "provenance": menu.structured_content["provenance"],
                 "environment": "dev",
                 "form": "Example:HelpDesk",
                 "field": {
@@ -919,6 +923,7 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
             )
             assert menu_values.is_error is False
             assert menu_values.structured_content == {
+                "provenance": menu_values.structured_content["provenance"],
                 "environment": "dev",
                 "form": "Example:HelpDesk",
                 "field": {
@@ -989,6 +994,7 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
             )
             assert sql_result.is_error is False
             assert sql_result.structured_content == {
+                "provenance": sql_result.structured_content["provenance"],
                 "plan_id": "1" * 32,
                 "plan_digest": "2" * 64,
                 "environment": "dev",
@@ -1054,6 +1060,7 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
             )
             assert entry.is_error is False
             assert entry.structured_content == {
+                "provenance": entry.structured_content["provenance"],
                 "environment": "dev",
                 "form": "Example:HelpDesk",
                 "entry_id": "INC0001",
@@ -1064,6 +1071,104 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
                     }
                 },
             }
+
+            sql_lookup = await client.call_tool(
+                "get_sql_query_plan",
+                {"environment": "dev", "plan_id": "1" * 32},
+            )
+            write_lookup = await client.call_tool(
+                "get_write_plan",
+                {"environment": "dev", "plan_id": "a" * 32},
+            )
+            reads = {
+                "list_targets": targets,
+                "health_check": health,
+                "list_forms": forms,
+                "list_form_fields": fields,
+                "list_form_views": views,
+                "get_form_view_definition": view,
+                "get_form_field_definition": definition,
+                "get_form_field_selection_values": selection,
+                "get_form_field_menu_metadata": menu,
+                "resolve_form_field_menu_values": menu_values,
+                "query_form": result,
+                "get_entry": entry,
+                "execute_sql_query": sql_result,
+                "list_database_objects": objects,
+                "list_database_columns": columns,
+                "describe_database_object": description,
+                "get_sql_query_plan": sql_lookup,
+                "get_write_plan": write_lookup,
+            }
+            assert set(reads) == {
+                name
+                for name, tool in by_name.items()
+                if tool.annotations.read_only_hint
+            }
+            for name, response in reads.items():
+                assert response.is_error is False
+                assert "provenance" in by_name[name].output_schema["required"]
+                provenance = response.structured_content["provenance"]
+                assert provenance["schema_version"] == 1
+                assert provenance["source"]["operation"] == name
+                assert provenance["environment"] == (
+                    None if name == "list_targets" else "dev"
+                )
+                assert set(provenance["policy_versions"]) == {"dev"}
+                assert provenance["policy_versions"]["dev"].startswith(
+                    "sha256:"
+                )
+                assert len(provenance["policy_versions"]["dev"]) == 71
+                assert provenance["read_at"].endswith("Z")
+                assert datetime.fromisoformat(provenance["data_read_at"]) <= (
+                    datetime.fromisoformat(provenance["read_at"])
+                )
+                assert provenance["cache_reads"] == []
+                serialized = json.dumps(provenance)
+                for private in (
+                    "HELIX_CREDENTIAL",
+                    "127.0.0.1",
+                    "DEFAULT-SENTINEL",
+                    "owner-one",
+                    "Assigned",
+                    "SELECT",
+                    "read_policy",
+                ):
+                    assert private not in serialized
+            assert (
+                entry.structured_content["provenance"]["source"]["entry_id"]
+                == "INC0001"
+            )
+            assert (
+                view.structured_content["provenance"]["source"]["view_id"]
+                == 100
+            )
+            assert (
+                definition.structured_content["provenance"]["source"][
+                    "field_id"
+                ]
+                == 1
+            )
+            assert (
+                columns.structured_content["provenance"]["source"][
+                    "object_name"
+                ]
+                == "example_base_element"
+            )
+            assert (
+                sql_result.structured_content["provenance"]["source"][
+                    "plan_digest"
+                ]
+                == "2" * 64
+            )
+            assert (
+                write_lookup.structured_content["provenance"]["source"][
+                    "backend"
+                ]
+                == "gateway"
+            )
+            assert "provenance" not in plan.structured_content
+            assert "provenance" not in sql_plan.structured_content
 
     run(scenario())
     assert len(fake_forms.calls) == 1
@@ -1077,7 +1182,7 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
     assert len(fake_forms.entry_calls) == 1
     assert fake_forms.entry_calls[0][1].entry_id == "INC0001"
     assert fake_health.calls == [(Environment.DEV, True)]
-    assert fake_writes.calls == ["plan_create_entry"]
+    assert fake_writes.calls == ["plan_create_entry", "get_write_plan"]
 
 
 @pytest.mark.parametrize("mode", ["auto", "legacy"])
@@ -1096,6 +1201,7 @@ def test_invalid_tool_query_is_sanitized_before_service_call(mode) -> None:
         health=HealthToolAdapter(fake_health),
         writes=fake_writes,
         audit=ToolAuditor(),
+        registry=TargetRegistry(config),
     )
 
     async def scenario() -> None:
