@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
-## Unreleased
+## 0.17.3 - 2026-11-11
 
 - Renew an expired Dashboard session without reloading the page or discarding
   unsaved controls and replacement credentials. Keep edits and their original
