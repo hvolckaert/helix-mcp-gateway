@@ -20,6 +20,10 @@ from helix_mcp.services.forms import (
     FormFieldSelectionMetadata,
     FormMetadata,
 )
+from helix_mcp.services.forms.models import (
+    FormViewDefinitionResult,
+    FormViewsResult,
+)
 from helix_mcp.services.health import HealthCheckResult
 from helix_mcp.services.writes import ApplyWriteResult, WritePlanResult
 from helix_mcp.targeting import TargetDescriptor
@@ -32,6 +36,16 @@ ExecuteSqlQueryOutput = SqlQueryExecutionResult
 ListDatabaseObjectsOutput = DatabaseObjectCatalogResult
 ListDatabaseColumnsOutput = DatabaseColumnCatalogResult
 DescribeDatabaseObjectOutput = DatabaseObjectDescription
+
+
+class ListFormViewsOutput(FormViewsResult):
+    environment: Environment
+    form: str
+
+
+class GetFormViewDefinitionOutput(FormViewDefinitionResult):
+    environment: Environment
+    form: str
 
 
 class ListTargetsOutput(FrozenModel):

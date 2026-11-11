@@ -42,6 +42,10 @@ class FormFieldNotAllowedError(FormServiceError):
     code = "FORM_FIELD_NOT_ALLOWED"
 
 
+class FormViewNotFoundError(FormServiceError):
+    code = "FORM_VIEW_NOT_FOUND"
+
+
 class FormQueryLimitError(FormServiceError):
     code = "FORM_QUERY_LIMIT_EXCEEDED"
 

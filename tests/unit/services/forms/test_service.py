@@ -47,10 +47,21 @@ from helix_mcp.services.forms import (
     FormReadDisabledError,
     FormSort,
 )
-from helix_mcp.services.forms.errors import FormResponseError
-from helix_mcp.services.forms.models import FormFieldDefinitionQuery
+from helix_mcp.services.forms.errors import (
+    FormResponseError,
+    FormViewNotFoundError,
+)
+from helix_mcp.services.forms.models import (
+    FormFieldDefinitionQuery,
+    FormViewDefinitionQuery,
+    FormViewsQuery,
+)
 from helix_mcp.targeting import ResolvedTarget, TargetRegistry, TargetResolver
-from tests.support.metadata import field_definition
+from tests.support.metadata import (
+    field_definition,
+    view_definition,
+    view_summary,
+)
 
 
 def run(coroutine):
@@ -58,6 +69,22 @@ def run(coroutine):
 
 
 class FakeClient:
+    async def list_views(self, form):
+        self.calls.append(("list_views", {"form": form}))
+        return (view_summary(100), view_summary(101))
+
+    async def get_view_definition(self, *, form, view_id, field_ids):
+        self.calls.append(
+            (
+                "get_view_definition",
+                {"form": form, "view_id": view_id, "field_ids": field_ids},
+            )
+        )
+        return view_definition(
+            view_id=view_id,
+            fields=[item for item in self.payload if item["id"] in field_ids],
+        )
+
     def __init__(self, payload: Any) -> None:
         self.payload = payload
         self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -317,6 +344,186 @@ def build_service(
         ),
         provider,
     )
+
+
+def test_view_catalog_filters_and_paginates() -> None:
+    client = FakeClient([])
+    service, _ = build_service(client)
+    result = run(
+        service.list_views(
+            environment="dev",
+            query=FormViewsQuery(
+                form="Example:HelpDesk", name_contains="PROG", limit=1
+            ),
+        )
+    )
+    assert result.total == 1
+    assert result.views[0].id == 101
+    assert result.views[0].view_type.code == 9
+
+
+def test_view_definition_fetches_only_policy_visible_fields() -> None:
+    client = FakeClient(
+        [
+            {"id": 1, "name": "Incident Number", "datatype": "CHAR"},
+            {"id": 2, "name": "Password", "datatype": "CHAR"},
+            {"id": 3, "name": "Unlisted", "datatype": "CHAR"},
+        ]
+    )
+    service, _ = build_service(client)
+    result = run(
+        service.get_view_definition(
+            environment="dev",
+            query=FormViewDefinitionQuery(
+                form="Example:HelpDesk", view_id=100, limit=2
+            ),
+        )
+    )
+    assert result.total == 1
+    assert [f.id for f in result.view.fields] == [1]
+    assert client.calls[-1][1]["field_ids"] == (1,)
+    assert "PRIVATE-LABEL-SENTINEL" not in repr(result)
+    for field_id in (2, 3):
+        client.calls.clear()
+        with pytest.raises(FormFieldNotAllowedError):
+            run(
+                service.get_view_definition(
+                    environment="dev",
+                    query=FormViewDefinitionQuery(
+                        form="Example:HelpDesk",
+                        view_id=100,
+                        field_ids=(field_id,),
+                        limit=1,
+                    ),
+                )
+            )
+        assert [name for name, _ in client.calls] == ["list_fields"]
+
+
+def test_view_definitions_enforce_limits() -> None:
+    client = FakeClient(
+        [{"id": 1, "name": "Incident Number", "datatype": "CHAR"}]
+    )
+    service, _ = build_service(client)
+    with pytest.raises(FormQueryLimitError):
+        run(
+            service.get_view_definition(
+                environment="dev",
+                query=FormViewDefinitionQuery(
+                    form="Example:HelpDesk", view_id=100, limit=3
+                ),
+            )
+        )
+    assert client.calls == []
+
+
+def test_view_definition_paginates_selected_ids_before_lookup() -> None:
+    client = FakeClient(
+        [
+            {"id": 1, "name": "Incident Number", "datatype": "CHAR"},
+            {"id": 2, "name": "Status", "datatype": "ENUM"},
+        ]
+    )
+    service, _ = build_service(client)
+    for offset, expected in ((0, (2,)), (1, (1,)), (2, ())):
+        result = run(
+            service.get_view_definition(
+                environment="dev",
+                query=FormViewDefinitionQuery(
+                    form="Example:HelpDesk",
+                    view_id=100,
+                    field_ids=(2, 1),
+                    offset=offset,
+                    limit=1,
+                ),
+            )
+        )
+        assert result.total == 2
+        assert tuple(f.id for f in result.view.fields) == expected
+        assert client.calls[-1][1]["field_ids"] == expected
+
+
+def test_view_layout_parent_does_not_disclose_excluded_field_id() -> None:
+    import json
+
+    from helix_mcp.clients.arapi.definitions import ViewDefinition
+    from tests.support.metadata import view_definition_payload
+
+    client = FakeClient(
+        [{"id": 1, "name": "Incident Number", "datatype": "CHAR"}]
+    )
+
+    async def definition(**kwargs):
+        payload = view_definition_payload()
+        payload["fields"][0]["shared_properties"] = [
+            {
+                "id": 170,
+                "name": "AR_DPROP_DISPLAY_PARENT",
+                "value": {
+                    "status": "present",
+                    "datatype": "INTEGER",
+                    "value": 999,
+                },
+                "value_symbol": None,
+            }
+        ]
+        return ViewDefinition.model_validate_json(json.dumps(payload))
+
+    client.get_view_definition = definition
+    service, _ = build_service(client)
+    result = run(
+        service.get_view_definition(
+            environment="dev",
+            query=FormViewDefinitionQuery(
+                form="Example:HelpDesk", view_id=100, limit=1
+            ),
+        )
+    )
+    value = result.view.fields[0].shared_properties[0].value
+    assert value.status == "redacted"
+    assert value.value is None
+
+
+def test_view_definitions_detect_missing_or_changed_metadata() -> None:
+    client = FakeClient(
+        [{"id": 1, "name": "Incident Number", "datatype": "CHAR"}]
+    )
+    service, _ = build_service(client)
+    with pytest.raises(FormViewNotFoundError):
+        run(
+            service.get_view_definition(
+                environment="dev",
+                query=FormViewDefinitionQuery(
+                    form="Example:HelpDesk", view_id=999, limit=1
+                ),
+            )
+        )
+
+    async def changed(**kwargs):
+        return view_definition(
+            fields=[{"id": 1, "name": "Renamed", "datatype": "CHAR"}]
+        )
+
+    client.get_view_definition = changed
+    with pytest.raises(FormResponseError):
+        run(
+            service.get_view_definition(
+                environment="dev",
+                query=FormViewDefinitionQuery(
+                    form="Example:HelpDesk", view_id=100, limit=1
+                ),
+            )
+        )
+    service, _ = build_service(client, allow_reads=False)
+    client.calls.clear()
+    with pytest.raises(FormReadDisabledError):
+        run(
+            service.list_views(
+                environment="dev",
+                query=FormViewsQuery(form="Example:HelpDesk", limit=1),
+            )
+        )
+    assert client.calls == []
 
 
 def test_definition_filters_sensitive_and_unlisted_fields_before_detail_lookup() -> (

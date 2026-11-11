@@ -3,8 +3,12 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
-## Unreleased
+## 0.16.0 - 2026-11-11
 
+- Add `list_form_views` and `get_form_view_definition` for view identities,
+  shared and view-specific field properties, editing modes, coordinates, and
+  supported progressive/PWA layout metadata. Paginate policy-visible fields,
+  redact parent references to excluded fields, and identify unsupported values.
 - Add `get_form_field_definition` for policy-visible typed defaults, declared
   field permissions, requiredness, create options, and datatype-specific limits.
   Preserve exact decimals and distinguish missing values from unsupported

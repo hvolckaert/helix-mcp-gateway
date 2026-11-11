@@ -13,7 +13,10 @@ from helix_mcp.clients.arapi import (
     ArapiBridgeClientPool,
     ArapiFormNotFoundError,
 )
-from helix_mcp.clients.arapi.definitions import FieldDefinition
+from helix_mcp.clients.arapi.definitions import (
+    DisplayProperty,
+    FieldDefinition,
+)
 from helix_mcp.config import BackendKind, Environment, TargetKey
 from helix_mcp.services.forms.errors import (
     FormFieldNotAllowedError,
@@ -23,6 +26,7 @@ from helix_mcp.services.forms.errors import (
     FormQueryLimitError,
     FormReadDisabledError,
     FormResponseError,
+    FormViewNotFoundError,
 )
 from helix_mcp.services.forms.limiter import FormRateLimiter
 from helix_mcp.services.forms.models import (
@@ -43,6 +47,10 @@ from helix_mcp.services.forms.models import (
     FormQuery,
     FormQueryResult,
     FormSelectionValue,
+    FormViewDefinitionQuery,
+    FormViewDefinitionResult,
+    FormViewsQuery,
+    FormViewsResult,
 )
 from helix_mcp.services.forms.qualification import (
     QualificationSyntaxError,
@@ -134,6 +142,129 @@ class FormQueryService:
             offset=query.offset,
             limit=query.limit,
             total=len(fields),
+        )
+
+    async def list_views(
+        self, *, environment: str | Environment, query: FormViewsQuery
+    ) -> FormViewsResult:
+        target = self._targets.resolve(environment=environment)
+        _enforce_form_access(target, query.form)
+        if query.limit > target.policy.max_rows:
+            raise FormQueryLimitError(
+                target.key, "view catalog limit exceeds the target policy"
+            )
+        await self._limiter.check(
+            target.key, target.policy.rate_limit_per_minute
+        )
+        target = self._targets.resolve(
+            environment=environment, backend=BackendKind.ARAPI
+        )
+        try:
+            views = await self._clients.get(target).list_views(query.form)
+        except ArapiFormNotFoundError:
+            await self._raise_form_not_found(target, query.form)
+        visible = sorted(
+            (
+                view
+                for view in views
+                if query.name_contains is None
+                or query.name_contains.casefold() in view.name.casefold()
+            ),
+            key=lambda view: (view.name.casefold(), view.id),
+        )
+        return FormViewsResult(
+            views=tuple(visible[query.offset : query.offset + query.limit]),
+            offset=query.offset,
+            limit=query.limit,
+            total=len(visible),
+        )
+
+    async def get_view_definition(
+        self, *, environment: str | Environment, query: FormViewDefinitionQuery
+    ) -> FormViewDefinitionResult:
+        target = self._targets.resolve(environment=environment)
+        _enforce_form_access(target, query.form)
+        if query.limit > target.policy.max_rows:
+            raise FormQueryLimitError(
+                target.key, "view field limit exceeds the target policy"
+            )
+        await self._limiter.check(
+            target.key, target.policy.rate_limit_per_minute
+        )
+        target = self._targets.resolve(
+            environment=environment, backend=BackendKind.ARAPI
+        )
+        visible = await self._field_metadata(target, query.form)
+        by_id = {field.id: field for field in visible}
+        if query.field_ids is not None:
+            if not set(query.field_ids).issubset(by_id):
+                raise FormFieldNotAllowedError(
+                    target.key,
+                    "view requests a field outside the target allowlist",
+                )
+            visible = tuple(by_id[field_id] for field_id in query.field_ids)
+        page = visible[query.offset : query.offset + query.limit]
+        client = self._clients.get(target)
+        views = await client.list_views(query.form)
+        expected_view = next(
+            (view for view in views if view.id == query.view_id), None
+        )
+        if expected_view is None:
+            raise FormViewNotFoundError(target.key, "view does not exist")
+        result = await client.get_view_definition(
+            form=query.form,
+            view_id=query.view_id,
+            field_ids=tuple(field.id for field in page),
+        )
+        expected_identity = (
+            expected_view.id,
+            expected_view.name,
+            expected_view.locale,
+            expected_view.view_type,
+        )
+        if (
+            result.id,
+            result.name,
+            result.locale,
+            result.view_type,
+        ) != expected_identity:
+            raise FormResponseError(
+                target.key, "view metadata changed during definition lookup"
+            )
+        actual_fields = {
+            (field.id, field.name, field.datatype) for field in result.fields
+        }
+        if actual_fields != {
+            (field.id, field.name, field.datatype) for field in page
+        }:
+            raise FormResponseError(
+                target.key, "field metadata changed during view lookup"
+            )
+        result = result.model_copy(
+            update={
+                "properties": _filter_display_references(
+                    result.properties, by_id
+                ),
+                "fields": tuple(
+                    field.model_copy(
+                        update={
+                            "shared_properties": _filter_display_references(
+                                field.shared_properties, by_id
+                            ),
+                            "view_properties": _filter_display_references(
+                                field.view_properties, by_id
+                            ),
+                        }
+                    )
+                    for field in result.fields
+                ),
+            }
+        )
+        return FormViewDefinitionResult(
+            view=result,
+            offset=query.offset,
+            limit=query.limit,
+            total=len(visible),
         )
 
     async def get_field_definition(
@@ -522,6 +653,28 @@ class FormQueryService:
             target.key,
             suggestions=_suggest_form_names(form, visible),
         ) from None
+
+
+def _filter_display_references(
+    properties: tuple[DisplayProperty, ...],
+    visible: dict[int, FormFieldMetadata],
+) -> tuple[DisplayProperty, ...]:
+    """Keep layout references from disclosing fields excluded by policy."""
+    return tuple(
+        prop.model_copy(
+            update={
+                "value": prop.value.model_copy(
+                    update={"status": "redacted", "value": None}
+                )
+            }
+        )
+        if prop.name == "AR_DPROP_DISPLAY_PARENT"
+        and isinstance(prop.value.value, int)
+        and prop.value.value != 0
+        and prop.value.value not in visible
+        else prop
+        for prop in properties
+    )
 
 
 def _enforce_query_policy(

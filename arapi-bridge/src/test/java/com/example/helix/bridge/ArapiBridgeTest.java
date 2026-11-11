@@ -47,6 +47,7 @@ public final class ArapiBridgeTest {
         run("create result encoding", ArapiBridgeTest::testCreateResult);
         run("JSON encoding", ArapiBridgeTest::testJsonEncoding);
         run("field definitions", ArapiBridgeTest::testFieldDefinition);
+        run("view definitions", ArapiBridgeTest::testViewDefinition);
         run(
             "selection field encoding",
             ArapiBridgeTest::testSelectionFieldEncoding
@@ -100,6 +101,30 @@ public final class ArapiBridgeTest {
             Double.NaN
         );
         assertEquals("\"NaN\"", output.toString());
+    }
+
+    private static void testViewDefinition() throws Exception {
+        String json = (String) invoke("encodeViewDefinition",
+            types(com.bmc.arsys.api.View.class, List.class),
+            new com.bmc.arsys.api.View("Sample:Form", 101),
+            List.of(new Field(2, "Name", DataType.CHAR.getValue()),
+                new Field(3, "Count", DataType.INTEGER.getValue())));
+        if (!json.contains("AR_VUI_TYPE_PROGRESSIVE")
+            || !json.contains("AR_DPROP_PROGRESSIVE_WIDTH_MOBILE")
+            || !json.contains("\"name\":\"AR_DPROP_DATA_ROWS\",\"value\":{\"status\":\"present\",\"datatype\":\"ULONG\",\"value\":1}")) {
+            throw new AssertionError("view type, PWA width or row metadata missing");
+        }
+        if (!json.contains("sample-field sample-company")
+            || !json.contains("AR_DVAL_CHARFIELD_DROPDOWN")
+            || !json.contains("AR_DVAL_EXPAND_BOX_HIDE")
+            || !json.contains("AR_DVAL_ENABLE_READ_WRITE")
+            || !json.contains("AR_DVAL_ENABLE_READ_ONLY")
+            || !json.contains("\"present_in_view\":false")
+            || !json.contains("\"x\":10,\"y\":20")
+            || !json.contains("\"status\":\"unsupported\"")
+            || json.contains("PRIVATE-UNSUPPORTED-PROPERTY")) {
+            throw new AssertionError("view metadata contract or redaction failed");
+        }
     }
 
     private static void testFieldDefinition() throws Exception {

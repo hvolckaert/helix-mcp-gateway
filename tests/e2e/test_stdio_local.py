@@ -36,6 +36,8 @@ EXPECTED_TOOLS = {
     "get_entry",
     "get_form_field_menu_metadata",
     "get_form_field_definition",
+    "list_form_views",
+    "get_form_view_definition",
     "get_form_field_selection_values",
     "get_sql_query_plan",
     "get_write_plan",
@@ -342,6 +344,78 @@ async def _assert_reads_and_errors(session: ClientSession) -> None:
     assert [
         field["name"] for field in fields.structured_content["fields"]
     ] == list(FIELDS)
+
+    views = await session.call_tool(
+        "list_form_views", {"environment": "dev", "form": FORM, "limit": 10}
+    )
+    assert views.is_error is False
+    assert {view["id"] for view in views.structured_content["views"]} == {
+        100,
+        101,
+    }
+    view = await session.call_tool(
+        "get_form_view_definition",
+        {
+            "environment": "dev",
+            "form": FORM,
+            "view_id": 101,
+            "field_ids": [2, 3],
+            "limit": 2,
+        },
+    )
+    assert view.is_error is False
+    assert (
+        view.structured_content["view"]["view_type"]["name"]
+        == "AR_VUI_TYPE_PROGRESSIVE"
+    )
+    view_fields = view.structured_content["view"]["fields"]
+    assert view_fields[0]["present_in_view"] is True
+    assert view_fields[1]["present_in_view"] is False
+    properties = {
+        prop["name"]: prop for prop in view_fields[0]["view_properties"]
+    }
+    assert (
+        properties["AR_DPROP_PROGRESSIVE_WIDTH_MOBILE"]["value"]["value"] == 12
+    )
+    assert properties["AR_DPROP_BBOX"]["value"]["value"] == [
+        {"x": 10, "y": 20},
+        {"x": 200, "y": 40},
+    ]
+    assert "PRIVATE-UNSUPPORTED-PROPERTY" not in str(view.structured_content)
+    assert properties["AR_DPROP_DATA_ROWS"]["value"] == {
+        "status": "present",
+        "datatype": "ULONG",
+        "value": 1,
+    }
+    assert properties["AR_DPROP_FIELD_CUSTOMSTYLE"]["value"] == {
+        "status": "present",
+        "datatype": "CHAR",
+        "value": "sample-field sample-company",
+    }
+    for prop, symbol in (
+        ("AR_DPROP_CHARFIELD_DISPLAY_TYPE", "AR_DVAL_CHARFIELD_DROPDOWN"),
+        ("AR_DPROP_MANAGE_EXPAND_BOX", "AR_DVAL_EXPAND_BOX_HIDE"),
+    ):
+        assert properties[prop]["value"] == {
+            "status": "present",
+            "datatype": "ENUM",
+            "value": 1,
+        }
+        assert properties[prop]["value_symbol"] == symbol
+    empty_page = await session.call_tool(
+        "get_form_view_definition",
+        {
+            "environment": "dev",
+            "form": FORM,
+            "view_id": 101,
+            "field_ids": [2],
+            "offset": 1,
+            "limit": 1,
+        },
+    )
+    assert empty_page.is_error is False
+    assert empty_page.structured_content["total"] == 1
+    assert empty_page.structured_content["view"]["fields"] == []
 
     definition = await session.call_tool(
         "get_form_field_definition",

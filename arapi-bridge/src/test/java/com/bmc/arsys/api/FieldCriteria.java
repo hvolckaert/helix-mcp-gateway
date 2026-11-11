@@ -10,6 +10,7 @@ public final class FieldCriteria {
     public static final int SETFIELD_OPTION = 1 << 17;
     public static final int AUDIT_OPTION = 1 << 12;
     public static final int PERMISSIONS = 1 << 1;
+    public static final int DISPLAY_INSTANCE_LIST = 1 << 15;
 
     private int propertiesToRetrieve;
 

@@ -21,11 +21,13 @@ from helix_mcp.tools.models import (
     GetFormFieldDefinitionOutput,
     GetFormFieldMenuMetadataOutput,
     GetFormFieldSelectionValuesOutput,
+    GetFormViewDefinitionOutput,
     HealthCheckOutput,
     ListDatabaseColumnsOutput,
     ListDatabaseObjectsOutput,
     ListFormFieldsOutput,
     ListFormsOutput,
+    ListFormViewsOutput,
     ListTargetsOutput,
     QueryFormOutput,
     ResolveFormFieldMenuValuesOutput,
@@ -389,6 +391,64 @@ def register_mcp_tools(
                 environment=environment,
                 form=form,
                 name_contains=name_contains,
+                offset=offset,
+                limit=limit,
+            ),
+        )
+
+    @server.tool(
+        name="list_form_views",
+        title="List Helix form views",
+        description="List view IDs, names, locales and declared types for one policy-visible form. Results are paginated.",
+        annotations=_HELIX_READ_ANNOTATIONS,
+        structured_output=True,
+    )
+    async def list_form_views(
+        environment: Environment,
+        form: str,
+        name_contains: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> ListFormViewsOutput:
+        return await audit.execute(
+            tool="list_form_views",
+            environment=environment,
+            operation=lambda: forms.list_form_views(
+                environment=environment,
+                form=form,
+                name_contains=name_contains,
+                offset=offset,
+                limit=limit,
+            ),
+        )
+
+    @server.tool(
+        name="get_form_view_definition",
+        title="Get Helix form-view definition",
+        description=(
+            "Read declared view and field display properties, including supported PWA settings, for an exact view ID. "
+            "Only policy-visible fields are fetched; field_ids optionally selects exact IDs. Pagination and total refer to the selected visible field catalog, including fields absent from the view. "
+            "Shared and view-specific properties remain separate. Missing properties are unspecified, not false; workflow may change runtime behavior."
+        ),
+        annotations=_HELIX_READ_ANNOTATIONS,
+        structured_output=True,
+    )
+    async def get_form_view_definition(
+        environment: Environment,
+        form: str,
+        view_id: int,
+        field_ids: tuple[int, ...] | None = None,
+        offset: int = 0,
+        limit: int = 25,
+    ) -> GetFormViewDefinitionOutput:
+        return await audit.execute(
+            tool="get_form_view_definition",
+            environment=environment,
+            operation=lambda: forms.get_form_view_definition(
+                environment=environment,
+                form=form,
+                view_id=view_id,
+                field_ids=field_ids,
                 offset=offset,
                 limit=limit,
             ),

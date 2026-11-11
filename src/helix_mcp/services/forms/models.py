@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import Field, StringConstraints, field_validator, model_validator
 
+from helix_mcp.clients.arapi.definitions import ViewDefinition, ViewSummary
 from helix_mcp.config.models import FrozenModel
 
 FormName = Annotated[
@@ -218,6 +219,51 @@ class FormFieldSelectionMetadata(FrozenModel):
     datatype: str = Field(min_length=1, max_length=64)
     selection_style: Literal["regular", "custom"] | None
     values: tuple[FormSelectionValue, ...] = Field(max_length=4_096)
+
+
+class FormViewsQuery(FormFieldsQuery):
+    """Bounded view catalog for one explicitly selected form."""
+
+
+class FormViewsResult(FrozenModel):
+    views: tuple[ViewSummary, ...]
+    offset: int
+    limit: int
+    total: int
+
+
+class FormViewDefinitionQuery(FrozenModel):
+    """A view and a bounded page of policy-visible field display instances."""
+
+    form: FormName
+    view_id: int = Field(ge=1, le=2_147_483_647)
+    field_ids: (
+        tuple[Annotated[int, Field(ge=1, le=2_147_483_647)], ...] | None
+    ) = Field(default=None, min_length=1, max_length=128)
+    offset: int = Field(default=0, ge=0, le=100_000)
+    limit: int = Field(default=25, ge=1, le=128)
+
+    @field_validator("form")
+    @classmethod
+    def validate_form_syntax(cls, value: str) -> str:
+        _reject_control_characters(value, "form")
+        return value
+
+    @field_validator("field_ids")
+    @classmethod
+    def validate_field_ids(
+        cls, value: tuple[int, ...] | None
+    ) -> tuple[int, ...] | None:
+        if value is not None and len(set(value)) != len(value):
+            raise ValueError("field IDs must be unique")
+        return value
+
+
+class FormViewDefinitionResult(FrozenModel):
+    view: ViewDefinition
+    offset: int
+    limit: int
+    total: int
 
 
 class FormFieldDefinitionQuery(FormFieldSelectionQuery):
