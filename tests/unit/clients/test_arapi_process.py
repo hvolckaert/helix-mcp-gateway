@@ -163,6 +163,77 @@ class StartupChild:
         return self.returncode
 
 
+def test_concurrent_readiness_checks_create_only_one_owned_child(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    children: list[StartupChild] = []
+
+    async def healthy(self) -> bool:
+        return bool(children)
+
+    async def create(*args, **kwargs):
+        await asyncio.sleep(0)
+        child = StartupChild()
+        children.append(child)
+        return child
+
+    monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create)
+    monkeypatch.setattr(
+        "helix_mcp.clients.arapi.process.jdk_executable",
+        lambda executable: "/runtime/java",
+    )
+    manager = ArapiBridgeProcess(
+        settings(tmp_path), ("http://127.0.0.1:8097/",)
+    )
+
+    async def scenario() -> None:
+        await asyncio.gather(*(manager.start() for _ in range(8)))
+        assert len(children) == 1
+        assert manager.owned is True
+        await manager.aclose()
+        assert children[0].terminated is True
+        with pytest.raises(ArapiBridgeProcessError, match="closed"):
+            await manager.start()
+        assert len(children) == 1
+
+    run(scenario())
+
+
+def test_exited_owned_child_can_be_replaced_without_leaking_handles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    children: list[StartupChild] = []
+
+    async def healthy(self) -> bool:
+        return bool(children) and children[-1].returncode is None
+
+    async def create(*args, **kwargs):
+        child = StartupChild()
+        children.append(child)
+        return child
+
+    monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create)
+    monkeypatch.setattr(
+        "helix_mcp.clients.arapi.process.jdk_executable",
+        lambda executable: "/runtime/java",
+    )
+    manager = ArapiBridgeProcess(
+        settings(tmp_path), ("http://127.0.0.1:8097/",)
+    )
+    run(manager.start())
+    children[0].returncode = -9
+    run(manager.start())
+    assert len(children) == 2
+    assert manager.owned is True
+    run(manager.aclose())
+    assert children[0].terminated is False
+    assert children[1].terminated is True
+
+
 @pytest.fixture
 def starting_bridge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     child = StartupChild()
@@ -181,6 +252,121 @@ def starting_bridge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         bridge_token="bridge-test-token",
     )
     return manager, child
+
+
+def test_running_unhealthy_child_is_not_killed_or_replaced(
+    starting_bridge,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, child = starting_bridge
+    health_checks = iter((False, True, False))
+
+    async def healthy(self) -> bool:
+        return next(health_checks)
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("a live child must not be replaced")
+
+    monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
+    run(manager.start())
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", forbidden)
+    with pytest.raises(ArapiBridgeProcessError, match="running ARAPI"):
+        run(manager.start())
+    assert manager.owned is True
+    assert child.terminated is False
+    run(manager.aclose())
+    assert child.terminated is True
+
+
+def test_child_exit_during_readiness_is_recovered_in_the_same_call(
+    starting_bridge,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, child = starting_bridge
+    replacement = StartupChild()
+    checks = 0
+    replacement_created = False
+
+    async def healthy(self) -> bool:
+        nonlocal checks
+        checks += 1
+        if checks == 1:
+            return False
+        if checks == 2:
+            return True
+        # The process exits while a later health probe is in progress.
+        child.returncode = -9
+        return replacement_created
+
+    async def create(*args, **kwargs):
+        nonlocal replacement_created
+        replacement_created = True
+        return replacement
+
+    monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
+    run(manager.start())
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create)
+    run(manager.start())
+    assert replacement_created is True
+    assert child.terminated is False
+    run(manager.aclose())
+    assert replacement.terminated is True
+
+
+def test_dead_owned_child_is_released_when_another_bridge_is_ready(
+    starting_bridge,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, child = starting_bridge
+    health_checks = iter((False, True, True))
+
+    async def healthy(self) -> bool:
+        return next(health_checks)
+
+    monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
+    run(manager.start())
+    child.returncode = -9
+    run(manager.start())
+    assert manager.owned is False
+    run(manager.aclose())
+    assert child.terminated is False
+
+
+def test_close_waits_for_startup_and_prevents_later_recovery(
+    starting_bridge,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, child = starting_bridge
+
+    async def scenario() -> None:
+        polling = asyncio.Event()
+        allow_ready = asyncio.Event()
+        checks = 0
+
+        async def healthy(self) -> bool:
+            nonlocal checks
+            checks += 1
+            if checks == 1:
+                return False
+            polling.set()
+            await allow_ready.wait()
+            return True
+
+        monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
+        async with asyncio.timeout(5):
+            start = asyncio.create_task(manager.start())
+            await polling.wait()
+            close = asyncio.create_task(manager.aclose())
+            await asyncio.sleep(0)
+            assert child.terminated is False
+            allow_ready.set()
+            await asyncio.gather(start, close)
+            assert child.terminated is True
+            assert manager.owned is False
+            with pytest.raises(ArapiBridgeProcessError, match="closed"):
+                await manager.start()
+
+    run(scenario())
 
 
 def test_child_exiting_during_health_check_is_not_owned(

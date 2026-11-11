@@ -278,6 +278,75 @@ def test_real_client_and_managed_java_bridge_contract(
     asyncio.run(scenario())
 
 
+def test_client_recovers_after_its_owned_java_process_is_killed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge_jar, library_dir = build_test_runtime(tmp_path)
+    base_url = f"http://127.0.0.1:{available_port()}"
+    monkeypatch.setenv("HELIX_ARAPI_TEST_DATA", "true")
+    runtime = RuntimeSettings(
+        config_path=tmp_path / "helix.yaml",
+        arapi_bridge_jar_path=bridge_jar,
+        arapi_lib_dir=library_dir,
+    )
+    credential = SecretRef(
+        provider=SecretProviderKind.ENVIRONMENT,
+        key="HELIX_ISOLATED_TEST_CREDENTIAL",
+    )
+    resolver = SecretResolver(
+        [
+            EnvironmentSecretProvider(
+                {
+                    credential.key: json.dumps(
+                        {"username": USERNAME, "password": PASSWORD}
+                    ),
+                }
+            )
+        ]
+    )
+    config = ArapiBackendConfig(
+        bridge_base_url=base_url,
+        gateway_host="127.0.0.1",
+        gateway_port=46_000,
+        credentials=credential,
+        request_timeout_seconds=5,
+    )
+
+    async def scenario() -> None:
+        manager = ArapiBridgeProcess(
+            runtime, (base_url,), bridge_token=BRIDGE_TOKEN
+        )
+        client = ArapiBridgeClient(
+            target=TargetKey(environment=Environment.DEV),
+            config=config,
+            secrets=resolver,
+            bridge_token=BRIDGE_TOKEN,
+            ensure_bridge=manager.start,
+        )
+        try:
+            await manager.start()
+            assert await client.list_forms() == (ERROR_FORM, FORM)
+            previous = manager._process
+            assert previous is not None
+            previous.kill()
+            await previous.wait()
+            # Concurrent real HTTP requests must share a single recovery.
+            results = await asyncio.gather(
+                *(client.list_forms() for _ in range(4))
+            )
+            assert results == [(ERROR_FORM, FORM)] * 4
+            assert manager._process is not None
+            assert manager._process.pid != previous.pid
+            assert manager.owned is True
+            await client.probe_bridge()
+        finally:
+            await client.aclose()
+            await manager.aclose()
+
+    asyncio.run(scenario())
+
+
 def test_concurrent_java_startups_reuse_the_winning_bridge(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

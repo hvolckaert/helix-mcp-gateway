@@ -129,6 +129,97 @@ def test_write_plan_survives_complete_stdio_restart(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize("recover_with_health_check", (False, True))
+def test_surviving_stdio_client_recovers_after_bridge_owner_closes(
+    tmp_path: Path,
+    recover_with_health_check: bool,
+) -> None:
+    """Keep one real MCP process connected after the bridge owner exits."""
+    bridge_jar, library_dir = build_test_runtime(tmp_path)
+    bridge_port = available_port()
+    config_path = tmp_path / "helix.yaml"
+    dotenv_path = tmp_path / ".env"
+    _write_config(config_path, bridge_port)
+    _write_dotenv(
+        dotenv_path,
+        config_path=config_path,
+        bridge_jar=bridge_jar,
+        library_dir=library_dir,
+        audit_path=tmp_path / "audit.jsonl",
+        write_plan_db=tmp_path / "write-plans.sqlite3",
+        write_plan_key=_write_plan_key(tmp_path),
+    )
+
+    async def scenario() -> None:
+        ready = asyncio.Event()
+        stop_owner = asyncio.Event()
+        parameters = _stdio_parameters(dotenv_path, bridge_port)
+
+        async def owner() -> None:
+            with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as log:
+                async with (
+                    stdio_client(parameters, errlog=log) as streams,
+                    ClientSession(*streams) as session,
+                ):
+                    await session.initialize()
+                    ready.set()
+                    await stop_owner.wait()
+
+        owner_task = asyncio.create_task(owner())
+        try:
+            async with asyncio.timeout(45):
+                await ready.wait()
+                with tempfile.TemporaryFile(
+                    mode="w+", encoding="utf-8"
+                ) as log:
+                    async with (
+                        stdio_client(parameters, errlog=log) as streams,
+                        ClientSession(*streams) as session,
+                    ):
+                        await session.initialize()
+                        before = await _get_entry(session, ENTRY_ID)
+                        stop_owner.set()
+                        await owner_task
+                        await _wait_until_port_closed(bridge_port)
+                        if recover_with_health_check:
+                            await session.call_tool(
+                                "health_check",
+                                {"environment": "dev", "force_refresh": True},
+                            )
+                        # This request uses the existing MCP session and its
+                        # existing HTTP client, with no dashboard restart.
+                        after = await _get_entry(session, ENTRY_ID)
+                        assert after == before
+                        health = await session.call_tool(
+                            "health_check",
+                            {"environment": "dev", "force_refresh": True},
+                        )
+                        assert health.is_error is False
+                        assert (
+                            next(
+                                check
+                                for check in health.structured_content[
+                                    "checks"
+                                ]
+                                if check["component"] == "arapi_bridge"
+                            )["status"]
+                            == "healthy"
+                        )
+                await _wait_until_port_closed(bridge_port)
+        finally:
+            stop_owner.set()
+            owner_task.cancel()
+            await asyncio.gather(owner_task, return_exceptions=True)
+
+    asyncio.run(scenario())
+    operations = (tmp_path / "operations.jsonl").read_text(encoding="utf-8")
+    events = [json.loads(line)["event"] for line in operations.splitlines()]
+    assert "arapi_bridge_owner_stopping" in events
+    assert "arapi_bridge_recovery_started" in events
+    assert "arapi_bridge_recovered" in events
+    _assert_no_business_data(operations)
+
+
 async def _reproducible_stdio_read_write_flow(
     *,
     dotenv_path: Path,

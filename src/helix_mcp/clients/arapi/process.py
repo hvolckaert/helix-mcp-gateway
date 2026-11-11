@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import re
 import secrets
@@ -90,7 +91,15 @@ class ArapiLibraries:
 class ArapiBridgeProcess:
     """Start and stop the bridge only when this process owns it."""
 
-    __slots__ = ("_base_url", "_bridge_token", "_process", "_settings")
+    __slots__ = (
+        "_base_url",
+        "_bridge_token",
+        "_closed",
+        "_lock",
+        "_process",
+        "_settings",
+        "_started",
+    )
 
     def __init__(
         self,
@@ -107,17 +116,49 @@ class ArapiBridgeProcess:
         self._bridge_token = bridge_token
         self._base_url = next(iter(unique), None)
         self._process: asyncio.subprocess.Process | None = None
+        self._lock = asyncio.Lock()
+        self._closed = False
+        self._started = False
 
     @property
     def owned(self) -> bool:
         return self._process is not None
 
     async def start(self) -> None:
+        """Ensure readiness before an operation, serializing local recovery."""
+        async with self._lock:
+            if self._closed:
+                raise ArapiBridgeProcessError("ARAPI bridge manager is closed")
+            await self._start_locked()
+            self._started = True
+
+    async def _start_locked(self) -> None:
         if self._base_url is None:
             return
-        self._validate_startup_requirements()
-        if await self._healthy():
+        logger = logging.getLogger(__name__)
+        await self._reap_exited_child()
+        if not self._started:
+            self._validate_startup_requirements()
+        healthy = await self._healthy()
+        if await self._reap_exited_child():
+            # A child can exit while the probe is in progress. Its earlier
+            # response must not be mistaken for current bridge readiness.
+            healthy = await self._healthy()
+        if healthy:
             return
+        if self._process is not None:
+            # A failed health probe does not establish that a running child
+            # is dead. Never kill it or overwrite its handle during recovery;
+            # another operation could already be in flight.
+            raise ArapiBridgeProcessError(
+                "running ARAPI bridge did not pass its readiness check"
+            )
+        if self._started:
+            logger.warning(
+                "recovering unavailable ARAPI bridge",
+                extra={"event": "arapi_bridge_recovery_started"},
+            )
+            self._validate_startup_requirements()
         assert self._settings.arapi_bridge_jar_path is not None
         assert self._settings.arapi_lib_dir is not None
         jar = self._required_file(
@@ -177,19 +218,40 @@ class ArapiBridgeProcess:
                     if self._process.returncode is not None:
                         await self._process.wait()
                         self._process = None
+                    logger.info(
+                        "ARAPI bridge ready",
+                        extra={
+                            "event": (
+                                "arapi_bridge_recovered"
+                                if self._started
+                                else "arapi_bridge_started"
+                            )
+                        },
+                    )
                     return
                 await asyncio.sleep(0.1)
         except BaseException:
-            await self.aclose()
+            await self._stop_owned()
             raise
         exited = self._process.returncode is not None
-        await self.aclose()
+        await self._stop_owned()
         if exited:
             raise ArapiBridgeProcessError(
                 "ARAPI bridge process exited and no healthy bridge became "
                 "available"
             )
         raise ArapiBridgeProcessError("ARAPI bridge did not become healthy")
+
+    async def _reap_exited_child(self) -> bool:
+        if self._process is None or self._process.returncode is None:
+            return False
+        await self._process.wait()
+        self._process = None
+        logging.getLogger(__name__).warning(
+            "owned ARAPI bridge exited",
+            extra={"event": "arapi_bridge_exited"},
+        )
+        return True
 
     async def check_startup_requirements(self) -> None:
         """Validate the complete local bridge runtime without starting it."""
@@ -213,10 +275,19 @@ class ArapiBridgeProcess:
         validate_arapi_libraries(libraries)
 
     async def aclose(self) -> None:
+        async with self._lock:
+            self._closed = True
+            await self._stop_owned()
+
+    async def _stop_owned(self) -> None:
         process = self._process
         self._process = None
         if process is None or process.returncode is not None:
             return
+        logging.getLogger(__name__).info(
+            "stopping owned ARAPI bridge",
+            extra={"event": "arapi_bridge_owner_stopping"},
+        )
         # The child may exit between the returncode check and termination.
         with suppress(ProcessLookupError):
             process.terminate()

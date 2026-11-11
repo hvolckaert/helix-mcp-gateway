@@ -97,10 +97,6 @@ class ApplicationContext:
             )
         self.target_resolver = TargetResolver(runtime.registry)
         bridge_token = _bridge_auth_token(runtime.settings)
-        self.arapi_clients = ArapiBridgeClientPool(
-            runtime.secrets,
-            bridge_token=bridge_token,
-        )
         self.arapi_bridge = ArapiBridgeProcess(
             runtime.settings,
             tuple(
@@ -108,6 +104,11 @@ class ApplicationContext:
                 for target in runtime.config.targets
             ),
             bridge_token=bridge_token,
+        )
+        self.arapi_clients = ArapiBridgeClientPool(
+            runtime.secrets,
+            bridge_token=bridge_token,
+            ensure_bridge=self.arapi_bridge.start,
         )
         write_plan_db = runtime.settings.write_plan_db_path
         write_plan_key = runtime.settings.write_plan_key_path
