@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
-## Unreleased
+## 0.17.2 - 2026-11-11
 
 - Recover an unavailable AR API bridge before a surviving client's next
   backend request or fresh health probe, including when the original owner
