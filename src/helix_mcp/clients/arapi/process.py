@@ -136,16 +136,15 @@ class ArapiBridgeProcess:
         if self._base_url is None:
             return
         logger = logging.getLogger(__name__)
-        if self._process is not None and self._process.returncode is not None:
-            await self._process.wait()
-            self._process = None
-            logger.warning(
-                "owned ARAPI bridge exited",
-                extra={"event": "arapi_bridge_exited"},
-            )
+        await self._reap_exited_child()
         if not self._started:
             self._validate_startup_requirements()
-        if await self._healthy():
+        healthy = await self._healthy()
+        if await self._reap_exited_child():
+            # A child can exit while the probe is in progress. Its earlier
+            # response must not be mistaken for current bridge readiness.
+            healthy = await self._healthy()
+        if healthy:
             return
         if self._process is not None:
             # A failed health probe does not establish that a running child
@@ -242,6 +241,17 @@ class ArapiBridgeProcess:
                 "available"
             )
         raise ArapiBridgeProcessError("ARAPI bridge did not become healthy")
+
+    async def _reap_exited_child(self) -> bool:
+        if self._process is None or self._process.returncode is None:
+            return False
+        await self._process.wait()
+        self._process = None
+        logging.getLogger(__name__).warning(
+            "owned ARAPI bridge exited",
+            extra={"event": "arapi_bridge_exited"},
+        )
+        return True
 
     async def check_startup_requirements(self) -> None:
         """Validate the complete local bridge runtime without starting it."""

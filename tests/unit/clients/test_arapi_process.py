@@ -278,6 +278,41 @@ def test_running_unhealthy_child_is_not_killed_or_replaced(
     assert child.terminated is True
 
 
+def test_child_exit_during_readiness_is_recovered_in_the_same_call(
+    starting_bridge,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, child = starting_bridge
+    replacement = StartupChild()
+    checks = 0
+    replacement_created = False
+
+    async def healthy(self) -> bool:
+        nonlocal checks
+        checks += 1
+        if checks == 1:
+            return False
+        if checks == 2:
+            return True
+        # The process exits while a later health probe is in progress.
+        child.returncode = -9
+        return replacement_created
+
+    async def create(*args, **kwargs):
+        nonlocal replacement_created
+        replacement_created = True
+        return replacement
+
+    monkeypatch.setattr(ArapiBridgeProcess, "_healthy", healthy)
+    run(manager.start())
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create)
+    run(manager.start())
+    assert replacement_created is True
+    assert child.terminated is False
+    run(manager.aclose())
+    assert replacement.terminated is True
+
+
 def test_dead_owned_child_is_released_when_another_bridge_is_ready(
     starting_bridge,
     monkeypatch: pytest.MonkeyPatch,
