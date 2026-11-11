@@ -19,6 +19,7 @@ EXPOSED_TOOLS = (
     "health_check",
     "list_forms",
     "list_form_fields",
+    "get_form_field_definition",
     "get_form_field_menu_metadata",
     "get_form_field_selection_values",
     "resolve_form_field_menu_values",

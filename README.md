@@ -78,7 +78,7 @@ The server exposes 22 MCP tools:
 | Area | Tools | External effect |
 | --- | --- | --- |
 | Targets and health | `list_targets`, `health_check` | Local catalog and bounded connectivity probes |
-| Form reads | `list_forms`, `list_form_fields`, `get_form_field_selection_values`, `get_form_field_menu_metadata`, `resolve_form_field_menu_values`, `query_form`, `get_entry` | Policy-filtered metadata, ENUM labels, CHAR menu associations and values, and bounded records |
+| Form reads | `list_forms`, `list_form_fields`, `get_form_field_definition`, `get_form_field_selection_values`, `get_form_field_menu_metadata`, `resolve_form_field_menu_values`, `query_form`, `get_entry` | Policy-filtered field definitions, typed defaults and limits, ENUM labels, CHAR menus, and bounded records |
 | Database metadata | `list_database_objects`, `list_database_columns`, `describe_database_object` | Administrator-only catalog reads through AR API |
 | Read-only SQL | `plan_sql_query`, `get_sql_query_plan`, `execute_sql_query`, `cancel_sql_query_plan` | Reviewable, bounded, single-use SQL execution |
 | Controlled writes | `plan_create_entry`, `apply_create_entry`, `plan_update_entry`, `apply_update_entry` | Human-approved single-entry creates and updates |
@@ -108,7 +108,7 @@ a real environment.
 ## Requirements
 
 The gateway uses the official MCP Python SDK `>=2.3.0,<3`. It supports legacy
-MCP initialization and the 2026-07-28 protocol through the same 22 tools, over
+MCP initialization and the 2026-07-28 protocol through the same 23 tools, over
 stdio or authenticated loopback Streamable HTTP. Existing client launchers and
 gateway configuration do not need to change. Managed installations receive the
 SDK migration when updating to a release containing this change; installing

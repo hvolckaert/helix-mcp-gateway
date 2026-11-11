@@ -111,6 +111,11 @@ def target_config(*, allow_reads: bool) -> tuple[HelixConfig, TargetConfig]:
 
 
 class FakeFormService:
+    async def get_field_definition(self, *, environment, query):
+        from tests.support.metadata import field_definition
+
+        return field_definition(field_id=query.field_id)
+
     def __init__(self) -> None:
         self.calls: list[tuple[Environment, FormQuery]] = []
         self.field_calls: list[tuple[Environment, FormFieldsQuery]] = []
@@ -495,6 +500,7 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
                 "cancel_write_plan",
                 "get_write_plan",
                 "get_entry",
+                "get_form_field_definition",
                 "get_form_field_menu_metadata",
                 "get_form_field_selection_values",
                 "resolve_form_field_menu_values",
@@ -766,6 +772,35 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
                 }
             ]
             assert fields.structured_content["total"] == 1
+
+            definition_tool = by_name["get_form_field_definition"]
+            assert definition_tool.annotations.read_only_hint is True
+            assert set(definition_tool.input_schema["required"]) == {
+                "environment",
+                "form",
+                "field_id",
+            }
+            definition = await client.call_tool(
+                "get_form_field_definition",
+                {
+                    "environment": "dev",
+                    "form": "Example:HelpDesk",
+                    "field_id": 1,
+                },
+            )
+            assert definition.is_error is False
+            assert (
+                definition.structured_content["field"]["limits"]["properties"][
+                    "max_length"
+                ]["value"]
+                == 255
+            )
+            assert (
+                definition.structured_content["field"]["default_value"][
+                    "value"
+                ]
+                == " DEFAULT-SENTINEL "
+            )
 
             selection = await client.call_tool(
                 "get_form_field_selection_values",

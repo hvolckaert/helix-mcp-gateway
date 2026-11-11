@@ -24,6 +24,7 @@ SERVER_NAME = "helix-mcp-gateway"
 SERVER_INSTRUCTIONS = (
     "Use list_targets before querying BMC Helix, list_forms when form names "
     "are unknown, and list_form_fields when field names are unknown. Use "
+    "get_form_field_definition for stored field limits, defaults and declared permissions. "
     "get_form_field_selection_values to interpret numeric ENUM values, and "
     "get_form_field_menu_metadata to identify character-menu associations; "
     "use resolve_form_field_menu_values only for a policy-visible field whose "

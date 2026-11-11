@@ -17,9 +17,11 @@ from helix_mcp.services.forms import (
     FormQueryService,
     FormSort,
 )
+from helix_mcp.services.forms.models import FormFieldDefinitionQuery
 from helix_mcp.tools.errors import ToolInputError
 from helix_mcp.tools.models import (
     GetEntryOutput,
+    GetFormFieldDefinitionOutput,
     GetFormFieldMenuMetadataOutput,
     GetFormFieldSelectionValuesOutput,
     ListFormFieldsOutput,
@@ -101,6 +103,22 @@ class FormToolAdapter:
             offset=result.offset,
             limit=result.limit,
             total=result.total,
+        )
+
+    async def get_form_field_definition(
+        self, *, environment: Environment, form: str, field_id: int
+    ) -> GetFormFieldDefinitionOutput:
+        try:
+            query = FormFieldDefinitionQuery(form=form, field_id=field_id)
+        except ValidationError:
+            raise ToolInputError(
+                "get_form_field_definition input is invalid"
+            ) from None
+        result = await self._service.get_field_definition(
+            environment=environment, query=query
+        )
+        return GetFormFieldDefinitionOutput(
+            environment=environment, form=query.form, field=result
         )
 
     async def get_form_field_selection_values(

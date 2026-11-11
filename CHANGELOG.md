@@ -5,6 +5,11 @@ Semantic Versioning.
 
 ## Unreleased
 
+- Add `get_form_field_definition` for policy-visible typed defaults, declared
+  field permissions, requiredness, create options, and datatype-specific limits.
+  Preserve exact decimals and distinguish missing values from unsupported
+  metadata without changing the existing lightweight field catalog.
+
 ## 0.15.0 - 2026-11-11
 
 - Migrate to MCP Python SDK 2.3+ with the same 22 tools, policy enforcement,

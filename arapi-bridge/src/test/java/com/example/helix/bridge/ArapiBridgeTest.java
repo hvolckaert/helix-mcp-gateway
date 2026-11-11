@@ -46,6 +46,7 @@ public final class ArapiBridgeTest {
     public static void main(String[] args) throws Exception {
         run("create result encoding", ArapiBridgeTest::testCreateResult);
         run("JSON encoding", ArapiBridgeTest::testJsonEncoding);
+        run("field definitions", ArapiBridgeTest::testFieldDefinition);
         run(
             "selection field encoding",
             ArapiBridgeTest::testSelectionFieldEncoding
@@ -99,6 +100,41 @@ public final class ArapiBridgeTest {
             Double.NaN
         );
         assertEquals("\"NaN\"", output.toString());
+    }
+
+    private static void testFieldDefinition() throws Exception {
+        Field attachment = new Field(8, "Attachment", DataType.ATTACHMENT.getValue(),
+            new com.bmc.arsys.api.AttachmentFieldLimit());
+        String attachmentJson = (String) invoke("encodeFieldDefinition", types(Field.class), attachment);
+        if (!attachmentJson.contains("\"max_size\":{\"status\":\"present\",\"datatype\":\"INTEGER\",\"value\":4096}")) {
+            throw new AssertionError("attachment constraints missing");
+        }
+        Field field = new Field(2, "Name", DataType.CHAR.getValue(),
+            new CharacterFieldLimit("Sample:Menu", Constants.AR_MENU_APPEND));
+        field.setDefaultValue(new Value("DEFAULT-SENTINEL"));
+        String json = (String) invoke("encodeFieldDefinition", types(Field.class), field);
+        if (!json.contains("\"max_length\":{\"status\":\"present\",\"datatype\":\"INTEGER\",\"value\":255}")
+            || !json.contains("\"length_units\":{\"status\":\"present\",\"datatype\":\"INTEGER\",\"value\":1}")
+            || !json.contains("DEFAULT-SENTINEL") || !json.contains("AR_PERMISSIONS_CHANGE")) {
+            throw new AssertionError("definition did not preserve declared metadata");
+        }
+        field.setDefaultValue(new Value(new BigDecimal("1.234567890123456789")));
+        json = (String) invoke("encodeFieldDefinition", types(Field.class), field);
+        if (!json.contains("\"value\":\"1.234567890123456789\"")) {
+            throw new AssertionError("decimal default lost precision");
+        }
+        field.setDefaultValue(new Value(new Object() {
+            @Override public String toString() { throw new AssertionError("unsafe stringify"); }
+        }));
+        json = (String) invoke("encodeFieldDefinition", types(Field.class), field);
+        if (!json.contains("\"status\":\"unsupported\"")) {
+            throw new AssertionError("complex default was not marked unsupported");
+        }
+        field.setDefaultValue(null);
+        json = (String) invoke("encodeFieldDefinition", types(Field.class), field);
+        if (!json.contains("\"default_value\":{\"status\":\"unset\"")) {
+            throw new AssertionError("unset default was not explicit");
+        }
     }
 
     private static void testSelectionFieldEncoding() throws Exception {

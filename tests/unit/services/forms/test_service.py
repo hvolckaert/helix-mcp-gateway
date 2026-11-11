@@ -47,7 +47,10 @@ from helix_mcp.services.forms import (
     FormReadDisabledError,
     FormSort,
 )
+from helix_mcp.services.forms.errors import FormResponseError
+from helix_mcp.services.forms.models import FormFieldDefinitionQuery
 from helix_mcp.targeting import ResolvedTarget, TargetRegistry, TargetResolver
+from tests.support.metadata import field_definition
 
 
 def run(coroutine):
@@ -68,6 +71,15 @@ class FakeClient:
                 datatype=item["datatype"],
             )
             for item in self.payload
+        )
+
+    async def get_field_definition(self, *, form, field_id):
+        self.calls.append(
+            ("get_field_definition", {"form": form, "field_id": field_id})
+        )
+        item = next(item for item in self.payload if item["id"] == field_id)
+        return field_definition(
+            field_id=field_id, name=item["name"], datatype=item["datatype"]
         )
 
     async def get_field_selection_values(
@@ -305,6 +317,58 @@ def build_service(
         ),
         provider,
     )
+
+
+def test_definition_filters_sensitive_and_unlisted_fields_before_detail_lookup() -> (
+    None
+):
+    client = FakeClient(
+        [
+            {"id": 1, "name": "Incident Number", "datatype": "CHAR"},
+            {"id": 2, "name": "Password", "datatype": "CHAR"},
+            {"id": 3, "name": "Unlisted", "datatype": "CHAR"},
+        ]
+    )
+    service, _ = build_service(client)
+    for field_id in (2, 3, 999):
+        with pytest.raises(FormFieldNotAllowedError):
+            run(
+                service.get_field_definition(
+                    environment="dev",
+                    query=FormFieldDefinitionQuery(
+                        form="Example:HelpDesk", field_id=field_id
+                    ),
+                )
+            )
+    assert all(name == "list_fields" for name, _ in client.calls)
+    result = run(
+        service.get_field_definition(
+            environment="dev",
+            query=FormFieldDefinitionQuery(
+                form="Example:HelpDesk", field_id=1
+            ),
+        )
+    )
+    assert result.default_value.value == " DEFAULT-SENTINEL "
+
+
+def test_definition_detects_metadata_change_and_obeys_disabled_reads() -> None:
+    client = FakeClient(
+        [{"id": 1, "name": "Incident Number", "datatype": "CHAR"}]
+    )
+    service, _ = build_service(client, allow_reads=False)
+    query = FormFieldDefinitionQuery(form="Example:HelpDesk", field_id=1)
+    with pytest.raises(FormReadDisabledError):
+        run(service.get_field_definition(environment="dev", query=query))
+    assert client.calls == []
+
+    async def changed(**kwargs):
+        return field_definition(name="Renamed")
+
+    client.get_field_definition = changed
+    service, _ = build_service(client)
+    with pytest.raises(FormResponseError):
+        run(service.get_field_definition(environment="dev", query=query))
 
 
 def test_search_builds_encoded_bmc_request_and_filters_response_fields() -> (

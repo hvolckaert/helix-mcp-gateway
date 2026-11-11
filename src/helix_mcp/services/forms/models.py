@@ -220,6 +220,10 @@ class FormFieldSelectionMetadata(FrozenModel):
     values: tuple[FormSelectionValue, ...] = Field(max_length=4_096)
 
 
+class FormFieldDefinitionQuery(FormFieldSelectionQuery):
+    """Exact stored-definition request for one permitted form field."""
+
+
 class FormFieldMenuQuery(FrozenModel):
     """Exact character-menu metadata request for one permitted form."""
 

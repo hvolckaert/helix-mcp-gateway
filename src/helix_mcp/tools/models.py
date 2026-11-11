@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from helix_mcp.clients.arapi.definitions import FieldDefinition
 from helix_mcp.config import Environment
 from helix_mcp.config.models import FrozenModel
 from helix_mcp.services.database import (
@@ -82,6 +83,14 @@ class ListFormFieldsOutput(FrozenModel):
     offset: int
     limit: int
     total: int
+
+
+class GetFormFieldDefinitionOutput(FrozenModel):
+    """Stored definition for one policy-visible field in an explicit target."""
+
+    environment: Environment
+    form: str
+    field: FieldDefinition
 
 
 class GetFormFieldSelectionValuesOutput(FrozenModel):

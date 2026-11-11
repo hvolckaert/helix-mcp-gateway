@@ -12,7 +12,9 @@ from collections.abc import Mapping
 from typing import Any, TypeGuard
 
 import httpx
+from pydantic import ValidationError
 
+from helix_mcp.clients.arapi.definitions import FieldDefinition
 from helix_mcp.clients.arapi.errors import (
     ArapiAdminRequiredError,
     ArapiBridgeClosedError,
@@ -117,6 +119,18 @@ class ArapiBridgeClient:
             {"form": form},
         )
         return _parse_fields(self._target, payload, status_code)
+
+    async def get_field_definition(
+        self, *, form: str, field_id: int
+    ) -> FieldDefinition:
+        """Read a bounded definition for one exact field ID."""
+        payload, status_code = await self._post(
+            "/v1/fields/definition", {"form": form, "field_id": str(field_id)}
+        )
+        try:
+            return FieldDefinition.model_validate_json(json.dumps(payload))
+        except (ValidationError, TypeError, ValueError):
+            raise _protocol_error(self._target, status_code) from None
 
     async def get_field_selection_values(
         self,

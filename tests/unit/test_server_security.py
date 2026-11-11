@@ -146,7 +146,7 @@ def test_http_requests_preserve_auth_wire_schema_limits_and_lifespan(
             listed = await client.post("/mcp", json=request)
             assert listed.status_code == 200, listed.text
             tools = listed.json()["result"]["tools"]
-            assert len(tools) == 22
+            assert len(tools) == 23
             read_tool = next(t for t in tools if t["name"] == "query_form")
             assert read_tool["annotations"]["readOnlyHint"] is True
             assert "inputSchema" in read_tool

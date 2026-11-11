@@ -27,6 +27,7 @@ from helix_mcp.config import (
     TargetKey,
 )
 from helix_mcp.secrets import EnvironmentSecretProvider, SecretResolver
+from tests.support.metadata import field_definition_payload
 
 TARGET = TargetKey(instance="helix", environment=Environment.DEV)
 SECRET_NAME = "HELIX_CREDENTIAL_DEV"
@@ -62,6 +63,105 @@ def secrets() -> SecretResolver:
             )
         ]
     )
+
+
+def test_field_definition_preserves_defaults_and_sends_exact_id() -> None:
+    async def scenario():
+        def handler(request):
+            assert request.url.path == "/v1/fields/definition"
+            assert parse_qs(request.content.decode())["field_id"] == ["1"]
+            return httpx.Response(200, json=field_definition_payload())
+
+        async with httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(handler),
+        ) as transport:
+            client = ArapiBridgeClient(
+                target=TARGET,
+                config=config(),
+                secrets=secrets(),
+                http_client=transport,
+            )
+            result = await client.get_field_definition(
+                form="Example:HelpDesk", field_id=1
+            )
+            assert result.default_value.value == " DEFAULT-SENTINEL "
+            assert "DEFAULT-SENTINEL" not in repr(result)
+            assert "DEFAULT-SENTINEL" not in repr(result.default_value)
+            assert result.limits.properties["max_length"].value == 255
+
+    run(scenario())
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"id": True},
+        {"id": 0},
+        {"id": "1"},
+        {"name": "bad\nname"},
+        {"unexpected": "PRIVATE-SENTINEL"},
+        {
+            "default_value": {
+                "status": "unset",
+                "datatype": "CHAR",
+                "value": "PRIVATE-SENTINEL",
+            }
+        },
+        {
+            "default_value": {
+                "status": "present",
+                "datatype": "CHAR",
+                "value": None,
+            }
+        },
+        {
+            "default_value": {
+                "status": "present",
+                "datatype": "CHAR",
+                "value": "x" * 8193,
+            }
+        },
+        {
+            "default_value": {
+                "status": "present",
+                "datatype": "REAL",
+                "value": float("inf"),
+            }
+        },
+        {
+            "permissions": [
+                {"group_id": True, "permission": {"code": 1, "name": None}}
+            ]
+        },
+    ],
+)
+def test_definition_rejects_malformed_metadata_without_exposing_it(
+    change,
+) -> None:
+    async def scenario():
+        payload = field_definition_payload() | change
+        async with httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200, content=json.dumps(payload)
+                )
+            ),
+        ) as transport:
+            client = ArapiBridgeClient(
+                target=TARGET,
+                config=config(),
+                secrets=secrets(),
+                http_client=transport,
+            )
+            with pytest.raises(ArapiBridgeProtocolError) as exc:
+                await client.get_field_definition(
+                    form="Example:HelpDesk", field_id=1
+                )
+            assert "SENTINEL" not in str(exc.value)
+
+    run(scenario())
 
 
 def test_declared_oversized_response_is_rejected_before_buffering() -> None:
