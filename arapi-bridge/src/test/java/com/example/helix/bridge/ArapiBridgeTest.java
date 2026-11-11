@@ -103,6 +103,12 @@ public final class ArapiBridgeTest {
     }
 
     private static void testFieldDefinition() throws Exception {
+        Field attachment = new Field(8, "Attachment", DataType.ATTACHMENT.getValue(),
+            new com.bmc.arsys.api.AttachmentFieldLimit());
+        String attachmentJson = (String) invoke("encodeFieldDefinition", types(Field.class), attachment);
+        if (!attachmentJson.contains("\"max_size\":{\"status\":\"present\",\"datatype\":\"INTEGER\",\"value\":4096}")) {
+            throw new AssertionError("attachment constraints missing");
+        }
         Field field = new Field(2, "Name", DataType.CHAR.getValue(),
             new CharacterFieldLimit("Sample:Menu", Constants.AR_MENU_APPEND));
         field.setDefaultValue(new Value("DEFAULT-SENTINEL"));

@@ -1625,7 +1625,7 @@ public final class ArapiBridge {
             case "REAL", "DECIMAL" -> new String[]{"LowRange", "HighRange", "Precision"};
             case "CURRENCY" -> new String[]{"LowRange", "HighRange", "Precision",
                 "Allowable", "Functional"};
-            case "ATTACH" -> new String[]{"MaxSize", "AttachType", "FullTextOption"};
+            case "ATTACHMENT" -> new String[]{"MaxSize", "AttachType", "FullTextOption"};
             case "ENUM" -> new String[]{"ListStyle"};
             default -> new String[0];
         };
