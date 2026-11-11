@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
-## Unreleased
+## 0.17.1 - 2026-11-11
 
 - Keep checking authenticated bridge readiness when a concurrently started
   Java child exits, so clients can reuse the bridge that won the port bind.
