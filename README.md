@@ -15,6 +15,9 @@ The gateway is designed for BMC Helix professionals who already have an
 authorized local runtime. It is not a hosted service and does not bypass the
 permissions of the Helix account.
 
+A built-in [configuration dashboard](#configuration-dashboard) provides a local
+graphical interface for environment access, policies, checks, and updates.
+
 For one agent using both servers, see the
 [Knowledge + Gateway agent architecture](https://github.com/hvolckaert/helix-mcp-knowledge/blob/main/docs/agent-architecture.md).
 Knowledge supplies documentary evidence; Gateway supplies authorized live
@@ -97,6 +100,33 @@ authorized source identifiers, UTC read/acquisition times and fingerprints of
 the applied policies. Cached results retain their original acquisition time;
 cached metadata used by a fresh read is identified separately. See the
 [read provenance contract](docs/mcp-tools.md#read-provenance).
+
+## Configuration dashboard
+
+Guided setup installs and opens a local browser-based Dashboard at
+<http://127.0.0.1:8766/>. It remains available independently of the MCP client.
+
+![Gateway configuration dashboard showing DEV, QA and PROD tabs, controlled write access, request limits and a selector with fictional forms](docs/images/configuration-dashboard.png)
+
+*The actual Dashboard interface rendered with fictional demonstration data.
+No live Helix connection, private configuration, or credential values were used.*
+
+Use the Dashboard to:
+
+- configure DEV, QA, and PROD credentials independently;
+- browse and select allowed forms and fields, including controlled write scope;
+- set read and write limits and review configuration changes before saving;
+- select local Java and AR API library folders and run readiness and connection
+  checks;
+- check for updates and explicitly install verified releases with backup and
+  rollback support.
+
+These controls manage local Gateway settings. Helix account permissions still
+apply, and record changes still require the plan/review/apply workflow.
+The Dashboard listens only on loopback and is intended for local use.
+
+See the [Dashboard guide](docs/dashboard.md) for all settings and the
+[installation guide](docs/installation.md#local-dashboard) for setup and startup.
 
 ## Security model
 
