@@ -3,6 +3,20 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
+## 0.19.2 - 2026-11-22
+
+- Discover AR API JARs in Developer Studio and the optional CMDB SDK in the
+  AR library folder or BMC Data Integration. Preview the source paths and
+  versions with `helix-mcp-setup --dry-run`.
+- Select a single combination automatically or choose from a numbered menu.
+  Setup offers colocated SDKs and pairs separate folders by exact reported
+  version. Unattended installs can use `--arapi-lib-dir` with `--cmdb-sdk`
+  or `--arapi-only`.
+- Create symbolic links to the selected libraries under `<data-dir>/vendor-lib/`
+  and save the folder in `HELIX_ARAPI_LIB_DIR`. Java loads dependencies
+  relative to the original vendor JARs. Managed updates reuse the saved folder.
+  [Installation guide](docs/installation.md#guided-setup)
+
 ## 0.19.1 - 2026-11-21
 
 - Show the JAR name and version for AR API and for the optional CMDB SDK in
