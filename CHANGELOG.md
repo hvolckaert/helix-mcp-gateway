@@ -3,6 +3,16 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
+## 0.19.1 - 2026-11-21
+
+- Show the JAR name and version for AR API and for the optional CMDB SDK in
+  the saved library folder. The folder picker previews both libraries.
+- Show whether the running bridge can load its CMDB provider and SDK classes.
+  An authenticated local health check reports **Active** or **Inactive**.
+  The Dashboard shows **Unconfirmed** when an older bridge omits the
+  capability or its response cannot be verified. Detecting the SDK JAR on
+  disk is independent of this check. [Dashboard guide](docs/dashboard.md)
+
 ## 0.19.0 - 2026-11-21
 
 - Add exact-key SDK reads and supervised create plans for computer systems and dependencies. Both plan tools use the existing approval, cancellation and single-attempt apply workflow.
