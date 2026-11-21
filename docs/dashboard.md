@@ -69,6 +69,21 @@ allow the connected OpenClaw runtime to reload. Initial setup can open the
 dashboard even when Java or AR API is missing; a notice directs the user to
 these folder controls. Kaazing is an external connection and is checked with
 the environment Test buttons.
+
+The saved folder shows the AR API JAR and its manifest version. If it contains
+a single identifiable `cmdbapi*.jar`, the Dashboard also shows the CMDB SDK
+JAR and its Maven or manifest version. The installer checks `--arapi-lib-dir`
+first, then `HELIX_ARAPI_LIB_DIR`, then known Developer Studio plugin folders.
+Automatic selection requires exactly one valid candidate. Use **Browse** to
+choose among several candidates or enter a custom folder.
+
+**CMDB support in the running bridge** comes from an authenticated local health
+check. **Active** means the bridge loaded its CMDB provider and SDK classes.
+**Inactive** means the bridge reported that the provider is unavailable.
+**Unconfirmed** covers older bridges that omit the capability and bridges whose
+health response could not be verified. Opening the Dashboard reads this status
+without starting the bridge or contacting a Helix environment.
+
 The Dashboard keeps the last Kaazing Test result for each environment in its
 private state directory, so refreshing the page, restarting the Dashboard, or
 saving unrelated settings does not mark a successful test as untested. The

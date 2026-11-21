@@ -631,6 +631,7 @@ public final class ArapiBridgeTest {
         health.handle(healthy);
         assertEquals(200, healthy.getResponseCode());
         assertEquals("{\"status\":\"ok\"}", healthy.responseText());
+        assertEquals("active", healthy.getResponseHeaders().getFirst("X-Helix-CMDB-Support"));
         assertEquals("no-store", healthy.getResponseHeaders().getFirst("Cache-Control"));
 
         FakeExchange wrongHealthMethod = new FakeExchange(

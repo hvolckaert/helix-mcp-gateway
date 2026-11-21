@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from helix_mcp.bootstrap import _bridge_auth_token
+from helix_mcp.bootstrap import bridge_auth_token
 from helix_mcp.config import RuntimeSettings
 
 
@@ -25,8 +25,8 @@ def test_bridge_auth_token_is_stable_for_one_persisted_installation(
     key_path.write_bytes(b"k" * 32)
     key_path.chmod(0o600)
 
-    first = _bridge_auth_token(_settings(key_path))
-    second = _bridge_auth_token(_settings(key_path))
+    first = bridge_auth_token(_settings(key_path))
+    second = bridge_auth_token(_settings(key_path))
 
     assert first == second
     assert len(first) == 43
@@ -34,7 +34,7 @@ def test_bridge_auth_token_is_stable_for_one_persisted_installation(
 
 
 def test_bridge_auth_token_is_ephemeral_without_persistent_state() -> None:
-    first = _bridge_auth_token(_settings())
-    second = _bridge_auth_token(_settings())
+    first = bridge_auth_token(_settings())
+    second = bridge_auth_token(_settings())
 
     assert first != second

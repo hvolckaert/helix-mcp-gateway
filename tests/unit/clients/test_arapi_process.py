@@ -21,6 +21,7 @@ from helix_mcp.clients.arapi import (
     ArapiRuntimeMissingError,
     validate_arapi_libraries,
 )
+from helix_mcp.clients.arapi.process import inspect_cmdb_sdk
 from helix_mcp.config import RuntimeSettings
 
 
@@ -833,3 +834,48 @@ def _write_bmc_jar(path: Path, *, version: str, vendor: str) -> None:
                 "Value",
             ):
                 archive.writestr(f"com/bmc/arsys/api/{name}.class", b"test")
+
+
+@pytest.mark.parametrize(
+    ("maven", "implementation", "expected"),
+    [
+        ("25.1.00-SNAPSHOT", "", "25.1.00-SNAPSHOT"),
+        (None, "24.1", "24.1"),
+        (None, "", None),
+    ],
+)
+def test_cmdb_reports_artifact_version_without_guessing_from_filename(
+    tmp_path: Path, maven, implementation, expected
+) -> None:
+    jar = tmp_path / "cmdbapi251.jar"
+    with zipfile.ZipFile(jar, "w") as archive:
+        archive.writestr("com/bmc/cmdb/api/CMDBInstance.class", b"")
+        archive.writestr(
+            "META-INF/MANIFEST.MF",
+            f"Implementation-Version: {implementation}\nSpecification-Version: 0.0\n",
+        )
+        if maven:
+            archive.writestr(
+                "META-INF/maven/com.bmc.cmdb/cmdbapi/pom.properties",
+                f"version={maven}\n",
+            )
+    sdk = inspect_cmdb_sdk(tmp_path)
+    assert (sdk.status, sdk.jar, sdk.version) == (
+        "detected",
+        jar.name,
+        expected,
+    )
+
+
+def test_cmdb_only_reports_a_single_identifiable_archive(
+    tmp_path: Path,
+) -> None:
+    assert inspect_cmdb_sdk(tmp_path).status == "absent"
+    jar = tmp_path / "cmdbapi1.jar"
+    jar.write_bytes(b"broken")
+    assert inspect_cmdb_sdk(tmp_path).status == "invalid"
+    with zipfile.ZipFile(jar, "w") as archive:
+        archive.writestr("other.class", b"")
+    assert inspect_cmdb_sdk(tmp_path).status == "invalid"
+    (tmp_path / "cmdbapi2.jar").touch()
+    assert inspect_cmdb_sdk(tmp_path).status == "ambiguous"

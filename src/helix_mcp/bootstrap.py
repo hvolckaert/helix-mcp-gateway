@@ -96,7 +96,7 @@ class ApplicationContext:
                 "streamable_http requires HELIX_MCP_HTTP_BEARER_TOKEN"
             )
         self.target_resolver = TargetResolver(runtime.registry)
-        bridge_token = _bridge_auth_token(runtime.settings)
+        bridge_token = bridge_auth_token(runtime.settings)
         self.arapi_bridge = ArapiBridgeProcess(
             runtime.settings,
             tuple(
@@ -235,7 +235,7 @@ class ApplicationContext:
         )
 
 
-def _bridge_auth_token(settings: RuntimeSettings) -> str:
+def bridge_auth_token(settings: RuntimeSettings) -> str:
     """Derive a stable, domain-separated token for one persisted install."""
 
     if settings.write_plan_key_path is None:

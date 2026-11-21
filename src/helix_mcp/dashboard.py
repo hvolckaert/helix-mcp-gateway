@@ -42,13 +42,21 @@ from pydantic import (
     field_validator,
 )
 
-from helix_mcp.bootstrap import ApplicationContext, load_application
+from helix_mcp.bootstrap import (
+    ApplicationContext,
+    bridge_auth_token,
+    load_application,
+)
 from helix_mcp.clients.arapi import (
     ArapiAdminRequiredError,
     ArapiBridgeProcessError,
     ArapiField,
     ArapiSqlValue,
     validate_arapi_libraries,
+)
+from helix_mcp.clients.arapi.process import (
+    inspect_cmdb_sdk,
+    probe_bridge_health,
 )
 from helix_mcp.config import (
     ARAPI_PORT_BY_ENVIRONMENT,
@@ -94,6 +102,7 @@ from helix_mcp.services.database import (
     DatabaseObjectKind,
     DatabaseObjectMetadata,
 )
+from helix_mcp.services.writes.errors import WritePlanPersistenceError
 
 LOOPBACK_HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 8766
@@ -979,7 +988,7 @@ class DashboardService:
             return self._state()
 
     def browse_local_folders(self, raw_payload: object) -> dict[str, object]:
-        """List local folder names and files without reading file contents."""
+        """List local files and inspect Java library metadata."""
 
         request = _validate_request(DashboardFolderRequest, raw_payload)
         directory = Path(request.path).expanduser()
@@ -1024,10 +1033,6 @@ class DashboardService:
                 item["name"].casefold(),
             )
         )
-        try:
-            version = validate_arapi_libraries(directory).version
-        except ArapiBridgeProcessError:
-            version = None
         return {
             "path": str(directory),
             "parent": str(directory.parent)
@@ -1035,14 +1040,14 @@ class DashboardService:
             else None,
             "items": listed,
             "truncated": truncated,
-            "arapi_version": version,
+            **self._library_report(directory),
             "java_available": jdk_executable(directory) is not None,
         }
 
     def _state(self) -> dict[str, object]:
         runtime = load_runtime_settings(self.dotenv_path, environ={})
         configuration = load_single_instance_config(runtime.config_path)
-        arapi_version = self._arapi_client_version(runtime)
+        library_report = self._library_report(runtime.arapi_lib_dir)
         java_command = jdk_executable(runtime.java_home)
         detected_java_home = (
             str(Path(java_command).resolve().parent.parent)
@@ -1113,7 +1118,9 @@ class DashboardService:
                     "bridge_base_url": str(
                         configuration.arapi.bridge_base_url
                     ),
-                    "client_version": arapi_version,
+                    "client_version": library_report["arapi_version"],
+                    "client_jar": library_report["arapi_jar"],
+                    "cmdb_sdk": library_report["cmdb_sdk"],
                     "lib_dir": str(runtime.arapi_lib_dir)
                     if runtime.arapi_lib_dir
                     else None,
@@ -1142,7 +1149,9 @@ class DashboardService:
             "restart_required": False,
             "local_requirements": {
                 "credentials_configured": len(configured_environments),
-                "arapi": "ready" if arapi_version else "needs_attention",
+                "arapi": "ready"
+                if library_report["arapi_version"]
+                else "needs_attention",
                 "java": "ready" if java_command else "needs_attention",
                 "bridge": (
                     "ready"
@@ -1381,14 +1390,36 @@ class DashboardService:
         return bridge.parent.parent
 
     @staticmethod
-    def _arapi_client_version(runtime: RuntimeSettings) -> str | None:
-        directory = runtime.arapi_lib_dir
-        if directory is None:
-            return None
+    def _library_report(directory: Path | None) -> dict[str, object]:
         try:
-            return validate_arapi_libraries(directory).version
+            arapi = validate_arapi_libraries(directory) if directory else None
         except ArapiBridgeProcessError:
-            return None
+            arapi = None
+        return {
+            "arapi_version": arapi.version if arapi else None,
+            "arapi_jar": arapi.arapi.name if arapi else None,
+            "cmdb_sdk": asdict(inspect_cmdb_sdk(directory)),
+        }
+
+    def bridge_cmdb_support(self) -> str:
+        """Ask the running bridge about its provider without starting a process."""
+        runtime = load_runtime_settings(self.dotenv_path, environ={})
+        if runtime.write_plan_key_path is None:
+            return "unknown"
+        try:
+            token = bridge_auth_token(runtime)
+        except WritePlanPersistenceError:
+            return "unknown"
+        config = load_single_instance_config(runtime.config_path)
+        response = asyncio.run(
+            probe_bridge_health(str(config.arapi.bridge_base_url), token)
+        )
+        status = (
+            response.headers.get("X-Helix-CMDB-Support")
+            if response is not None
+            else None
+        )
+        return status if status in ("active", "inactive") else "unknown"
 
     def _dashboard_runtime(
         self,
@@ -2046,6 +2077,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/identity":
             self._json(HTTPStatus.OK, self.server.service.identity())
+            return
+        if path == "/api/bridge/cmdb-support":
+            try:
+                support = self.server.service.bridge_cmdb_support()
+            except (OSError, ValueError):
+                support = "unknown"
+            self._json(HTTPStatus.OK, {"status": support})
             return
         if path == "/api/health":
             self._json(HTTPStatus.OK, self.server.service.health())

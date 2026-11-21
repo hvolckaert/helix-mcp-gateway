@@ -15,6 +15,7 @@ from helix_mcp.clients.arapi import (
     ArapiBridgeProcess,
     ArapiBridgeProtocolError,
 )
+from helix_mcp.clients.arapi.process import probe_bridge_health
 from helix_mcp.config import (
     ArapiBackendConfig,
     Environment,
@@ -98,6 +99,9 @@ def test_real_client_and_managed_java_bridge_contract(
             await process.start()
             assert process.owned is True
             await client.probe_bridge()
+            health = await probe_bridge_health(base_url, BRIDGE_TOKEN)
+            assert health is not None
+            assert health.headers["X-Helix-CMDB-Support"] == "inactive"
 
             assert await client.list_forms() == (ERROR_FORM, FORM)
             sql = await client.query_sql(
