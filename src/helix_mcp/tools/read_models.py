@@ -2,11 +2,16 @@
 
 from helix_mcp.config.models import FrozenModel
 from helix_mcp.provenance import ReadProvenance
+from helix_mcp.services.writes.cmdb import InstanceRead
 from helix_mcp.tools import models as payloads
 
 
 class ProvenancedOutput(FrozenModel):
     provenance: ReadProvenance
+
+
+class CmdbInstanceOutput(InstanceRead, ProvenancedOutput):
+    pass
 
 
 class ListTargetsOutput(payloads.ListTargetsOutput, ProvenancedOutput):

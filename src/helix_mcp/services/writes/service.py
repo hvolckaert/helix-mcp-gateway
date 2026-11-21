@@ -26,6 +26,7 @@ from helix_mcp.services.rate_limit import (
     RateLimitPersistenceError,
     SlidingWindowCounter,
 )
+from helix_mcp.services.writes import cmdb
 from helix_mcp.services.writes.errors import (
     FormWriteConflictError,
     FormWriteDisabledError,
@@ -52,8 +53,7 @@ from helix_mcp.services.writes.store import WritePlanStore
 from helix_mcp.targeting import ResolvedTarget, TargetResolver
 
 _CMDB_CLASSES = {
-    name.casefold(): name
-    for name in ("BMC.CORE:BMC_ComputerSystem", "BMC.CORE:BMC_Dependency")
+    name.casefold(): name for name in (cmdb.CI_FORM, cmdb.RELATION_FORM)
 }
 _CMDB_IDENTITY_FIELDS = ("InstanceId", "DatasetId", "ClassId", "RequestId")
 
@@ -84,12 +84,84 @@ class FormWriteService:
             database_path=rate_limit_database_path,
         )
 
+    async def get_cmdb_instance(
+        self,
+        environment: Environment,
+        reference: cmdb.InstanceReference,
+        attributes: cmdb.Attributes,
+    ) -> cmdb.InstanceRead:
+        target = self._resolve(environment)
+        return await cmdb.get_instance(
+            target, self._clients.get(target), reference, attributes
+        )
+
+    async def plan_cmdb_create(
+        self,
+        environment: Environment,
+        dataset_id: cmdb.DatasetId,
+        request: WriteValuesRequest,
+        *,
+        endpoints: tuple[cmdb.InstanceReference, cmdb.InstanceReference]
+        | None = None,
+    ) -> WritePlanResult:
+        protected = {
+            "datasetid",
+            "instanceid",
+            "classid",
+            "requestid",
+            "entryid",
+            "reconciliationidentity",
+        }
+        for field in request.values:
+            key = "".join(c for c in field.casefold() if c.isalnum())
+            if (
+                key in protected
+                or key.startswith(("source", "destination"))
+                or key.isdecimal()
+            ):
+                raise FormWriteFieldNotAllowedError(
+                    "CMDB identity fields are managed by the gateway"
+                )
+        values = {**request.values, "DatasetId": dataset_id}
+        if endpoints is not None:
+            for role, ref in zip(cmdb.ROLES, endpoints, strict=True):
+                if ref.form != cmdb.CI_FORM or ref.dataset_id != dataset_id:
+                    raise WritePlanStateError(
+                        "endpoint is outside the supported dataset or CI class"
+                    )
+                values.update(
+                    {
+                        f"{role}.DatasetId": dataset_id,
+                        f"{role}.InstanceId": ref.instance_id,
+                        f"{role}.ClassId": "",
+                    }
+                )
+        return await self._plan_create(
+            environment=environment,
+            form=cmdb.RELATION_FORM if endpoints else cmdb.CI_FORM,
+            request=WriteValuesRequest(values=values, reason=request.reason),
+            endpoints=endpoints,
+        )
+
     async def plan_create_for_form(
         self,
         *,
         environment: str | Environment,
         form: str,
         request: WriteValuesRequest,
+    ) -> WritePlanResult:
+        return await self._plan_create(
+            environment=environment, form=form, request=request, endpoints=None
+        )
+
+    async def _plan_create(
+        self,
+        *,
+        environment: str | Environment,
+        form: str,
+        request: WriteValuesRequest,
+        endpoints: tuple[cmdb.InstanceReference, cmdb.InstanceReference]
+        | None,
     ) -> WritePlanResult:
         target = self._resolve(environment)
         cmdb_form = _CMDB_CLASSES.get(form.casefold())
@@ -127,6 +199,36 @@ class FormWriteService:
                 values={**values, "InstanceId": ""},
                 reason=request.reason,
             )
+            if form == cmdb.RELATION_FORM:
+                client = self._clients.get(target)
+                enforce_field_read_access(
+                    target,
+                    form,
+                    tuple(
+                        field
+                        for role in cmdb.ROLES
+                        for field in cmdb.endpoint_fields(role)
+                    ),
+                )
+                if endpoints:
+                    for role, ref in zip(cmdb.ROLES, endpoints, strict=True):
+                        resolved = await cmdb.endpoint_values(
+                            target, client, role, ref
+                        )
+                        canonical = {
+                            k.casefold(): v for k, v in resolved.items()
+                        }
+                        values.update(
+                            {
+                                k: canonical[k.casefold()]
+                                for k in values
+                                if k.casefold() in canonical
+                            }
+                        )
+                else:
+                    await cmdb.verify_endpoints(
+                        target, client, dataset, values
+                    )
             id_key = next(k for k in values if k.casefold() == "instanceid")
             values[id_key] = await self._clients.get(
                 target
@@ -272,6 +374,25 @@ class FormWriteService:
                     dataset, str
                 ):
                     raise WritePlanStateError("incomplete CMDB plan identity")
+                if plan.form == cmdb.RELATION_FORM:
+                    enforce_field_read_access(
+                        target,
+                        plan.form,
+                        tuple(
+                            field
+                            for role in cmdb.ROLES
+                            for field in cmdb.endpoint_fields(role)
+                        ),
+                    )
+                    # A failed preflight is terminal and precedes the only create attempt.
+                    try:
+                        await cmdb.verify_endpoints(
+                            target, client, dataset, values
+                        )
+                    except ArapiBridgeError:
+                        raise WritePlanStateError(
+                            "CMDB endpoint read unavailable"
+                        ) from None
                 class_id = await client.create_cmdb_instance(
                     form=plan.form, values=values
                 )

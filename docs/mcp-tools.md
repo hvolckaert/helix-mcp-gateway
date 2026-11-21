@@ -30,6 +30,9 @@ permissions reduce it.
 | `get_sql_query_plan` | read | Returns stored SQL plan | High | No |
 | `cancel_sql_query_plan` | plan | Cancels local pending plan | Medium | No |
 | `execute_sql_query` | execute | Executes bounded read-only SQL | High | Yes |
+| `cmdb_get_instance` | read | Reads selected attributes by exact dataset, namespace, class and instance ID using the Java SDK | High | No |
+| `cmdb_plan_create_ci` | plan | Reserves a CI identity and stages one reviewed plan | High | No |
+| `cmdb_plan_create_relationship` | plan | Verifies source and destination CIs and stages one dependency | High | No |
 | `plan_create_entry` | plan | Stores proposed values locally | High | No |
 | `apply_create_entry` | execute | Creates a Helix entry | Critical | No; write permission required |
 | `plan_update_entry` | plan | Reads current and stores proposed values | High | No |
@@ -42,10 +45,10 @@ operations still require the ordinary permissions of the selected BMC account.
 
 ## Read provenance
 
-All 18 tools with the MCP read-only annotation return a required `provenance`
+All 19 tools with the MCP read-only annotation return a required `provenance`
 object alongside their existing result fields. This includes
 `execute_sql_query`, `get_sql_query_plan` and `get_write_plan`. Tool inputs,
-authorization, approval digests and the seven mutation/planning responses do
+authorization, approval digests and the existing mutation/planning responses do
 not change. Consumers with closed response schemas must accept this additional
 field when adopting a release containing this change.
 
@@ -53,7 +56,7 @@ field when adopting a release containing this change.
 | --- | --- |
 | `schema_version` | Provenance contract version, initially `1`. |
 | `environment` | Explicit `dev`, `qa` or `prod`; `null` only for the multi-environment `list_targets` catalog. |
-| `source` | Tool operation, backend (`arapi`, `gateway` or `health`) and applicable authorized identifiers: form, entry, field, view, database object or plan/digest. Unavailable identifiers are `null`; none are inferred. |
+| `source` | Tool operation, backend (`arapi`, `cmdb_sdk`, `gateway` or `health`) and applicable authorized identifiers: form, entry, field, view, database object or plan/digest. Unavailable identifiers are `null`; none are inferred. |
 | `read_at` | UTC time when this Gateway read operation completed. |
 | `data_read_at` | Original Gateway acquisition time for a cached primary result; otherwise the current read completion time. Neither timestamp is a BMC modification time or a transactional snapshot guarantee. |
 | `cached` | Whether the primary result was served from a Gateway cache. |

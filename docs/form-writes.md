@@ -155,6 +155,32 @@ agreed for each committed instance.
 This evidence covers these two SDK creates on the tested installation. The two
 historical blank AR join returns still have no attributable compound ID.
 
+### Dedicated CMDB tools
+
+Use `cmdb_get_instance(environment, reference, attributes)` for an exact native
+read. Supply the dataset, namespace, class name and instance ID in the reference.
+The SDK projects the requested scalar attributes and the identity fields it
+needs to verify the key. Only the requested attributes are returned. Missing
+identity, denied access and unsupported projections stop the read. Reading a
+dependency endpoint also requires permission to confirm that CI independently.
+
+Use `cmdb_plan_create_ci` for `BMC.CORE:BMC_ComputerSystem`. Use
+`cmdb_plan_create_relationship` for `BMC.CORE:BMC_Dependency` with a named
+source and destination. Both endpoints must be computer systems in the selected
+dataset for this implementation. The gateway reads their native class IDs and
+binds both full identities to the digest. It checks them again at application
+and inside the SDK transaction. A stored endpoint mismatch triggers rollback
+before commit. Review the complete plan, obtain later approval of its ID and
+digest, retrieve it through `get_write_plan` and apply it once through
+`apply_create_entry`. Pending plans can be cancelled through `cancel_write_plan`.
+Use `query_form` for bounded discovery of instances or related records.
+
+The new read tool was independently exercised on November 21, 2026 in DEV
+through MCP stdio using the existing synthetic identities. It returned the
+three and nine approved fields respectively, and separate source and destination
+reads matched their stored identity triples. Failure paths for the named plan
+tools and the additional in-transaction endpoint checks use offline fixtures.
+
 ## Update
 
 `plan_update_entry` also receives `entry_id`. It reads only proposed fields and

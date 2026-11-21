@@ -316,6 +316,34 @@ class ArapiBridgeClient:
             fields=fields,
         )
 
+    async def get_cmdb_instance(
+        self,
+        *,
+        form: str,
+        dataset_id: str,
+        instance_id: str,
+        fields: tuple[str, ...],
+    ) -> dict[str, ArapiScalar | None]:
+        payload, status = await self._post(
+            "/v1/cmdb/get",
+            {
+                "form": form,
+                "dataset_id": dataset_id,
+                "instance_id": instance_id,
+                "fields": ",".join(fields),
+            },
+        )
+        if not isinstance(payload, dict) or set(payload) != set(fields):
+            raise _protocol_error(self._target, status)
+        for value in payload.values():
+            if value is not None and not isinstance(
+                value, (str, int, float, bool)
+            ):
+                raise _protocol_error(self._target, status)
+            if isinstance(value, float) and not math.isfinite(value):
+                raise _protocol_error(self._target, status)
+        return dict(payload)
+
     async def reserve_cmdb_instance_id(self, form: str) -> str:
         payload, code = await self._post("/v1/cmdb/reserve", {"form": form})
         if not isinstance(payload, dict) or set(payload) != {"instance_id"}:

@@ -116,6 +116,8 @@ def _source(tool: str, payload: dict[str, object]) -> ReadSource:
             if tool in _LOCAL_READS
             else "health"
             if tool == "health_check"
+            else "cmdb_sdk"
+            if tool == "cmdb_get_instance"
             else "arapi"
         ),
     }

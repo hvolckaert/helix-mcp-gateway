@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
@@ -10,6 +12,11 @@ from helix_mcp.observability import ToolAuditor
 from helix_mcp.services.database import DatabaseObjectKind
 from helix_mcp.services.forms import FormSort
 from helix_mcp.services.writes import JsonScalar
+from helix_mcp.services.writes.cmdb import (
+    Attributes,
+    DatasetId,
+    InstanceReference,
+)
 from helix_mcp.targeting import TargetRegistry
 from helix_mcp.tools.database import DatabaseToolAdapter
 from helix_mcp.tools.forms import FormToolAdapter
@@ -20,6 +27,7 @@ from helix_mcp.tools.models import (
     WritePlanOutput,
 )
 from helix_mcp.tools.read_models import (
+    CmdbInstanceOutput,
     DescribeDatabaseObjectOutput,
     ExecuteSqlQueryOutput,
     GetEntryOutput,
@@ -652,6 +660,79 @@ def register_mcp_tools(
                 form=form,
                 entry_id=entry_id,
                 fields=tuple(fields),
+            ),
+        )
+
+    @server.tool(
+        name="cmdb_get_instance",
+        title="Read a CMDB instance by exact key",
+        description="Read selected scalar attributes using the CMDB Java SDK. Request endpoint identity fields to inspect a supported dependency.",
+        annotations=_HELIX_READ_ANNOTATIONS,
+        structured_output=True,
+    )
+    async def cmdb_get_instance(
+        environment: Environment,
+        reference: InstanceReference,
+        attributes: Attributes,
+    ) -> CmdbInstanceOutput:
+        return await reads.execute(
+            tool="cmdb_get_instance",
+            environment=environment,
+            output_type=CmdbInstanceOutput,
+            operation=lambda: writes.get_cmdb_instance(
+                environment, reference, attributes
+            ),
+        )
+
+    @server.tool(
+        name="cmdb_plan_create_ci",
+        title="Plan a CMDB computer system",
+        description="Reserve an InstanceId and return a reviewable CI plan. Apply only after later human approval of the exact plan ID and digest.",
+        annotations=_WRITE_PLAN_EXTERNAL_ANNOTATIONS,
+        structured_output=True,
+    )
+    async def cmdb_plan_create_ci(
+        environment: Environment,
+        dataset_id: DatasetId,
+        namespace: Literal["BMC.CORE"],
+        class_name: Literal["BMC_ComputerSystem"],
+        attributes: dict[str, JsonScalar],
+        reason: str,
+    ) -> WritePlanOutput:
+        return await audit.execute(
+            tool="cmdb_plan_create_ci",
+            environment=environment,
+            operation=lambda: writes.plan_cmdb_create(
+                environment, dataset_id, attributes, reason
+            ),
+        )
+
+    @server.tool(
+        name="cmdb_plan_create_relationship",
+        title="Plan a CMDB dependency",
+        description="Resolve source and destination CIs and stage one dependency. Review and approve each plan separately before apply_create_entry.",
+        annotations=_WRITE_PLAN_EXTERNAL_ANNOTATIONS,
+        structured_output=True,
+    )
+    async def cmdb_plan_create_relationship(
+        environment: Environment,
+        dataset_id: DatasetId,
+        namespace: Literal["BMC.CORE"],
+        class_name: Literal["BMC_Dependency"],
+        source: InstanceReference,
+        destination: InstanceReference,
+        attributes: dict[str, JsonScalar],
+        reason: str,
+    ) -> WritePlanOutput:
+        return await audit.execute(
+            tool="cmdb_plan_create_relationship",
+            environment=environment,
+            operation=lambda: writes.plan_cmdb_create(
+                environment,
+                dataset_id,
+                attributes,
+                reason,
+                (source, destination),
             ),
         )
 
