@@ -4,9 +4,10 @@ import com.bmc.arsys.api.Value;
 import java.util.Map;
 public class CMDBInstance {
     public static final int CMDB_GET_DATASET_MODE_CURRENT=0;
-    public static boolean collision, hideRead;
+    public static boolean collision, hideRead, swapEndpoints;
     public static int creates;
     private static CMDBInstance row;
+    public static String[] projection;
     private final CMDBClassNameKey key;
     private final Map<String,CMDBAttributeValue> attrs;
     private String id;
@@ -28,5 +29,19 @@ public class CMDBInstance {
         return collision ? new String[]{"EXISTING"} : null;
     }
     public static CMDBInstance findByKey(ARServerUser u, CMDBClassNameKey k, int mode,
-        String ds,String id,String[] fields) { return hideRead ? null : row; }
+        String ds,String id,String[] fields) {
+        projection = fields;
+        if (k.getClassName().equals("BMC_ComputerSystem") && (id.equals("SRC") || id.equals("DST"))) {
+            CMDBInstance endpoint = new CMDBInstance(k, Map.of(
+                "InstanceId", new CMDBAttributeValue("InstanceId", new Value(id)),
+                "DatasetId", new CMDBAttributeValue("DatasetId", new Value(ds)),
+                "ClassId", new CMDBAttributeValue("ClassId", new Value("CI-CLASS"))));
+            endpoint.setId(id);
+            return endpoint;
+        }
+        if (swapEndpoints && row != null) {
+            row.attrs.put("Source.InstanceId", new CMDBAttributeValue("Source.InstanceId", new Value("DST")));
+        }
+        return hideRead ? null : row;
+    }
 }

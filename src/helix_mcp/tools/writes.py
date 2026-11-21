@@ -15,6 +15,12 @@ from helix_mcp.services.writes import (
     WritePlanResult,
     WriteValuesRequest,
 )
+from helix_mcp.services.writes.cmdb import (
+    Attributes,
+    DatasetId,
+    InstanceRead,
+    InstanceReference,
+)
 from helix_mcp.tools.errors import ToolInputError
 
 
@@ -25,6 +31,32 @@ class FormWriteToolAdapter:
 
     def __init__(self, service: FormWriteService) -> None:
         self._service = service
+
+    async def get_cmdb_instance(
+        self,
+        environment: Environment,
+        reference: InstanceReference,
+        attributes: Attributes,
+    ) -> InstanceRead:
+        return await self._service.get_cmdb_instance(
+            environment, reference, attributes
+        )
+
+    async def plan_cmdb_create(
+        self,
+        environment: Environment,
+        dataset_id: DatasetId,
+        attributes: dict[str, JsonScalar],
+        reason: str,
+        endpoints: tuple[InstanceReference, InstanceReference] | None = None,
+    ) -> WritePlanResult:
+        try:
+            request = WriteValuesRequest(values=attributes, reason=reason)
+            return await self._service.plan_cmdb_create(
+                environment, dataset_id, request, endpoints=endpoints
+            )
+        except ValidationError:
+            raise ToolInputError("invalid CMDB plan inputs") from None
 
     async def plan_create_entry(
         self,

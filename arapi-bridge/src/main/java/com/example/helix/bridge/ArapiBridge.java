@@ -137,8 +137,9 @@ public final class ArapiBridge {
             new PrepareUpdateHandler()
         );
         server.createContext("/v1/entries/create", new CreateEntryHandler());
-        server.createContext("/v1/cmdb/reserve", new CmdbHandler(true));
-        server.createContext("/v1/cmdb/create", new CmdbHandler(false));
+        server.createContext("/v1/cmdb/reserve", new CmdbHandler("reserve"));
+        server.createContext("/v1/cmdb/create", new CmdbHandler("create"));
+        server.createContext("/v1/cmdb/get", new CmdbHandler("get"));
         server.createContext("/v1/entries/update-checked", new UpdateEntryHandler());
         server.createContext("/v1/entries/verify", new VerifyEntryHandler());
         server.createContext("/v1/sql/query", new SqlQueryHandler());
@@ -701,16 +702,18 @@ public final class ArapiBridge {
 
     public interface CmdbOperations {
         String reserve(ARServerUser user) throws ARException;
+        Map<String,Object> get(ARServerUser user, String form, String dataset, String id,
+            List<String> fields) throws ARException;
         String create(ARServerUser user, String form, Map<String, Value> attributes)
             throws ARException;
     }
 
     private static final class CmdbHandler extends ArapiHandler {
-        private final boolean reserve;
+        private final String operation;
 
-        CmdbHandler(boolean reserve) {
-            super(reserve ? "/v1/cmdb/reserve" : "/v1/cmdb/create");
-            this.reserve = reserve;
+        CmdbHandler(String operation) {
+            super("/v1/cmdb/" + operation);
+            this.operation = operation;
         }
 
         @Override
@@ -729,7 +732,21 @@ public final class ArapiBridge {
             }
             String value;
             String key;
-            if (reserve) {
+            if (operation.equals("get")) {
+                List<String> fields = splitList(requiredText(input, "fields", MAX_BODY_BYTES), 32);
+                String id = requiredText(input, "instance_id", MAX_NAME_LENGTH);
+                String dataset = requiredText(input, "dataset_id", MAX_NAME_LENGTH);
+                Map<String,Object> attributes = sdk.get(user, form, dataset, id, fields);
+                StringBuilder output = new StringBuilder("{");
+                for (String field : fields) {
+                    if (output.length() > 1) output.append(',');
+                    appendJsonString(output, field);
+                    output.append(':');
+                    appendJsonValue(output, attributes.get(field));
+                }
+                return output.append('}').toString();
+            }
+            if (operation.equals("reserve")) {
                 value = sdk.reserve(user);
                 key = "instance_id";
             } else {

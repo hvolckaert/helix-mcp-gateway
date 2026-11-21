@@ -3,6 +3,12 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
+## 0.19.0 - 2026-11-21
+
+- Add exact-key SDK reads and supervised create plans for computer systems and dependencies. Both plan tools use the existing approval, cancellation and single-attempt apply workflow.
+- Preserve the CMDB instance identity returned to the caller independently of AR join read-back availability. Two SDK creates in DEV matched all requested fields and both relationship endpoints. Historical blank AR join submissions remain unattributed. [Verification evidence](docs/form-writes.md#creating-cmdb-instances-with-the-java-sdk)
+- Install the matching CMDB Java SDK alongside the AR library and rebuild the bridge to use the CMDB tools. Existing regular-form operations continue through ARAPI.
+
 ## 0.18.1 - 2026-11-21
 
 - Report the AR entry ID returned by a create in subsequent plan inspections.

@@ -195,6 +195,11 @@ broad permissions or symbolic links for sensitive local state.
   --output "/path/to/helix-arapi-bridge.jar"
 ```
 
+To enable the CMDB tools, include one matching vendor-supplied
+`cmdbapi*.jar` in this library directory and rebuild. Supply the
+runtime dependencies from the same authorized BMC installation. The compiler
+includes the optional provider when the CMDB library is present.
+
 A failed build leaves the previous bridge untouched. The compiler receives a
 reduced environment without Helix credentials. The output manifest records the
 package version, bridge protocol version, and source SHA-256.

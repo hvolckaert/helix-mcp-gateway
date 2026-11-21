@@ -31,7 +31,7 @@ class ReadSource(FrozenModel):
     """Only identifiers already authorized and present in the result."""
 
     operation: str
-    backend: Literal["arapi", "gateway", "health"]
+    backend: Literal["arapi", "gateway", "health", "cmdb_sdk"]
     form: str | None = None
     entry_id: str | None = None
     field_id: int | None = None

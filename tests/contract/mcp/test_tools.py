@@ -313,6 +313,30 @@ class FakeWriteTools:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
+    async def get_cmdb_instance(self, environment, reference, attributes):
+        from helix_mcp.services.writes.cmdb import InstanceRead
+
+        return InstanceRead(
+            environment=environment,
+            reference=reference,
+            attributes={k: None for k in attributes},
+        )
+
+    async def plan_cmdb_create(
+        self, environment, dataset_id, attributes, reason, endpoints=None
+    ):
+        form = (
+            "BMC.CORE:BMC_Dependency"
+            if endpoints
+            else "BMC.CORE:BMC_ComputerSystem"
+        )
+        return _write_plan(
+            operation=WriteOperation.CREATE,
+            form=form,
+            values={**attributes, "DatasetId": dataset_id},
+            reason=reason,
+        )
+
     async def plan_create_entry(self, **kwargs) -> WritePlanResult:
         self.calls.append("plan_create_entry")
         return _write_plan(
@@ -534,6 +558,9 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
                 "list_database_columns",
                 "list_database_objects",
                 "list_targets",
+                "cmdb_get_instance",
+                "cmdb_plan_create_ci",
+                "cmdb_plan_create_relationship",
                 "plan_create_entry",
                 "plan_update_entry",
                 "query_form",
@@ -1080,7 +1107,55 @@ def test_tools_publish_structured_schemas_annotations_and_safe_outputs(
                 "get_write_plan",
                 {"environment": "dev", "plan_id": "a" * 32},
             )
+            ref = {
+                "dataset_id": "BMC.SAMPLE",
+                "class_name": "BMC_ComputerSystem",
+                "namespace": "BMC.CORE",
+                "instance_id": "EXAMPLE",
+            }
+            instance = await client.call_tool(
+                "cmdb_get_instance",
+                {
+                    "environment": "dev",
+                    "reference": ref,
+                    "attributes": ["Name"],
+                },
+            )
+            assert (
+                instance.structured_content["provenance"]["source"]["backend"]
+                == "cmdb_sdk"
+            )
+            assert instance.structured_content["reference"] == ref
+            for tool, cls, extra in (
+                ("cmdb_plan_create_ci", "BMC_ComputerSystem", {}),
+                (
+                    "cmdb_plan_create_relationship",
+                    "BMC_Dependency",
+                    {
+                        "source": ref,
+                        "destination": {**ref, "instance_id": "EXAMPLE2"},
+                    },
+                ),
+            ):
+                response = await client.call_tool(
+                    tool,
+                    {
+                        "environment": "dev",
+                        "dataset_id": "BMC.SAMPLE",
+                        "namespace": "BMC.CORE",
+                        "class_name": cls,
+                        "attributes": {"Name": "example"},
+                        "reason": "synthetic tool test",
+                        **extra,
+                    },
+                )
+                assert (
+                    not response.is_error
+                    and response.structured_content["form"]
+                    == "BMC.CORE:" + cls
+                )
             reads = {
+                "cmdb_get_instance": instance,
                 "list_targets": targets,
                 "health_check": health,
                 "list_forms": forms,

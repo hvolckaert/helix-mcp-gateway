@@ -52,7 +52,9 @@ SERVER_INSTRUCTIONS = (
     "the user explicitly approves that exact plan in a later message. After "
     "approval, call get_sql_query_plan for the same plan_id and, if its status "
     "is pending, execute that same plan immediately. Never create a replacement "
-    "plan after approval. Every Helix write also "
+    "plan after approval. For supported CMDB instances use cmdb_get_instance with an "
+    "exact native key. Stage CIs with cmdb_plan_create_ci and dependencies with "
+    "cmdb_plan_create_relationship. Use apply_create_entry after later approval. Every Helix write also "
     "requires a plan. Never call an apply tool until the user has reviewed the "
     "exact plan and explicitly approved that write."
 )

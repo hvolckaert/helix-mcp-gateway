@@ -76,10 +76,11 @@ the database, and the user-supplied proprietary BMC libraries remain local.
 
 ## Capabilities
 
-The server exposes 25 MCP tools:
+The server exposes 28 MCP tools:
 
 | Area | Tools | External effect |
 | --- | --- | --- |
+| CMDB instances | `cmdb_get_instance`, `cmdb_plan_create_ci`, `cmdb_plan_create_relationship` | Exact-key SDK reads and reviewable creates for computer systems and dependencies |
 | Targets and health | `list_targets`, `health_check` | Local catalog and bounded connectivity probes |
 | Form reads | `list_forms`, `list_form_fields`, `get_form_field_definition`, `list_form_views`, `get_form_view_definition`, `get_form_field_selection_values`, `get_form_field_menu_metadata`, `resolve_form_field_menu_values`, `query_form`, `get_entry` | Policy-filtered field and view definitions, PWA display properties, typed defaults and limits, ENUM labels, CHAR menus, and bounded records |
 | Database metadata | `list_database_objects`, `list_database_columns`, `describe_database_object` | Administrator-only catalog reads through AR API |
@@ -95,7 +96,7 @@ comparison identifying matching, differing or unverified fields. These are
 optimistic checks and observations, not transaction or rollback guarantees.
 See [write verification and limitations](docs/form-writes.md#verification).
 
-All 18 read tools include a required `provenance` block with the environment,
+All 19 read tools include a required `provenance` block with the environment,
 authorized source identifiers, UTC read/acquisition times and fingerprints of
 the applied policies. Cached results retain their original acquisition time;
 cached metadata used by a fresh read is identified separately. See the
