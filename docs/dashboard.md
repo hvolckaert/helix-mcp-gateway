@@ -72,10 +72,10 @@ the environment Test buttons.
 
 The saved folder shows the AR API JAR and its manifest version. If it contains
 a single identifiable `cmdbapi*.jar`, the Dashboard also shows the CMDB SDK
-JAR and its Maven or manifest version. The installer checks `--arapi-lib-dir`
-first, then `HELIX_ARAPI_LIB_DIR`, then known Developer Studio plugin folders.
-Automatic selection requires exactly one valid candidate. Use **Browse** to
-choose among several candidates or enter a custom folder.
+JAR and its Maven or manifest version. On fresh installations the installer can assemble
+the library folder from separate AR API and CMDB installations. The setup
+preview shows the source paths and versions for each choice.
+[Selecting BMC libraries during setup](installation.md#guided-setup)
 
 **CMDB support in the running bridge** comes from an authenticated local health
 check. **Active** means the bridge loaded its CMDB provider and SDK classes.

@@ -111,7 +111,11 @@ def inspect_cmdb_sdk(directory: Path | None) -> CmdbSdkLibrary:
         return CmdbSdkLibrary("absent")
     if len(jars) > 1:
         return CmdbSdkLibrary("ambiguous")
-    jar = jars[0]
+    return inspect_cmdb_jar(jars[0])
+
+
+def inspect_cmdb_jar(jar: Path) -> CmdbSdkLibrary:
+    """Read the CMDB artifact identity and version from one candidate JAR."""
     try:
         if not jar.is_file():
             return CmdbSdkLibrary("invalid", jar.name)
@@ -225,7 +229,7 @@ class ArapiBridgeProcess:
             "ARAPI library directory",
         )
         working_directory = self._private_working_directory(jar.parent)
-        classpath = os.pathsep.join((str(jar), str(libraries / "*")))
+        classpath = bridge_classpath(jar, libraries)
         bridge_url = urlsplit(self._base_url)
         bridge_host = bridge_url.hostname
         bridge_port = bridge_url.port
@@ -436,6 +440,16 @@ async def probe_bridge_health(
         return response if hmac.compare_digest(proof, expected) else None
     except (httpx.RequestError, UnicodeDecodeError, ValueError):
         return None
+
+
+def bridge_classpath(bridge: Path, libraries: Path) -> str:
+    """Let the JVM resolve manifest dependencies beside the original linked JARs."""
+    jars = sorted(path for path in libraries.glob("*.jar") if path.is_file())
+    if any(path.is_symlink() for path in jars):
+        entries = [str(bridge)]
+        entries.extend(str(jar.resolve()) for jar in jars)
+        return os.pathsep.join(entries)
+    return os.pathsep.join((str(bridge), str(libraries / "*")))
 
 
 def validate_arapi_libraries(directory: Path) -> ArapiLibraries:

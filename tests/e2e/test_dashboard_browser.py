@@ -122,7 +122,9 @@ class BrowserDashboard:
 
 
 @pytest.fixture
-def dashboard(tmp_path):
+def dashboard(tmp_path, monkeypatch):
+    # These session tests use fictional metadata and no host SDK installation.
+    monkeypatch.setattr("helix_mcp.dashboard.find_arapi_lib_dirs", lambda: ())
     app = BrowserDashboard(tmp_path)
     try:
         yield app

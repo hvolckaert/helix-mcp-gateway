@@ -15,6 +15,7 @@ from helix_mcp.installation import (
     discover_arapi_lib_dir,
     setup_installation,
 )
+from tests.support.java_bridge import write_arapi_folder
 
 setup_implementation = importlib.import_module("helix_mcp.installation.setup")
 
@@ -87,7 +88,10 @@ def test_discovery_skips_inaccessible_root(
     )
 
 
-def test_dry_run_validates_resources_without_writing(tmp_path) -> None:
+def test_dry_run_validates_resources_without_writing(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(setup_implementation, "_KNOWN_ARAPI_ROOTS", ())
     result = setup_installation(
         config_dir=tmp_path / "config",
         data_dir=tmp_path / "data",
@@ -107,10 +111,8 @@ def test_setup_creates_dashboard_files_when_arapi_and_java_are_missing(
 ) -> None:
     monkeypatch.setattr(
         setup_implementation,
-        "discover_arapi_lib_dir",
-        lambda explicit: (_ for _ in ()).throw(
-            SetupError("ARAPI library directory must be specified")
-        ),
+        "_KNOWN_ARAPI_ROOTS",
+        (),
     )
     monkeypatch.setattr(
         setup_implementation, "jdk_executable", lambda home: None
@@ -148,8 +150,8 @@ def test_setup_detects_one_local_jdk_when_java_is_not_on_path(
     jdk = tmp_path / "jdk-17"
     monkeypatch.setattr(
         setup_implementation,
-        "discover_arapi_lib_dir",
-        lambda explicit: (_ for _ in ()).throw(SetupError("AR API pending")),
+        "_KNOWN_ARAPI_ROOTS",
+        (),
     )
     monkeypatch.setattr(
         setup_implementation,
@@ -184,16 +186,16 @@ def test_setup_builds_bridge_and_never_overwrites_configuration(
     config_dir.mkdir()
     config_path = config_dir / "helix.yaml"
     config_path.write_text("existing: configuration\n", encoding="utf-8")
-    monkeypatch.setattr(
-        setup_implementation,
-        "discover_arapi_lib_dir",
-        lambda explicit: library_dir,
-    )
+    write_arapi_folder(library_dir)
+    monkeypatch.setattr(setup_implementation, "_KNOWN_ARAPI_ROOTS", ())
 
     def fake_build(
         libraries: Path, output: Path, *, java_home: Path | None = None
     ) -> BridgeBuildResult:
-        assert libraries == library_dir
+        assert libraries.parent == data_dir / "vendor-lib"
+        assert (
+            libraries / "arapi990.jar"
+        ).resolve() == library_dir / "arapi990.jar"
         output.parent.mkdir(parents=True)
         output.write_bytes(b"bridge")
         return BridgeBuildResult(
@@ -224,7 +226,7 @@ def test_setup_builds_bridge_and_never_overwrites_configuration(
         encoding="utf-8",
     )
     assert values["HELIX_CONFIG_PATH"] == str(config_path)
-    assert values["HELIX_ARAPI_LIB_DIR"] == str(library_dir)
+    assert values["HELIX_ARAPI_LIB_DIR"] == str(result.arapi_lib_dir)
     assert values["HELIX_WRITE_PLAN_DB_PATH"] == str(
         state_dir / "write-plans.sqlite3"
     )
@@ -256,11 +258,8 @@ def test_second_setup_preserves_both_configuration_files(
     config_dir.mkdir()
     (config_dir / "helix.yaml").write_text("yaml-original", encoding="utf-8")
     (config_dir / ".env").write_text("dotenv-original", encoding="utf-8")
-    monkeypatch.setattr(
-        setup_implementation,
-        "discover_arapi_lib_dir",
-        lambda explicit: library_dir,
-    )
+    write_arapi_folder(library_dir)
+    monkeypatch.setattr(setup_implementation, "_KNOWN_ARAPI_ROOTS", ())
     monkeypatch.setattr(
         setup_implementation,
         "build_bridge",
@@ -280,6 +279,7 @@ def test_second_setup_preserves_both_configuration_files(
 
     assert result.config_created is False
     assert result.dotenv_created is False
+    assert "arapi_configuration" in result.pending
     assert (config_dir / "helix.yaml").read_text() == "yaml-original"
     assert (config_dir / ".env").read_text() == "dotenv-original"
 
@@ -296,11 +296,8 @@ def test_setup_rejects_an_existing_invalid_write_plan_key(
     key_path = state_dir / "write-plans.key"
     key_path.write_bytes(b"too-short")
     key_path.chmod(0o600)
-    monkeypatch.setattr(
-        setup_implementation,
-        "discover_arapi_lib_dir",
-        lambda explicit: library_dir,
-    )
+    write_arapi_folder(library_dir)
+    monkeypatch.setattr(setup_implementation, "_KNOWN_ARAPI_ROOTS", ())
     monkeypatch.setattr(
         setup_implementation,
         "build_bridge",

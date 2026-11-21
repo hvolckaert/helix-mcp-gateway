@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import socket
 import subprocess
+import zipfile
 from pathlib import Path
 
 
@@ -121,3 +122,45 @@ def _run_java(java: str, *arguments: str) -> None:
         check=True,
         timeout=60,
     )
+
+
+def write_bmc_jar(path: Path, *, version: str, vendor: str) -> None:
+    manifest = (
+        "Manifest-Version: 1.0\n"
+        f"Implementation-Vendor: {vendor}\n"
+        f"Implementation-Version: {version}\n"
+    )
+    with zipfile.ZipFile(path, mode="w") as archive:
+        archive.writestr("META-INF/MANIFEST.MF", manifest)
+        if path.name.startswith("arapi") and not path.name.startswith(
+            "arapiext"
+        ):
+            for name in (
+                "ARException",
+                "ARErrors",
+                "ARServerUser",
+                "Constants",
+                "DataType",
+                "DateInfo",
+                "Entry",
+                "Field",
+                "OutputInteger",
+                "QualifierInfo",
+                "SQLResult",
+                "ServerInfoMap",
+                "SortInfo",
+                "StatusInfo",
+                "Time",
+                "Timestamp",
+                "Value",
+            ):
+                archive.writestr(f"com/bmc/arsys/api/{name}.class", b"test")
+
+
+def write_arapi_folder(
+    directory: Path, version: str = "25.1.00-SNAPSHOT"
+) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in ("arapi990.jar", "arapiext990.jar", "arlogger-25.jar"):
+        write_bmc_jar(directory / name, version=version, vendor="BMC Software")
+    return directory

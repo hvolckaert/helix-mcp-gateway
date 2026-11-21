@@ -6,14 +6,28 @@ import json
 import os
 import secrets
 import shutil
-from dataclasses import dataclass
+import sys
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from pathlib import Path
+
+from dotenv import dotenv_values, set_key
 
 from helix_mcp.clients.arapi import validate_arapi_libraries
 from helix_mcp.installation.bridge import (
     BridgeBuildError,
     BridgeBuildResult,
     build_bridge,
+)
+from helix_mcp.installation.libraries import (
+    LibraryChoice,
+    LibraryChoiceRequired,
+    LibrarySetupError,
+    SdkCandidate,
+    find_cmdb_sdks,
+    library_choices,
+    prepare_library_links,
 )
 from helix_mcp.installation.resources import (
     read_config_template,
@@ -60,6 +74,9 @@ class SetupResult:
     server_command: str
     pending: tuple[str, ...] = ()
     java_home: Path | None = None
+    library_choices: tuple[LibraryChoice, ...] = ()
+    selected_libraries: LibraryChoice | None = None
+    detected_cmdb_sdks: tuple[SdkCandidate, ...] = ()
 
 
 def default_install_paths() -> InstallPaths:
@@ -137,6 +154,10 @@ def find_arapi_lib_dirs() -> tuple[Path, ...]:
 def setup_installation(
     *,
     arapi_lib_dir: str | Path | None = None,
+    cmdb_sdk: str | Path | None = None,
+    arapi_only: bool = False,
+    choose_libraries: Callable[[tuple[LibraryChoice, ...]], LibraryChoice]
+    | None = None,
     config_dir: str | Path | None = None,
     data_dir: str | Path | None = None,
     state_dir: str | Path | None = None,
@@ -154,18 +175,82 @@ def setup_installation(
     dotenv_path = paths.config_dir / ".env"
     config_path = paths.config_dir / "helix.yaml"
     bridge_path = paths.data_dir / "bridge" / _BRIDGE_FILENAME
-    selected_libraries: Path | None = None
-    libraries_valid = False
+    if dotenv_path.is_symlink() or (
+        dotenv_path.exists() and not dotenv_path.is_file()
+    ):
+        raise SetupError("installation target is not a regular file")
+    saved_values = (
+        dotenv_values(dotenv_path, interpolate=False)
+        if dotenv_path.exists()
+        else {}
+    )
+    saved_value = saved_values.get("HELIX_ARAPI_LIB_DIR")
+    saved_dir = _absolute(saved_value) if saved_value else None
+    source = (
+        arapi_lib_dir or saved_dir or os.environ.get("HELIX_ARAPI_LIB_DIR")
+    )
+    reuse_saved = (
+        saved_dir is not None
+        and source is not None
+        and _absolute(source) == saved_dir
+        and cmdb_sdk is None
+        and not arapi_only
+    )
+    if arapi_only and cmdb_sdk is not None:
+        raise LibrarySetupError("Choose either a CMDB SDK or AR API only.")
+    directories = (_absolute(source),) if source else find_arapi_lib_dirs()
+    sdks: tuple[SdkCandidate, ...] = ()
+    if not arapi_only:
+        if reuse_saved:
+            assert saved_dir is not None
+            colocated = sorted(saved_dir.glob("cmdbapi*.jar"))
+            if len(colocated) > 1:
+                raise LibrarySetupError(
+                    "The saved library folder contains multiple CMDB SDKs."
+                )
+            if colocated:
+                sdks = find_cmdb_sdks((), (), explicit=colocated[0])
+        else:
+            sdks = find_cmdb_sdks(
+                directories,
+                _KNOWN_ARAPI_ROOTS,
+                explicit=_absolute(cmdb_sdk) if cmdb_sdk is not None else None,
+            )
+    choices = library_choices(
+        directories,
+        sdks,
+        explicit_sdk=cmdb_sdk is not None,
+        explicit_arapi=source is not None,
+    )
+    selected_libraries = None
+    selected = None
     pending: list[str] = []
-    if not dry_run or arapi_lib_dir is not None:
-        configured = arapi_lib_dir or os.environ.get("HELIX_ARAPI_LIB_DIR")
-        try:
-            selected_libraries = discover_arapi_lib_dir(arapi_lib_dir)
-            libraries_valid = True
-        except Exception:
-            if configured:
-                selected_libraries = _absolute(configured)
-            pending.append("arapi")
+    if len(choices) == 1:
+        selected = choices[0]
+    elif choices:
+        if dry_run:
+            pending.append("library_selection")
+        elif choose_libraries is None:
+            raise LibraryChoiceRequired(choices)
+        else:
+            selected = choose_libraries(choices)
+            if selected not in choices:
+                raise LibrarySetupError("Invalid library selection.")
+    elif cmdb_sdk is not None:
+        raise LibrarySetupError(
+            "No eligible AR API folder for the selected SDK. Specify --arapi-lib-dir for an explicitly matched pair."
+        )
+    elif not dry_run or source is not None:
+        pending.append("arapi")
+    if selected is not None:
+        if dotenv_path.exists() and saved_value is None:
+            pending.append("arapi_configuration")
+        if reuse_saved:
+            selected_libraries = saved_dir
+        else:
+            selected_libraries = prepare_library_links(
+                paths.data_dir, selected, dry_run=dry_run, saved_dir=saved_dir
+            )
     configured_java_home = os.environ.get("HELIX_JAVA_HOME")
     environment_java_home = os.environ.get("JAVA_HOME")
     selected_java_home = (
@@ -182,24 +267,54 @@ def setup_installation(
             selected_java_home = candidates[0]
             java_command = jdk_executable(selected_java_home)
     server_command = shutil.which("helix-mcp") or "helix-mcp"
+    preview = SetupResult(
+        paths=paths,
+        dotenv_path=dotenv_path,
+        config_path=config_path,
+        bridge_path=bridge_path,
+        arapi_lib_dir=selected_libraries,
+        dotenv_created=False,
+        config_created=False,
+        bridge_built=False,
+        dry_run=dry_run,
+        server_command=server_command,
+        pending=tuple(pending),
+        java_home=selected_java_home,
+        detected_cmdb_sdks=sdks,
+        library_choices=choices,
+        selected_libraries=selected,
+    )
     if dry_run:
-        return SetupResult(
-            paths=paths,
-            dotenv_path=dotenv_path,
-            config_path=config_path,
-            bridge_path=bridge_path,
-            arapi_lib_dir=selected_libraries,
-            dotenv_created=False,
-            config_created=False,
-            bridge_built=False,
-            dry_run=True,
-            server_command=server_command,
-            pending=tuple(pending),
-            java_home=selected_java_home,
+        return preview
+
+    with _setup_lock(paths.data_dir):
+        # Another installer may have chosen a different pair while we were prompting.
+        current_values = (
+            dotenv_values(dotenv_path, interpolate=False)
+            if dotenv_path.exists()
+            else {}
+        )
+        if current_values.get("HELIX_ARAPI_LIB_DIR") != saved_value:
+            raise LibrarySetupError(
+                "The saved library selection changed during setup. Rerun setup."
+            )
+        return _install_files(
+            preview, java_command, fill_empty_folder=saved_value == ""
         )
 
+
+def _install_files(
+    result: SetupResult, java_command: str | None, *, fill_empty_folder: bool
+) -> SetupResult:
+    paths = result.paths
+    config_path = result.config_path
+    dotenv_path = result.dotenv_path
+    bridge_path = result.bridge_path
+    selected_libraries = result.arapi_lib_dir
+    selected_java_home = result.java_home
+    pending = list(result.pending)
     bridge_built = False
-    if libraries_valid and selected_libraries is not None:
+    if selected_libraries is not None:
         if java_command is None:
             pending.append("java")
         else:
@@ -234,7 +349,9 @@ def setup_installation(
         _render_dotenv(
             config_path=config_path,
             bridge_path=bridge_path,
-            arapi_lib_dir=selected_libraries,
+            arapi_lib_dir=selected_libraries
+            if "bridge" not in pending
+            else None,
             java_home=selected_java_home,
             audit_path=paths.state_dir / "audit.jsonl",
             metrics_path=paths.state_dir / "metrics.json",
@@ -244,20 +361,42 @@ def setup_installation(
         ),
         mode=0o600,
     )
-    return SetupResult(
-        paths=paths,
-        dotenv_path=dotenv_path,
-        config_path=config_path,
-        bridge_path=bridge_path,
-        arapi_lib_dir=selected_libraries,
+    if (
+        not dotenv_created
+        and fill_empty_folder
+        and selected_libraries is not None
+        and bridge_built
+    ):
+        set_key(dotenv_path, "HELIX_ARAPI_LIB_DIR", str(selected_libraries))
+    return replace(
+        result,
         dotenv_created=dotenv_created,
         config_created=config_created,
         bridge_built=bridge_built,
-        dry_run=False,
-        server_command=server_command,
         pending=tuple(pending),
-        java_home=selected_java_home,
     )
+
+
+@contextmanager
+def _setup_lock(data_dir: Path) -> Iterator[None]:
+    """Serialize bridge/configuration publication. The OS releases the lock on exit."""
+    data_dir.mkdir(parents=True, exist_ok=True)
+    with (data_dir / ".setup.lock").open("a+b") as stream:
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            raise LibrarySetupError(
+                "Cannot lock the installation. Check for another running setup and retry."
+            ) from exc
+        yield
 
 
 def _absolute(value: str | Path) -> Path:
