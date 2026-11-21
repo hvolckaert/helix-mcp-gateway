@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
-## Unreleased
+## 0.18.1 - 2026-11-21
 
 - Report the AR entry ID returned by a create in subsequent plan inspections.
   Record the native return category and ID presence across the bridge, client
