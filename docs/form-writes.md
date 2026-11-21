@@ -61,11 +61,6 @@ The gateway performs no verification read in this case. A name, a CMDB
 created by the approved call. A lost create response is a distinct terminal
 outcome, `outcome_unknown`. Neither case permits a second create.
 
-BMC documents that a join request's ID can include its member request IDs
-and that creating records through a join depends on workflow. The cited
-interfaces supply no alternative that binds a later lookup to this particular
-create. [ARCreateEntry](https://docs.helixops.ai/bin/Service-Management/Innovation-Suite/BMC-Helix-Innovation-Suite/is252/Developing-an-API-program/AR-System-C-API-functions/Function-descriptions/ARCreateEntry/) · [Join forms](https://docs.helixops.ai/bin/Service-Management/Innovation-Suite/AR-System/ars2105/Developing-applications/Developing-the-application-interface/Defining-forms-to-hold-and-display-data/Join-forms/)
-
 On 2026-11-21, two separately approved synthetic plans in DEV
 (`BMC.SAMPLE`) each returned `applied` and `reused_result: false` after one
 attempt. For both calls the bridge classified the native return as `blank`
@@ -78,13 +73,47 @@ with reason `entry_id_unavailable`.
 | `BMC.CORE:BMC_ComputerSystem` | `DatasetId`, `Name` |
 | `BMC.CORE:BMC_Dependency` | `DatasetId`, `Name`, `Source.DatasetId`, `Source.ClassId`, `Source.InstanceId`, `Destination.DatasetId`, `Destination.ClassId`, `Destination.InstanceId` |
 
-**Live create verification remains open for both forms.** Each requires a record
-identity attributable to the create and an exact-ID read confirming its fields.
-For the dependency, the endpoint CIs were read before approval. Verifying the
-stored link requires reading the source and destination from the returned
-**relationship** entry ID and confirming each endpoint's dataset, class and
-instance identity. The missing ID prevented that read. The native returns for
-the earlier, uninstrumented attempts remain unknown. [DEV handoff](https://github.com/hvolckaert/helix-agent-skills/blob/5d4798f/docs/gateway-create-verification.md)
+#### Read-only review of the DEV create workflow
+
+On the same date, ARAPI reads of the AR System schema and filter metadata
+identified the following configuration. Both joins match their members on
+field 179 (`InstanceId`). The counts cover enabled Submit filters mapped
+directly to each join.
+
+| Join in `BMC.CORE` | Primary member | Secondary member | Submit filters |
+| --- | --- | --- | ---: |
+| `BMC_ComputerSystem` | `BMC_ComputerSystem_` | `BMC_BaseElement` | 16 |
+| `BMC_Dependency` | `BMC_Dependency_` | `BMC_BaseRelationship` | 3 |
+
+Both joins have three `CMDB:Instance:InvokeCMDBEngine` filters with suffixes
+`01`, `02` and `03`. They invoke phases 1, 2 and 3 of `bmc.cmdb.cmdbEngine`.
+The first two assign the engine result to the display-only field `zCMDBEngInvokeResult`.
+The third invokes the engine through a Run Process action. These definitions
+describe the configured workflow. The evidence for the actual return from
+each approved call is the `blank` category recorded above.
+
+BMC documents a generated entry ID for a base-form create. Its Java example
+uses a regular form. Submitting through a join runs filters that determine
+which member entries to create or modify. Reading an existing join row
+exposes its members' request IDs separated by `|`. The documentation gives
+no guarantee that submitting to the join returns that composite ID.
+[ARCreateEntry](https://docs.helixops.ai/bin/Service-Management/Innovation-Suite/BMC-Helix-Innovation-Suite/is252/Developing-an-API-program/AR-System-C-API-functions/Function-descriptions/ARCreateEntry/) · [Join forms](https://docs.helixops.ai/bin/Service-Management/Innovation-Suite/BMC-Helix-Innovation-Suite/is262/Developing-applications-by-using-Developer-Studio/Developing-the-application-interface/Defining-forms-to-hold-and-display-data/Join-forms/) · [Java create and read example](https://docs.helixops.ai/bin/Service-Management/Innovation-Suite/BMC-Helix-Innovation-Suite/is262/Developing-an-API-program/AR-System-Java-API-overview/Java-API-sample-code-for-managing-AR-System-records/)
+
+In the Java SDK installed for the gateway, `ARServerUser.createEntry`
+returns the same ID that `Entry.getEntryId()` and `ARServerUser.getLastID()`
+expose immediately after the call. When the native return is blank, both
+accessors yield a blank value. The display-only workflow result is outside
+this method's return contract.
+
+**Live create verification remains open for both forms.** The current ARAPI
+path exposed no documented way to bind either blank return to a specific
+join row. For the computer system, closure requires an ID attributable to
+the create and an exact-ID read confirming `DatasetId` and `Name`. For the
+dependency, both endpoint CIs were read before approval. Closure requires an
+exact-ID read of the **relationship**, confirmation of its requested fields,
+and a check of each stored endpoint's dataset, class and instance against
+its CI. The native returns for earlier, uninstrumented attempts remain
+unknown. [DEV handoff](https://github.com/hvolckaert/helix-agent-skills/blob/5d4798f/docs/gateway-create-verification.md)
 
 The final create audit event records the native return category
 (`accepted`, `absent`, `blank`, `too_long`, or `control_character`) and
