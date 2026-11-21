@@ -10,7 +10,7 @@ public class ARServerUser {
     private static final String SAMPLE_FORM = "Sample:Form";
     private static final String ERROR_FORM = "Error:Form";
     private static final String INITIAL_ENTRY_ID = "000000000000001";
-    private static final String CREATED_ENTRY_ID = "000000000000999";
+    private static final String CREATED_ENTRY_ID = "000000000000999|000000000000007";
     private static final String TEST_USERNAME = "java-bridge-user";
     private static final String TEST_PASSWORD =
         "java-bridge-password-never-expose";

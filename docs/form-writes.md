@@ -42,11 +42,86 @@ Deletion, attachments, and bulk writes are not exposed.
 at least ten characters. After policy validation, it stores a temporary plan
 and returns normalized values for review without calling Helix.
 
-After approval, `apply_create_entry` supplies the environment, plan ID, and
-digest. The Java bridge invokes `ARServerUser.createEntry()` with typed scalar
-values. A valid create on a display, join, or compound form may return
-`entry_id: null`; the gateway does not perform a potentially ambiguous lookup
-to infer an ID.
+On the first application of an approved plan,
+`apply_create_entry(environment, plan_id, plan_digest)` calls
+`ARServerUser.createEntry(form, values)` once. When that call returns a
+usable AR entry ID, the bridge preserves it, including compound IDs such as
+`0001|0002`. The gateway uses the ID for the verification read on the same
+target and form. Both the apply result and a subsequent `get_write_plan`
+report the ID stored for that plan. Two plans can request identical values
+and have the same digest. Their plan IDs and results remain independent.
+
+### CMDB join forms
+
+When a successful native return contains no usable ID, the result is
+`applied` with `entry_id: null`, `verification.status: unavailable`, reason
+`entry_id_unavailable`, and all requested fields in `unverified_fields`.
+The gateway performs no verification read in this case. A name, a CMDB
+`InstanceId` discovered later, or the newest row cannot identify the record
+created by the approved call. A lost create response is a distinct terminal
+outcome, `outcome_unknown`. Neither case permits a second create.
+
+On 2026-11-21, two separately approved synthetic plans in DEV
+(`BMC.SAMPLE`) each returned `applied` and `reused_result: false` after one
+attempt. For both calls the bridge classified the native return as `blank`
+(empty or whitespace-only). All three ID presence flags were false.
+Both MCP results had `entry_id: null` and `verification.status: unavailable`
+with reason `entry_id_unavailable`.
+
+| DEV join form | Requested fields left unverified |
+| --- | --- |
+| `BMC.CORE:BMC_ComputerSystem` | `DatasetId`, `Name` |
+| `BMC.CORE:BMC_Dependency` | `DatasetId`, `Name`, `Source.DatasetId`, `Source.ClassId`, `Source.InstanceId`, `Destination.DatasetId`, `Destination.ClassId`, `Destination.InstanceId` |
+
+#### Read-only review of the DEV create workflow
+
+On the same date, ARAPI reads of the AR System schema and filter metadata
+identified the following configuration. Both joins match their members on
+field 179 (`InstanceId`). The counts cover enabled Submit filters mapped
+directly to each join.
+
+| Join in `BMC.CORE` | Primary member | Secondary member | Submit filters |
+| --- | --- | --- | ---: |
+| `BMC_ComputerSystem` | `BMC_ComputerSystem_` | `BMC_BaseElement` | 16 |
+| `BMC_Dependency` | `BMC_Dependency_` | `BMC_BaseRelationship` | 3 |
+
+Both joins have three `CMDB:Instance:InvokeCMDBEngine` filters with suffixes
+`01`, `02` and `03`. They invoke phases 1, 2 and 3 of `bmc.cmdb.cmdbEngine`.
+The first two assign the engine result to the display-only field `zCMDBEngInvokeResult`.
+The third invokes the engine through a Run Process action. These definitions
+describe the configured workflow. The evidence for the actual return from
+each approved call is the `blank` category recorded above.
+
+BMC documents a generated entry ID for a base-form create. Its Java example
+uses a regular form. Submitting through a join runs filters that determine
+which member entries to create or modify. Reading an existing join row
+exposes its members' request IDs separated by `|`. The documentation gives
+no guarantee that submitting to the join returns that composite ID.
+[ARCreateEntry](https://docs.helixops.ai/bin/Service-Management/Innovation-Suite/BMC-Helix-Innovation-Suite/is252/Developing-an-API-program/AR-System-C-API-functions/Function-descriptions/ARCreateEntry/) · [Join forms](https://docs.helixops.ai/bin/Service-Management/Innovation-Suite/BMC-Helix-Innovation-Suite/is262/Developing-applications-by-using-Developer-Studio/Developing-the-application-interface/Defining-forms-to-hold-and-display-data/Join-forms/) · [Java create and read example](https://docs.helixops.ai/bin/Service-Management/Innovation-Suite/BMC-Helix-Innovation-Suite/is262/Developing-an-API-program/AR-System-Java-API-overview/Java-API-sample-code-for-managing-AR-System-records/)
+
+In the Java SDK installed for the gateway, `ARServerUser.createEntry`
+returns the same ID that `Entry.getEntryId()` and `ARServerUser.getLastID()`
+expose immediately after the call. When the native return is blank, both
+accessors yield a blank value. The display-only workflow result is outside
+this method's return contract.
+
+**Live create verification remains open for both forms.** The current ARAPI
+path exposed no documented way to bind either blank return to a specific
+join row. For the computer system, closure requires an ID attributable to
+the create and an exact-ID read confirming `DatasetId` and `Name`. For the
+dependency, both endpoint CIs were read before approval. Closure requires an
+exact-ID read of the **relationship**, confirmation of its requested fields,
+and a check of each stored endpoint's dataset, class and instance against
+its CI. The native returns for earlier, uninstrumented attempts remain
+unknown. [DEV handoff](https://github.com/hvolckaert/helix-agent-skills/blob/5d4798f/docs/gateway-create-verification.md)
+
+The final create audit event records the native return category
+(`accepted`, `absent`, `blank`, `too_long`, or `control_character`) and
+three presence flags: `bridge_has_entry_id`, `client_has_entry_id` and
+`result_has_entry_id`. An older bridge yields `unreported` for the category.
+A replay emits only the result flag. If a response is lost, missing flags
+represent unobserved boundaries. No raw IDs, credentials or field values
+are written to the audit event.
 
 ## Update
 

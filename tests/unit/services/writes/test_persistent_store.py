@@ -116,6 +116,11 @@ def test_applied_result_remains_idempotent_after_restart(
     run(store.complete(plan.plan_id, result))
 
     restarted = build_store(tmp_path)
+    history = run(restarted.get(plan_id=plan.plan_id, target=TARGET))
+    assert (history.entry_id, history.plan_digest) == (
+        result.entry_id,
+        plan.plan_digest,
+    )
     replay = run(
         restarted.acquire(
             plan_id=plan.plan_id,

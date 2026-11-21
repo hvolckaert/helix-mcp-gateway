@@ -145,11 +145,17 @@ def build_service(
     allow_all_updatable_fields_for_forms: tuple[str, ...] = (),
     sensitive_fields: tuple[str, ...] = (),
     sensitive_field_markers: tuple[str, ...] = (),
+    allow_form_reads: bool = True,
+    allowed_read_fields: tuple[str, ...] | None = None,
 ) -> tuple[FormWriteService, FakeProvider]:
     policy = TargetPolicyConfig(
         name="dev_write",
         allow_all_forms=allow_all_forms,
-        allow_all_fields=True,
+        allow_form_reads=allow_form_reads,
+        allow_all_fields=allowed_read_fields is None,
+        allowed_fields_by_form={FORM: allowed_read_fields}
+        if allowed_read_fields
+        else {},
         allowed_forms=() if allow_all_forms else (FORM,),
         allow_all_writable_forms=allow_all_writable_forms,
         writable_forms=() if allow_all_writable_forms else (FORM,),
@@ -456,6 +462,123 @@ def test_create_without_server_entry_id_is_applied_and_idempotent() -> None:
     assert second.entry_id is None
     assert second.reused_result is True
     assert len(client.calls) == 1
+
+
+def test_concurrent_same_name_creates_keep_their_native_ids_and_history():
+    async def scenario():
+        first_read = asyncio.Event()
+        release_first = asyncio.Event()
+        ids = ("0001|0002", "0003|0004")
+        reads = []
+
+        class InterleavedClient(FakeClient):
+            async def verify_entry(self, *, form, entry_id, values):
+                reads.append((form, entry_id, dict(values)))
+                if entry_id == ids[0]:
+                    first_read.set()
+                    await release_first.wait()
+                return await super().verify_entry(
+                    form=form, entry_id=entry_id, values=values
+                )
+
+        client = InterleavedClient(list(ids))
+        service, _ = build_service(client)
+        request = WriteValuesRequest(
+            values={"Name": "same"}, reason="Verify plan identity"
+        )
+        plans = [
+            await service.plan_create_for_form(
+                environment="dev", form=FORM, request=request
+            )
+            for _ in ids
+        ]
+        assert plans[0].plan_id != plans[1].plan_id
+        assert plans[0].plan_digest == plans[1].plan_digest
+        requests = [
+            ApplyWriteRequest(plan_id=p.plan_id, plan_digest=p.plan_digest)
+            for p in plans
+        ]
+        first = asyncio.create_task(
+            service.apply_create(environment="dev", request=requests[0])
+        )
+        try:
+            await asyncio.wait_for(first_read.wait(), timeout=3)
+            second = await service.apply_create(
+                environment="dev", request=requests[1]
+            )
+        finally:
+            release_first.set()
+        results = (await first, second)
+        for req, result, expected in zip(requests, results, ids, strict=True):
+            assert result.plan_id == req.plan_id
+            assert result.entry_id == expected
+            assert result.verification.provenance.source.entry_id == expected
+            history = await service.get_plan(
+                environment="dev", plan_id=req.plan_id
+            )
+            assert (history.entry_id, history.plan_digest) == (
+                expected,
+                req.plan_digest,
+            )
+            replay = await service.apply_create(environment="dev", request=req)
+            assert replay == result.model_copy(update={"reused_result": True})
+        assert reads == [
+            (FORM, entry_id, {"Name": "same"}) for entry_id in ids
+        ]
+        assert [operation for operation, _ in client.calls] == [
+            "create_entry"
+        ] * 2
+
+    run(scenario())
+
+
+@pytest.mark.parametrize(
+    "failure", ["denied", "timeout", "form_policy", "field_policy"]
+)
+def test_create_read_failure_keeps_the_id_and_does_not_repeat(failure):
+    reads = []
+    entry_id = "0007|0008"
+
+    class ReadFailureClient(FakeClient):
+        async def verify_entry(self, *, form, entry_id, values):
+            reads.append((form, entry_id, tuple(values)))
+            if failure == "timeout":
+                raise TimeoutError
+            raise PermissionError
+
+    client = ReadFailureClient([entry_id])
+    service, _ = build_service(
+        client,
+        allow_form_reads=failure != "form_policy",
+        allowed_read_fields=("DatasetId",)
+        if failure == "field_policy"
+        else None,
+    )
+    plan = run(
+        service.plan_create_for_form(
+            environment="dev",
+            form=FORM,
+            request=WriteValuesRequest(
+                values={"Name": "same"}, reason="Verify plan identity"
+            ),
+        )
+    )
+    req = ApplyWriteRequest(plan_id=plan.plan_id, plan_digest=plan.plan_digest)
+    result = run(service.apply_create(environment="dev", request=req))
+    assert result.status == "applied"
+    assert result.entry_id == entry_id
+    assert result.verification.status == "unavailable"
+    assert result.verification.unverified_fields == ("Name",)
+    assert result.verification.reason == "read_failed"
+    assert run(
+        service.apply_create(environment="dev", request=req)
+    ) == result.model_copy(update={"reused_result": True})
+    assert len(client.calls) == 1
+    assert reads == (
+        [(FORM, entry_id, ("Name",))]
+        if failure in {"denied", "timeout"}
+        else []
+    )
 
 
 def test_update_plan_reads_values_and_applies_server_precondition() -> None:
@@ -793,27 +916,36 @@ def test_legacy_update_plan_requires_new_review_without_writing():
 
 
 def test_create_without_entry_id_is_applied_but_not_verified():
-    client = FakeClient([None])
+    reads = []
+
+    class NoIdentityClient(FakeClient):
+        async def verify_entry(self, **kwargs):
+            reads.append(kwargs)
+            raise AssertionError("verification requires the native create ID")
+
+    client = NoIdentityClient([None])
     service, _ = build_service(client)
     plan = run(
         service.plan_create_for_form(
             environment="dev",
             form=FORM,
             request=WriteValuesRequest(
-                values={"Name": "new"},
+                values={"Name": "new", "DatasetId": "SAMPLE"},
                 reason="create without addressable result",
             ),
         )
     )
-    result = run(
-        service.apply_create(
-            environment="dev",
-            request=ApplyWriteRequest(
-                plan_id=plan.plan_id, plan_digest=plan.plan_digest
-            ),
-        )
+    request = ApplyWriteRequest(
+        plan_id=plan.plan_id, plan_digest=plan.plan_digest
     )
+    result = run(service.apply_create(environment="dev", request=request))
     assert result.status == "applied"
+    assert result.entry_id is None
     assert result.verification.status == "unavailable"
     assert result.verification.reason == "entry_id_unavailable"
+    assert set(result.verification.unverified_fields) == {"Name", "DatasetId"}
+    assert run(
+        service.apply_create(environment="dev", request=request)
+    ) == result.model_copy(update={"reused_result": True})
+    assert reads == []
     assert len(client.calls) == 1

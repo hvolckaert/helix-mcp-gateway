@@ -612,7 +612,7 @@ class FormQueryService:
         target = self._targets.resolve(
             environment=environment,
         )
-        _enforce_field_access(target, query.form, query.fields)
+        enforce_field_read_access(target, query.form, query.fields)
         await self._limiter.check(
             target.key,
             target.policy.rate_limit_per_minute,
@@ -689,8 +689,8 @@ def _enforce_query_policy(
     target: ResolvedTarget,
     query: FormQuery,
 ) -> None:
-    _enforce_field_access(target, query.form, query.fields)
-    _enforce_field_access(
+    enforce_field_read_access(target, query.form, query.fields)
+    enforce_field_read_access(
         target,
         query.form,
         tuple(item.field for item in query.sort),
@@ -703,7 +703,7 @@ def _enforce_query_policy(
                 target.key,
                 "qualification quoting is invalid",
             ) from None
-        _enforce_field_access(
+        enforce_field_read_access(
             target,
             query.form,
             qualification_fields,
@@ -717,11 +717,12 @@ def _enforce_query_policy(
         )
 
 
-def _enforce_field_access(
+def enforce_field_read_access(
     target: ResolvedTarget,
     form: str,
     fields: tuple[str, ...],
 ) -> None:
+    """Enforce the target's read policy for the entire requested projection."""
     _enforce_form_access(target, form)
     policy = target.policy
     requested = {field.casefold() for field in fields}

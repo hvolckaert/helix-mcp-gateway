@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning.
 
+## Unreleased
+
+- Report the AR entry ID returned by a create in subsequent plan inspections.
+  Record the native return category and ID presence across the bridge, client
+  and MCP result without logging record IDs or field values.
+- Check the target's form and field read policy before post-write verification.
+  A denied or timed-out read preserves the returned ID and lists unverified
+  fields. Replaying the approved plan returns its original result.
+- Live create verification remains open for `BMC.CORE:BMC_ComputerSystem`
+  and `BMC.CORE:BMC_Dependency`. Each approved DEV call returned a blank
+  native ID, so the gateway could not read back either record by its exact AR
+  entry ID. [DEV evidence](docs/form-writes.md#cmdb-join-forms)
+
 ## 0.18.0 - 2026-11-11
 
 - Bind a bounded, exact fingerprint of the requested original field values into

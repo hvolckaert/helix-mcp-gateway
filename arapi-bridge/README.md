@@ -32,6 +32,17 @@ join, or compound form may return `{"entry_id":null}` when AR System does not
 provide an identifier. The gateway does not attempt an unsafe lookup to infer
 one.
 
+For `/v1/entries/create`, the Python client requests
+`diagnose_entry_id=true`. The bridge then also returns `native_id_category`
+for the value returned by that specific native call. It classifies null as
+`absent`, empty or whitespace-only as `blank`, and a stripped ID longer
+than 255 Java string units as `too_long`. An internal ASCII control or DEL
+is `control_character`. An `accepted` ID is returned after stripping outer
+whitespace, with any compound separator intact. Clients omitting the option
+receive the original single-field response. The gateway accepts both shapes.
+The raw ID travels in the success response for exact-ID verification and is
+excluded from diagnostic logs.
+
 ## SQL
 
 `/v1/sql/query` requires `ARServerUser.isAdministrator()`. It performs a second

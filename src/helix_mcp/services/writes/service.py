@@ -21,6 +21,7 @@ from helix_mcp.provenance import (
     policy_version,
     utc_now,
 )
+from helix_mcp.services.forms.service import enforce_field_read_access
 from helix_mcp.services.rate_limit import (
     RateLimitPersistenceError,
     SlidingWindowCounter,
@@ -399,6 +400,7 @@ async def _verify_write(
             reason="entry_id_unavailable",
         )
     try:
+        enforce_field_read_access(target, form, tuple(values))
         observed = await client.verify_entry(
             form=form, entry_id=entry_id, values=values
         )
