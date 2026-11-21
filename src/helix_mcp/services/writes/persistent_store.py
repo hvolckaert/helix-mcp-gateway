@@ -406,6 +406,9 @@ class PersistentWritePlanStore:
                     else None
                 ),
                 "result_stored": plan.result is not None,
+                "result_instance_id": plan.result.instance_id
+                if plan.result
+                else None,
                 "result_entry_id": (
                     None if plan.result is None else plan.result.entry_id
                 ),
@@ -470,11 +473,15 @@ class PersistentWritePlanStore:
             if payload.get("result_stored") is True:
                 plan.result = ApplyWriteResult(
                     plan_id=plan.plan_id,
-                    operation=plan.operation,
+                    operation=plan.operation.public_operation,
+                    create_backend=plan.operation.create_backend,
                     environment=plan.target.environment,
                     form=plan.form,
                     status=WritePlanStatus.APPLIED,
                     entry_id=_optional_string(payload, "result_entry_id"),
+                    instance_id=_optional_string(
+                        payload, "result_instance_id"
+                    ),
                     verification=(
                         WriteVerification.model_validate(
                             payload["verification"]

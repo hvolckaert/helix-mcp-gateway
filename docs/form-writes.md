@@ -105,7 +105,7 @@ expose immediately after the call. When the native return is blank, both
 accessors yield a blank value. The display-only workflow result is outside
 this method's return contract.
 
-**Live create verification remains open for both forms.** The current ARAPI
+**Verification of both historical AR join submissions remains open.** The ARAPI
 path exposed no documented way to bind either blank return to a specific
 join row. For the computer system, closure requires an ID attributable to
 the create and an exact-ID read confirming `DatasetId` and `Name`. For the
@@ -122,6 +122,38 @@ three presence flags: `bridge_has_entry_id`, `client_has_entry_id` and
 A replay emits only the result flag. If a response is lost, missing flags
 represent unobserved boundaries. No raw IDs, credentials or field values
 are written to the audit event.
+
+### Creating CMDB instances with the Java SDK
+
+New plans for `BMC.CORE:BMC_ComputerSystem` and `BMC.CORE:BMC_Dependency` use
+`operation: create` with `create_backend: cmdb_sdk`. The stored operation binds
+the backend to the plan digest. Install a matching BMC `cmdbapi*.jar` in the
+configured ARAPI library directory and rebuild the bridge. Planning generates
+one CMDB GUID and includes it in the proposed values and the plan digest.
+The same field permission checks cover the generated `InstanceId`.
+Missing CMDB support stops planning. Existing AR plans retain their operation.
+
+After approval the gateway starts a CMDB client-managed transaction, checks
+that the approved key has no visible instance in that class and dataset,
+submits one create with that key, and reads the instance back by key inside
+the transaction. It checks the identity before committing. The value of
+`CMDBInstance.getId()` alone is insufficient because the SDK can initialize
+it before sending the create. An uncertain commit is terminal.
+A successful commit returns `instance_id` even if a subsequent AR join read
+is denied or ambiguous. `entry_id` holds the exact compound AR request ID
+when visible. All existing apply, verification and replay rules apply.
+On November 21, 2026, two separately approved, single-attempt DEV plans used
+the CMDB Java SDK in the sample dataset. Each plan used its own reserved
+identity. The exact-key SDK read and the independent compound-ID AR read
+agreed for each committed instance.
+
+| SDK create in DEV | Exact-record verification |
+| --- | --- |
+| Computer system | All three requested fields matched, including the reserved instance identity. |
+| Dependency | All nine requested fields matched on the relationship itself. Its stored source and destination each matched an independently read CI by dataset, class and instance. |
+
+This evidence covers these two SDK creates on the tested installation. The two
+historical blank AR join returns still have no attributable compound ID.
 
 ## Update
 

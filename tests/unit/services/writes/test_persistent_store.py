@@ -72,6 +72,53 @@ async def create_plan(store: PersistentWritePlanStore):
     )
 
 
+def test_cmdb_identity_and_backend_survive_restart(tmp_path: Path) -> None:
+    store = build_store(tmp_path)
+    plan = run(
+        store.create(
+            operation=WriteOperation.CMDB_CREATE,
+            target=TARGET,
+            form="BMC.CORE:BMC_Dependency",
+            entry_id=None,
+            current_values=None,
+            proposed_values={
+                "InstanceId": "SDK_GUID",
+                "DatasetId": "BMC.SAMPLE",
+            },
+            reason="synthetic CMDB identity",
+            precondition=None,
+        )
+    )
+    params = dict(
+        plan_id=plan.plan_id,
+        plan_digest=plan.plan_digest,
+        operation=WriteOperation.CMDB_CREATE,
+        target=TARGET,
+    )
+    assert run(store.acquire(**params)).plan is not None
+    result = ApplyWriteResult(
+        plan_id=plan.plan_id,
+        operation=WriteOperation.CREATE,
+        environment=Environment.DEV,
+        form=plan.form,
+        instance_id="SDK_GUID",
+        create_backend="cmdb_sdk",
+        verification=WriteVerification(
+            status="unavailable",
+            reason="entry_id_unavailable",
+            unverified_fields=("InstanceId",),
+        ),
+    )
+    run(store.complete(plan.plan_id, result))
+    restarted = build_store(tmp_path)
+    history = run(restarted.get(plan_id=plan.plan_id, target=TARGET))
+    replay = run(restarted.acquire(**params)).reused_result
+    assert history.instance_id == replay.instance_id == "SDK_GUID"
+    assert history.create_backend == replay.create_backend == "cmdb_sdk"
+    assert replay.entry_id is None and replay.reused_result
+    assert replay.verification == result.verification
+
+
 def test_pending_plan_survives_store_restart_and_is_encrypted(
     tmp_path: Path,
 ) -> None:

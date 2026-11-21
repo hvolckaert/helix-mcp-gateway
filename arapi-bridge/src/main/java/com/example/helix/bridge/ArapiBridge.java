@@ -137,6 +137,8 @@ public final class ArapiBridge {
             new PrepareUpdateHandler()
         );
         server.createContext("/v1/entries/create", new CreateEntryHandler());
+        server.createContext("/v1/cmdb/reserve", new CmdbHandler(true));
+        server.createContext("/v1/cmdb/create", new CmdbHandler(false));
         server.createContext("/v1/entries/update-checked", new UpdateEntryHandler());
         server.createContext("/v1/entries/verify", new VerifyEntryHandler());
         server.createContext("/v1/sql/query", new SqlQueryHandler());
@@ -694,6 +696,59 @@ public final class ArapiBridge {
                 precondition,
                 WriteValueSnapshot.fingerprint(entry, fields, selected.ids)
             );
+        }
+    }
+
+    public interface CmdbOperations {
+        String reserve(ARServerUser user) throws ARException;
+        String create(ARServerUser user, String form, Map<String, Value> attributes)
+            throws ARException;
+    }
+
+    private static final class CmdbHandler extends ArapiHandler {
+        private final boolean reserve;
+
+        CmdbHandler(boolean reserve) {
+            super(reserve ? "/v1/cmdb/reserve" : "/v1/cmdb/create");
+            this.reserve = reserve;
+        }
+
+        @Override
+        protected String execute(ARServerUser user, Map<String, String> input)
+            throws ARException, BadRequest {
+            String form = requiredText(input, "form", MAX_NAME_LENGTH);
+            if (!Set.of("BMC.CORE:BMC_ComputerSystem", "BMC.CORE:BMC_Dependency").contains(form)) {
+                throw new BadRequest();
+            }
+            CmdbOperations sdk;
+            try {
+                sdk = Class.forName("com.example.helix.bridge.CmdbSdk")
+                    .asSubclass(CmdbOperations.class).getConstructor().newInstance();
+            } catch (ReflectiveOperationException | LinkageError unavailable) {
+                throw new BadRequest();
+            }
+            String value;
+            String key;
+            if (reserve) {
+                value = sdk.reserve(user);
+                key = "instance_id";
+            } else {
+                List<Field> fields = loadFields(user, form);
+                Entry typed = parseWriteValues(input, fields);
+                Map<String, Value> attributes = new HashMap<>();
+                for (Field field : fields) {
+                    if (typed.containsKey(field.getFieldID())) {
+                        attributes.put(field.getName(), typed.get(field.getFieldID()));
+                    }
+                }
+                value = sdk.create(user, form, attributes);
+                key = "class_id";
+            }
+            StringBuilder output = new StringBuilder("{");
+            appendJsonString(output, key);
+            output.append(':');
+            appendJsonString(output, validateText(value, MAX_NAME_LENGTH));
+            return output.append('}').toString();
         }
     }
 

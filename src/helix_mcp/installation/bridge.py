@@ -8,12 +8,16 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+from contextlib import ExitStack
 from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
 
 from helix_mcp.clients.arapi import validate_arapi_libraries
-from helix_mcp.installation.resources import bridge_source_path
+from helix_mcp.installation.resources import (
+    bridge_source_path,
+    cmdb_source_path,
+)
 from helix_mcp.java_runtime import java_executable
 
 _MAIN_CLASS_FILE = Path("com/example/helix/bridge/ArapiBridge.class")
@@ -73,9 +77,20 @@ def build_bridge(
         raise BridgeBuildError("Java runtime is unavailable")
     package_version = version("helix-mcp-gateway")
 
-    with bridge_source_path() as source:
+    with ExitStack() as stack:
+        source = stack.enter_context(bridge_source_path())
+        sources = [source]
+        classpath = [libraries.arapi]
+        cmdb_jars = sorted(Path(arapi_lib_dir).glob("cmdbapi*.jar"))
+        if len(cmdb_jars) > 1:
+            raise BridgeBuildError(
+                "multiple CMDB SDKs in the ARAPI library directory"
+            )
+        if cmdb_jars:
+            sources.append(stack.enter_context(cmdb_source_path()))
+            classpath.extend(cmdb_jars)
         try:
-            payload = source.read_bytes()
+            payload = b"".join(item.read_bytes() for item in sources)
         except OSError:
             raise BridgeBuildError(
                 "packaged bridge source is unavailable"
@@ -110,10 +125,10 @@ def build_bridge(
                     "-encoding",
                     "UTF-8",
                     "-classpath",
-                    str(libraries.arapi),
+                    os.pathsep.join(map(str, classpath)),
                     "-d",
                     str(classes),
-                    str(source),
+                    *(str(item) for item in sources),
                 ),
             )
             _run_java(

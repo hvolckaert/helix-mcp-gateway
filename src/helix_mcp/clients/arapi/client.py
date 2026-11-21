@@ -316,6 +316,30 @@ class ArapiBridgeClient:
             fields=fields,
         )
 
+    async def reserve_cmdb_instance_id(self, form: str) -> str:
+        payload, code = await self._post("/v1/cmdb/reserve", {"form": form})
+        if not isinstance(payload, dict) or set(payload) != {"instance_id"}:
+            raise _protocol_error(self._target, code)
+        value = payload["instance_id"]
+        if not isinstance(value, str) or not re.fullmatch(
+            r"[A-Za-z0-9_-]{1,64}", value
+        ):
+            raise _protocol_error(self._target, code)
+        return value
+
+    async def create_cmdb_instance(
+        self, *, form: str, values: Mapping[str, ArapiScalar]
+    ) -> str:
+        """Return the verified CMDB class ID only after a successful commit."""
+        data = {"form": form, **_encode_write_values(values)}
+        payload, code = await self._post("/v1/cmdb/create", data)
+        if not isinstance(payload, dict) or set(payload) != {"class_id"}:
+            raise _protocol_error(self._target, code)
+        class_id = payload["class_id"]
+        if not _is_safe_text(class_id, 255):
+            raise _protocol_error(self._target, code)
+        return class_id
+
     async def create_entry(
         self,
         *,

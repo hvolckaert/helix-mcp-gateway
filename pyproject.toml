@@ -61,6 +61,7 @@ exclude = [
 ]
 
 [tool.hatch.build.targets.wheel.force-include]
+"arapi-bridge/src/main/java/com/example/helix/bridge/CmdbSdk.java" = "helix_mcp/installation/resources/bridge/CmdbSdk.java"
 "arapi-bridge/src/main/java/com/example/helix/bridge/ArapiBridge.java" = "helix_mcp/installation/resources/bridge/ArapiBridge.java"
 "config/helix.example.yaml" = "helix_mcp/installation/resources/config/helix.example.yaml"
 

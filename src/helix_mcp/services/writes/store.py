@@ -257,10 +257,12 @@ def _public(plan: StoredWritePlan) -> WritePlanResult:
     return WritePlanResult(
         plan_id=plan.plan_id,
         plan_digest=plan.plan_digest,
-        operation=plan.operation,
+        operation=plan.operation.public_operation,
+        create_backend=plan.operation.create_backend,
         environment=plan.target.environment,
         form=plan.form,
         entry_id=plan.result.entry_id if plan.result else plan.entry_id,
+        instance_id=plan.result.instance_id if plan.result else None,
         current_values=(
             None if plan.current_values is None else dict(plan.current_values)
         ),
