@@ -30,7 +30,7 @@ Changelog = "https://github.com/hvolckaert/helix-mcp-gateway/blob/main/CHANGELOG
 
 [project.optional-dependencies]
 browser-test = [
-    "playwright==1.65.0",
+    "playwright==1.65.2",
 ]
 keyring = [
     "keyring>=25.7,<26",
