@@ -51,6 +51,12 @@ from helix_mcp.services.writes.persistent_store import PersistentWritePlanStore
 from helix_mcp.services.writes.store import WritePlanStore
 from helix_mcp.targeting import ResolvedTarget, TargetResolver
 
+_CMDB_CLASSES = {
+    name.casefold(): name
+    for name in ("BMC.CORE:BMC_ComputerSystem", "BMC.CORE:BMC_Dependency")
+}
+_CMDB_IDENTITY_FIELDS = ("InstanceId", "DatasetId", "ClassId", "RequestId")
+
 
 class ArapiClientProvider(Protocol):
     def get(self, target: ResolvedTarget) -> ArapiBridgeClient: ...
@@ -86,6 +92,8 @@ class FormWriteService:
         request: WriteValuesRequest,
     ) -> WritePlanResult:
         target = self._resolve(environment)
+        cmdb_form = _CMDB_CLASSES.get(form.casefold())
+        form = cmdb_form or form
         values = _enforce_write(
             target,
             operation=WriteOperation.CREATE,
@@ -93,8 +101,39 @@ class FormWriteService:
             values=request.values,
             reason=request.reason,
         )
+        operation = WriteOperation.CREATE
+        if cmdb_form:
+            if any(k.casefold() == "instanceid" for k in values):
+                raise FormWriteFieldNotAllowedError(
+                    "the CMDB SDK allocates InstanceId"
+                )
+            dataset = next(
+                (v for k, v in values.items() if k.casefold() == "datasetid"),
+                None,
+            )
+            if (
+                not isinstance(dataset, str)
+                or not dataset.strip()
+                or len(values) >= 32
+            ):
+                raise WritePlanStateError(
+                    "CMDB create requires DatasetId and room for InstanceId"
+                )
+            enforce_field_read_access(target, form, _CMDB_IDENTITY_FIELDS)
+            values = _enforce_write(
+                target,
+                operation=WriteOperation.CREATE,
+                form=form,
+                values={**values, "InstanceId": ""},
+                reason=request.reason,
+            )
+            id_key = next(k for k in values if k.casefold() == "instanceid")
+            values[id_key] = await self._clients.get(
+                target
+            ).reserve_cmdb_instance_id(form)
+            operation = WriteOperation.CMDB_CREATE
         return await self._plans.create(
-            operation=WriteOperation.CREATE,
+            operation=operation,
             target=target.key,
             form=form,
             entry_id=None,
@@ -143,9 +182,17 @@ class FormWriteService:
         environment: str | Environment,
         request: ApplyWriteRequest,
     ) -> ApplyWriteResult:
+        plan = await self.get_plan(
+            environment=environment, plan_id=request.plan_id
+        )
+        operation = (
+            WriteOperation.CMDB_CREATE
+            if plan.create_backend == "cmdb_sdk"
+            else WriteOperation.CREATE
+        )
         return await self._apply(
             environment=environment,
-            operation=WriteOperation.CREATE,
+            operation=operation,
             request=request,
         )
 
@@ -211,7 +258,29 @@ class FormWriteService:
                 target.policy.write_rate_limit_per_minute,
             )
             client = self._clients.get(target)
-            if operation is WriteOperation.CREATE:
+            instance_id = None
+            if operation is WriteOperation.CMDB_CREATE:
+                enforce_field_read_access(
+                    target, plan.form, _CMDB_IDENTITY_FIELDS
+                )
+                keyed = {k.casefold(): v for k, v in values.items()}
+                reserved, dataset = (
+                    keyed.get("instanceid"),
+                    keyed.get("datasetid"),
+                )
+                if not isinstance(reserved, str) or not isinstance(
+                    dataset, str
+                ):
+                    raise WritePlanStateError("incomplete CMDB plan identity")
+                class_id = await client.create_cmdb_instance(
+                    form=plan.form, values=values
+                )
+                write_succeeded = True
+                instance_id = reserved
+                entry_id = await _resolve_cmdb_entry(
+                    client, plan.form, reserved, dataset, class_id
+                )
+            elif operation is WriteOperation.CREATE:
                 entry_id = await client.create_entry(
                     form=plan.form,
                     values=values,
@@ -234,11 +303,13 @@ class FormWriteService:
             write_succeeded = True
             result = ApplyWriteResult(
                 plan_id=plan.plan_id,
-                operation=operation,
+                operation=operation.public_operation,
+                create_backend=operation.create_backend,
                 environment=target.key.environment,
                 form=plan.form,
                 status=WritePlanStatus.APPLIED,
                 entry_id=entry_id,
+                instance_id=instance_id,
                 verification=await _verify_write(
                     client, target, plan.form, entry_id, values
                 ),
@@ -342,17 +413,17 @@ def _enforce_write(
         raise FormWriteFieldNotAllowedError("write requests a sensitive field")
     fields_by_form = (
         policy.creatable_fields_by_form
-        if operation is WriteOperation.CREATE
+        if operation is not WriteOperation.UPDATE
         else policy.updatable_fields_by_form
     )
     allow_all_fields = (
         policy.allow_all_creatable_fields
-        if operation is WriteOperation.CREATE
+        if operation is not WriteOperation.UPDATE
         else policy.allow_all_updatable_fields
     )
     allow_all_fields_for_forms = (
         policy.allow_all_creatable_fields_for_forms
-        if operation is WriteOperation.CREATE
+        if operation is not WriteOperation.UPDATE
         else policy.allow_all_updatable_fields_for_forms
     )
     if allow_all_fields or form in allow_all_fields_for_forms:
@@ -384,6 +455,52 @@ def _parse_current_values(
         if value is None or isinstance(value, (str, int, float, bool)):
             current[field] = value
     return current
+
+
+async def _resolve_cmdb_entry(
+    client: ArapiBridgeClient,
+    form: str,
+    instance_id: str,
+    dataset: str,
+    class_id: str,
+) -> str | None:
+    identity = {
+        "InstanceId": instance_id,
+        "DatasetId": dataset,
+        "ClassId": class_id,
+    }
+    # AR string literals escape a double quote by doubling it.
+    predicates = []
+    for field, value in identity.items():
+        literal = value.replace('"', '""')
+        predicates.append(f"'{field}' = \"{literal}\"")
+    try:
+        page = await client.query_entries(
+            form=form,
+            fields=_CMDB_IDENTITY_FIELDS,
+            qualification=" AND ".join(predicates),
+            sort=(),
+            offset=0,
+            limit=2,
+            include_total=True,
+        )
+        if page.total != 1 or len(page.entries) != 1:
+            return None
+        row = page.entries[0].values
+        entry_id = row.get("RequestId")
+        if (
+            any(row.get(field) != value for field, value in identity.items())
+            or not isinstance(entry_id, str)
+            or len(entry_id) > 255
+            or any(ord(c) < 32 or ord(c) == 127 for c in entry_id)
+            or len(entry_id.split("|")) != 2
+            or not all(entry_id.split("|"))
+        ):
+            return None
+        return entry_id
+    except Exception:
+        # CMDB already committed. Preserve its identity if the join cannot be read.
+        return None
 
 
 async def _verify_write(

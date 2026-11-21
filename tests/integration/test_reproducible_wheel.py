@@ -18,7 +18,7 @@ _BUILD_INPUTS = (
     "hatch_build.py",
     "pyproject.toml",
     "src",
-    "arapi-bridge/src/main/java/com/example/helix/bridge/ArapiBridge.java",
+    "arapi-bridge/src/main/java/com/example/helix/bridge",
     "config/helix.example.yaml",
 )
 
@@ -92,8 +92,7 @@ def _copy_build_inputs(destination: Path) -> Path:
 def _set_packaged_file_modes(root: Path, mode: int) -> None:
     packaged_paths = (
         root / "src",
-        root
-        / "arapi-bridge/src/main/java/com/example/helix/bridge/ArapiBridge.java",
+        root / "arapi-bridge/src/main/java/com/example/helix/bridge",
         root / "config/helix.example.yaml",
     )
     for packaged_path in packaged_paths:

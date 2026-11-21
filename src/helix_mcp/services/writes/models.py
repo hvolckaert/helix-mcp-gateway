@@ -30,7 +30,22 @@ PlanDigest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 
 class WriteOperation(StrEnum):
     CREATE = "create"
+    CMDB_CREATE = "cmdb_create"
     UPDATE = "update"
+
+    @property
+    def public_operation(
+        self,
+    ) -> Literal[WriteOperation.CREATE, WriteOperation.UPDATE]:
+        return (
+            WriteOperation.UPDATE
+            if self is WriteOperation.UPDATE
+            else WriteOperation.CREATE
+        )
+
+    @property
+    def create_backend(self) -> Literal["cmdb_sdk"] | None:
+        return "cmdb_sdk" if self is WriteOperation.CMDB_CREATE else None
 
 
 class WritePlanStatus(StrEnum):
@@ -101,10 +116,12 @@ class WritePlanResult(FrozenModel):
 
     plan_id: PlanId
     plan_digest: PlanDigest
-    operation: WriteOperation
+    operation: Literal[WriteOperation.CREATE, WriteOperation.UPDATE]
+    create_backend: Literal["cmdb_sdk"] | None = None
     environment: Environment
     form: FormName
     entry_id: EntryId | None = None
+    instance_id: EntryId | None = Field(default=None, repr=False)
     current_values: dict[str, JsonScalar | None] | None = Field(
         default=None,
         repr=False,
@@ -153,11 +170,13 @@ class ApplyWriteResult(FrozenModel):
     """Terminal result without request payloads or endpoint details."""
 
     plan_id: PlanId
-    operation: WriteOperation
+    operation: Literal[WriteOperation.CREATE, WriteOperation.UPDATE]
+    create_backend: Literal["cmdb_sdk"] | None = None
     environment: Environment
     form: FormName
     status: WritePlanStatus = WritePlanStatus.APPLIED
     entry_id: EntryId | None = None
+    instance_id: EntryId | None = Field(default=None, repr=False)
     reused_result: bool = False
     verification: WriteVerification | None = Field(default=None, repr=False)
 

@@ -23,3 +23,4 @@ java --module jdk.compiler/com.sun.tools.javac.Main \
     "@$SOURCE_LIST"
 
 java -cp "$CLASS_DIR" com.example.helix.bridge.ArapiBridgeTest
+java -cp "$CLASS_DIR" com.example.helix.bridge.CmdbSdkTest

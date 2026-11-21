@@ -15,7 +15,10 @@ from helix_mcp.clients.arapi import (
     ArapiEntry,
     ArapiPreparedUpdate,
 )
-from helix_mcp.clients.arapi.models import ArapiWriteVerification
+from helix_mcp.clients.arapi.models import (
+    ArapiQueryPage,
+    ArapiWriteVerification,
+)
 from helix_mcp.config import (
     ArapiBackendConfig,
     BackendKind,
@@ -120,6 +123,175 @@ class FakeClient:
 
     async def verify_entry(self, *, form, entry_id, values):
         return ArapiWriteVerification(datetime.now(UTC), tuple(values), (), ())
+
+
+class FakeCmdbClient(FakeClient):
+    async def reserve_cmdb_instance_id(self, form):
+        return self._next("reserve", {"form": form})
+
+    async def create_cmdb_instance(self, *, form, values):
+        return self._next("cmdb_create", {"form": form, "values": values})
+
+    async def query_entries(self, **kwargs):
+        return self._next("resolve", kwargs)
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_cmdb_plan_identity_and_replay(duplicate):
+    form = "BMC.CORE:BMC_ComputerSystem"
+    row = {
+        "ClassId": "CS",
+        "DatasetId": "BMC.SAMPLE",
+        "InstanceId": "SDK1",
+        "RequestId": "0001|0002",
+    }
+    rows = tuple(ArapiEntry(values=row) for _ in range(2 if duplicate else 1))
+    query = ArapiQueryPage(rows, 0, 2, len(rows))
+    client = FakeCmdbClient(["SDK1", "CS", query])
+    svc, _ = build_service(
+        client,
+        allow_all_writable_forms=True,
+        allow_all_creatable_fields=True,
+        allow_all_updatable_fields=True,
+    )
+    req = WriteValuesRequest(
+        values={"DatasetId": "BMC.SAMPLE", "Name": "same"},
+        reason="synthetic test",
+    )
+    plan = run(
+        svc.plan_create_for_form(environment="dev", form=form, request=req)
+    )
+    assert plan.operation is WriteOperation.CREATE
+    assert plan.create_backend == "cmdb_sdk"
+    assert plan.proposed_values["InstanceId"] == "SDK1"
+    assert [name for name, _ in client.calls] == ["reserve"]
+    apply = ApplyWriteRequest(
+        plan_id=plan.plan_id, plan_digest=plan.plan_digest
+    )
+    first = run(svc.apply_create(environment="dev", request=apply))
+    again = run(svc.apply_create(environment="dev", request=apply))
+    assert first.instance_id == again.instance_id == "SDK1"
+    assert first.entry_id == (None if duplicate else "0001|0002")
+    assert first.verification.status == (
+        "unavailable" if duplicate else "matched"
+    )
+    assert again.reused_result and again.verification == first.verification
+    assert [name for name, _ in client.calls] == [
+        "reserve",
+        "cmdb_create",
+        "resolve",
+    ]
+
+
+def test_cmdb_same_name_plans_have_separate_approved_identities():
+    client = FakeCmdbClient(["SDK1", "SDK2"])
+    svc, _ = build_service(
+        client,
+        allow_all_writable_forms=True,
+        allow_all_creatable_fields=True,
+        allow_all_updatable_fields=True,
+    )
+    form = "BMC.CORE:BMC_ComputerSystem"
+    req = WriteValuesRequest(
+        values={"DatasetId": "BMC.SAMPLE", "Name": "same"},
+        reason="synthetic concurrent plans",
+    )
+
+    async def scenario():
+        first, second = await asyncio.gather(
+            *(
+                svc.plan_create_for_form(
+                    environment="dev", form=form, request=req
+                )
+                for _ in range(2)
+            )
+        )
+        assert (
+            first.proposed_values["InstanceId"]
+            != second.proposed_values["InstanceId"]
+        )
+        assert first.plan_digest != second.plan_digest
+        for plan in (second, first):
+            key = plan.proposed_values["InstanceId"]
+            row = {
+                "InstanceId": key,
+                "ClassId": "CS",
+                "DatasetId": "BMC.SAMPLE",
+                "RequestId": f"a|{key}",
+            }
+            client.outcomes.extend(
+                ["CS", ArapiQueryPage((ArapiEntry(values=row),), 0, 2, 1)]
+            )
+            result = await svc.apply_create(
+                environment="dev",
+                request=ApplyWriteRequest(
+                    plan_id=plan.plan_id, plan_digest=plan.plan_digest
+                ),
+            )
+            assert (result.entry_id, result.instance_id) == (
+                row["RequestId"],
+                key,
+            )
+            history = await svc.get_plan(
+                environment="dev", plan_id=plan.plan_id
+            )
+            assert history.instance_id == key
+
+    run(scenario())
+
+
+def test_cmdb_plan_rejects_a_caller_supplied_identity():
+    client = FakeCmdbClient([])
+    svc, _ = build_service(
+        client,
+        allow_all_writable_forms=True,
+        allow_all_creatable_fields=True,
+        allow_all_updatable_fields=True,
+    )
+    req = WriteValuesRequest(
+        values={"DatasetId": "BMC.SAMPLE", "InstanceId": "caller-id"},
+        reason="synthetic input check",
+    )
+    with pytest.raises(FormWriteFieldNotAllowedError):
+        run(
+            svc.plan_create_for_form(
+                environment="dev",
+                form="BMC.CORE:BMC_ComputerSystem",
+                request=req,
+            )
+        )
+    assert not client.calls
+
+
+def test_cmdb_missing_commit_response_is_never_retried():
+    client = FakeCmdbClient(
+        [
+            "SDK1",
+            ArapiBridgeTransportError(TargetKey(environment="dev"), "timeout"),
+        ]
+    )
+    svc, _ = build_service(
+        client,
+        allow_all_writable_forms=True,
+        allow_all_creatable_fields=True,
+        allow_all_updatable_fields=True,
+    )
+    req = WriteValuesRequest(
+        values={"DatasetId": "BMC.SAMPLE", "Name": "same"},
+        reason="SDK timeout test",
+    )
+    plan = run(
+        svc.plan_create_for_form(
+            environment="dev", form="BMC.CORE:BMC_ComputerSystem", request=req
+        )
+    )
+    apply = ApplyWriteRequest(
+        plan_id=plan.plan_id, plan_digest=plan.plan_digest
+    )
+    for _ in range(2):
+        with pytest.raises(WriteOutcomeUnknownError):
+            run(svc.apply_create(environment="dev", request=apply))
+    assert [name for name, _ in client.calls] == ["reserve", "cmdb_create"]
 
 
 class FakeProvider:

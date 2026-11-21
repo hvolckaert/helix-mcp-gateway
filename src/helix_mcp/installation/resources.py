@@ -27,6 +27,16 @@ def bridge_source_path() -> AbstractContextManager[Path]:
     )
 
 
+def cmdb_source_path() -> AbstractContextManager[Path]:
+    return as_file(
+        _resource(
+            _ROOT.joinpath("bridge", "CmdbSdk.java"),
+            _CHECKOUT_ROOT
+            / "arapi-bridge/src/main/java/com/example/helix/bridge/CmdbSdk.java",
+        )
+    )
+
+
 def read_config_template() -> str:
     """Return the packaged generic YAML configuration template."""
 
