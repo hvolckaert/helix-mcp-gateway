@@ -379,15 +379,17 @@
                   <div class="field wide">
                     <label for="bridge-url">Bridge URL</label>
                     <input id="bridge-url" type="url" required placeholder="http://127.0.0.1:8090">
-                    <p class="hint" id="arapi-client-version">Only loopback addresses are accepted.</p>
+                    <p class="hint">CMDB support in the running bridge: <strong id="cmdb-bridge-support">Checking…</strong></p>
                   </div>
                   <div class="field wide">
-                    <label for="arapi-lib-dir">AR API library folder</label>
+                    <label for="arapi-lib-dir">BMC Java library folder</label>
                     <div class="path-control">
                       <input id="arapi-lib-dir" type="text" placeholder="Path to Developer Studio lib folder" autocomplete="off">
                       <button class="button secondary" type="button" id="browse-arapi">Browse…</button>
                     </div>
                     <p class="hint" id="arapi-lib-hint">Browse local folders to see the JARs and select the Developer Studio lib folder.</p>
+                    <p class="hint">AR API in saved folder: <strong id="arapi-client-version"></strong></p>
+                    <p class="hint">CMDB SDK in saved folder: <strong id="cmdb-sdk-version"></strong></p>
                   </div>
                   <div class="field wide">
                     <label for="java-home">Java JDK folder</label>
@@ -1507,6 +1509,35 @@
       if (activeTab === environment) initializeEnvironmentCatalog(environment);
     }
 
+    function jarVersion(jar, version) {
+      return `${jar} · ${version ? 'version ' + version : 'version unavailable'}`;
+    }
+
+    function cmdbLibraryText(sdk) {
+      switch (sdk?.status) {
+        case 'detected': return jarVersion(sdk.jar, sdk.version);
+        case 'invalid': return `${sdk.jar} · invalid SDK`;
+        case 'ambiguous': return 'Multiple CMDB SDK JARs found';
+        case 'absent': return 'No CMDB SDK JAR found';
+        case 'unconfigured': return 'No folder configured';
+        default: return 'Folder unavailable';
+      }
+    }
+
+    async function refreshBridgeSupport(state) {
+      const field = document.getElementById('cmdb-bridge-support');
+      field.textContent = 'Checking…';
+      let status;
+      try {
+        ({status} = await api('/api/bridge/cmdb-support'));
+      } catch {
+        // An unavailable bridge cannot confirm its capabilities.
+      }
+      if (currentState !== state) return;
+      field.textContent = status === 'active' ? 'Active'
+        : status === 'inactive' ? 'Inactive' : 'Unconfirmed';
+    }
+
     function populate(state) {
       currentState = state;
       formCatalogCache.clear();
@@ -1537,7 +1568,7 @@
       document.getElementById('arapi-lib-dir').value = configuration.arapi.lib_dir || '';
       const detectedLibDirs = configuration.arapi.detected_lib_dirs || [];
       document.getElementById('arapi-lib-hint').textContent = detectedLibDirs.length
-        ? `${detectedLibDirs.length} valid local folder${detectedLibDirs.length === 1 ? '' : 's'} detected. Browse to see its JARs, then select it.`
+        ? `${detectedLibDirs.length} valid local folder${detectedLibDirs.length === 1 ? '' : 's'} detected. Browse to inspect a folder.`
         : 'No valid local folder detected. Browse to a folder containing arapi, arapiext and arlogger JARs.';
       document.getElementById('java-home').value = configuration.arapi.java_home || configuration.arapi.detected_java_home || '';
       javaHomeEdited = false;
@@ -1549,9 +1580,10 @@
           ? `${configuration.arapi.detected_java_homes.length} Java folder candidate(s) detected. Browse to inspect and select one.`
           : 'Compatible JDK not detected. Browse to a JDK 17+ folder.';
       renderLocalRequirements(state.local_requirements);
-      document.getElementById('arapi-client-version').textContent = configuration.arapi.client_version
-        ? `Detected BMC Java API ${configuration.arapi.client_version}. Compatibility is verified by capabilities, not a fixed release list.`
-        : 'BMC Java API version unavailable. Only loopback bridge addresses are accepted.';
+      document.getElementById('arapi-client-version').textContent = configuration.arapi.client_jar
+        ? jarVersion(configuration.arapi.client_jar, configuration.arapi.client_version) : 'No validated AR API library set';
+      document.getElementById('cmdb-sdk-version').textContent = cmdbLibraryText(configuration.arapi.cmdb_sdk);
+      refreshBridgeSupport(state);
       document.getElementById('request-timeout').value = configuration.arapi.request_timeout_seconds;
       document.getElementById('pool-size').value = configuration.arapi.pool_size;
       renderEnvironments(configuration.environments, configuration.policies);
@@ -1644,7 +1676,7 @@
         const valid = folderTarget === 'arapi' ? Boolean(report.arapi_version) : report.java_available;
         select.disabled = !valid;
         status.textContent = valid
-          ? (folderTarget === 'arapi' ? `Valid BMC AR API ${report.arapi_version} library folder.` : 'Compatible JDK 17+ with compiler and JAR modules.')
+          ? (folderTarget === 'arapi' ? `AR API: ${jarVersion(report.arapi_jar, report.arapi_version)}. CMDB SDK: ${cmdbLibraryText(report.cmdb_sdk)}.` : 'Compatible JDK 17+ with compiler and JAR modules.')
           : (folderTarget === 'arapi' ? 'Select a folder containing valid arapi, arapiext and arlogger JARs.' : 'Select a JDK 17+ folder with compiler and JAR modules.');
         if (report.truncated) status.textContent += ' Only the first 1000 entries are shown; enter a full path to jump further.';
         return true;

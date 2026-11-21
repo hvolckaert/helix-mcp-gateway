@@ -460,3 +460,43 @@ def test_selector_after_managed_update(page, dashboard, with_draft):
         ).locator(f'[data-form-choice="{NEW_FORM}"]').check()
         assert NEW_FORM in page.locator("#writable_forms-dev").input_value()
     assert dashboard.saved_requests == []
+
+
+@pytest.mark.parametrize(
+    "bridge_status, label",
+    [
+        ("inactive", "Inactive"),
+        ("active", "Active"),
+        ("unknown", "Unconfirmed"),
+    ],
+)
+def test_library_details_and_running_bridge_support_are_independent(
+    page, dashboard, monkeypatch, bridge_status, label
+):
+    from playwright.sync_api import expect
+
+    monkeypatch.setattr(
+        dashboard.service,
+        "_library_report",
+        lambda directory: {
+            "arapi_jar": "arapi990.jar",
+            "arapi_version": "25.1",
+            "cmdb_sdk": {
+                "jar": "cmdbapi251.jar",
+                "version": "24.2",
+                "status": "detected",
+            },
+        },
+    )
+    monkeypatch.setattr(
+        dashboard.service, "bridge_cmdb_support", lambda: bridge_status
+    )
+    page.goto(dashboard.url)
+    page.locator("#tab-advanced").click()
+    expect(page.locator("#arapi-client-version")).to_have_text(
+        "arapi990.jar · version 25.1"
+    )
+    expect(page.locator("#cmdb-sdk-version")).to_have_text(
+        "cmdbapi251.jar · version 24.2"
+    )
+    expect(page.locator("#cmdb-bridge-support")).to_have_text(label)

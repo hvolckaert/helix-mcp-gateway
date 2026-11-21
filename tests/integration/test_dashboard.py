@@ -11,6 +11,7 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 import yaml
 from dotenv import dotenv_values
@@ -473,7 +474,20 @@ def test_dashboard_selects_valid_arapi_folder_and_rebuilds_bridge(
     state = service.state()
     assert state["configuration"]["arapi"]["lib_dir"] == str(libraries)
     browsed = service.browse_local_folders({"path": str(libraries)})
-    assert browsed["arapi_version"] == "21.30.07-SNAPSHOT"
+    arapi = state["configuration"]["arapi"]
+    assert (
+        browsed["arapi_version"]
+        == arapi["client_version"]
+        == "21.30.07-SNAPSHOT"
+    )
+    assert (
+        browsed["arapi_jar"] == arapi["client_jar"] == "arapi2130_build007.jar"
+    )
+    assert (
+        browsed["cmdb_sdk"]
+        == arapi["cmdb_sdk"]
+        == {"status": "absent", "jar": None, "version": None}
+    )
     assert {item["name"] for item in browsed["items"]} >= {
         "arapi2130_build007.jar",
         "arapiext2130_build007.jar",
@@ -2067,3 +2081,39 @@ def test_detached_dashboard_process_is_reused_end_to_end(
         if launcher._process is not None:
             launcher._process.terminate()
             launcher._process.wait(timeout=5)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        ("active", "active"),
+        ("inactive", "inactive"),
+        ("unexpected", "unknown"),
+        (None, "unknown"),
+        ("offline", "unknown"),
+    ],
+)
+def test_dashboard_queries_the_configured_bridge_for_cmdb_support(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, header, expected
+) -> None:
+    dotenv = _installation(tmp_path)
+    service = DashboardService(dotenv, process_environment={})
+
+    async def probe(url, token):
+        assert str(url).startswith("http://127.0.0.1:")
+        assert token
+        if header == "offline":
+            return None
+        headers = {"X-Helix-CMDB-Support": header} if header else {}
+        return httpx.Response(200, json={"status": "ok"}, headers=headers)
+
+    monkeypatch.setattr(dashboard_module, "probe_bridge_health", probe)
+    assert service.bridge_cmdb_support() == "unknown"
+    key = tmp_path / "key"
+    key.write_bytes(b"x" * 32)
+    key.chmod(0o600)
+    with dotenv.open("a") as stream:
+        stream.write(f"HELIX_WRITE_PLAN_DB_PATH={tmp_path / 'plans.db'}\n")
+        stream.write(f"HELIX_WRITE_PLAN_KEY_PATH={key}\n")
+    assert service.bridge_cmdb_support() == expected

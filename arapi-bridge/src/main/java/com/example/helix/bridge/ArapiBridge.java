@@ -209,6 +209,9 @@ public final class ArapiBridge {
                     bridgeProof(challenge)
                 );
             }
+            exchange.getResponseHeaders().set(
+                "X-Helix-CMDB-Support", CmdbProvider.SDK == null ? "inactive" : "active"
+            );
             respond(exchange, 200, "{\"status\":\"ok\"}");
         }
     }
@@ -708,6 +711,19 @@ public final class ArapiBridge {
             throws ARException;
     }
 
+    private static final class CmdbProvider {
+        static final CmdbOperations SDK = load();
+
+        private static CmdbOperations load() {
+            try {
+                return Class.forName("com.example.helix.bridge.CmdbSdk")
+                    .asSubclass(CmdbOperations.class).getConstructor().newInstance();
+            } catch (ReflectiveOperationException | LinkageError unavailable) {
+                return null;
+            }
+        }
+    }
+
     private static final class CmdbHandler extends ArapiHandler {
         private final String operation;
 
@@ -723,11 +739,8 @@ public final class ArapiBridge {
             if (!Set.of("BMC.CORE:BMC_ComputerSystem", "BMC.CORE:BMC_Dependency").contains(form)) {
                 throw new BadRequest();
             }
-            CmdbOperations sdk;
-            try {
-                sdk = Class.forName("com.example.helix.bridge.CmdbSdk")
-                    .asSubclass(CmdbOperations.class).getConstructor().newInstance();
-            } catch (ReflectiveOperationException | LinkageError unavailable) {
+            CmdbOperations sdk = CmdbProvider.SDK;
+            if (sdk == null) {
                 throw new BadRequest();
             }
             String value;

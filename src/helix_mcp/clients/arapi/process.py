@@ -88,6 +88,61 @@ class ArapiLibraries:
     version: str = "unknown"
 
 
+@dataclass(frozen=True, slots=True)
+class CmdbSdkLibrary:
+    """Evidence from the optional SDK in the selected library folder."""
+
+    status: str
+    jar: str | None = None
+    version: str | None = None
+
+
+def inspect_cmdb_sdk(directory: Path | None) -> CmdbSdkLibrary:
+    """Identify the optional CMDB artifact independently of bridge availability."""
+    if directory is None:
+        return CmdbSdkLibrary("unconfigured")
+    try:
+        jars = [
+            path for path in directory.iterdir() if path.match("cmdbapi*.jar")
+        ]
+    except OSError:
+        return CmdbSdkLibrary("unavailable")
+    if not jars:
+        return CmdbSdkLibrary("absent")
+    if len(jars) > 1:
+        return CmdbSdkLibrary("ambiguous")
+    jar = jars[0]
+    try:
+        if not jar.is_file():
+            return CmdbSdkLibrary("invalid", jar.name)
+        with zipfile.ZipFile(jar) as archive:
+            archive.getinfo("com/bmc/cmdb/api/CMDBInstance.class")
+            metadata = "META-INF/maven/com.bmc.cmdb/cmdbapi/pom.properties"
+            if metadata in archive.namelist():
+                info = archive.getinfo(metadata)
+                if info.file_size <= _MAX_MANIFEST_BYTES:
+                    properties = archive.read(info).decode("iso-8859-1")
+                    for line in properties.splitlines():
+                        key, sep, value = line.partition("=")
+                        if sep and key.strip() == "version" and value.strip():
+                            return CmdbSdkLibrary(
+                                "detected", jar.name, value.strip()
+                            )
+            version = None
+            if "META-INF/MANIFEST.MF" in archive.namelist():
+                version = (
+                    _first_manifest_value(
+                        _read_manifest(jar),
+                        "Implementation-Version",
+                        "Bundle-Version",
+                    )
+                    or None
+                )
+    except (KeyError, OSError, RuntimeError, zipfile.BadZipFile):
+        return CmdbSdkLibrary("invalid", jar.name)
+    return CmdbSdkLibrary("detected", jar.name, version)
+
+
 class ArapiBridgeProcess:
     """Start and stop the bridge only when this process owns it."""
 
@@ -299,47 +354,10 @@ class ArapiBridgeProcess:
 
     async def _healthy(self) -> bool:
         assert self._base_url is not None
-        try:
-            challenge = secrets.token_urlsafe(24)
-            headers = (
-                {"X-Helix-Bridge-Challenge": challenge}
-                if self._bridge_token is not None
-                else None
-            )
-            async with httpx.AsyncClient(
-                timeout=1,
-                trust_env=False,
-            ) as client:
-                response = await client.get(
-                    f"{self._base_url.rstrip('/')}/health",
-                    headers=headers,
-                )
-            healthy = (
-                response.status_code == 200
-                and response.headers.get("content-type", "")
-                .lower()
-                .startswith("application/json")
-                and response.json() == {"status": "ok"}
-            )
-            if not healthy or self._bridge_token is None:
-                return healthy
-            expected = (
-                base64.urlsafe_b64encode(
-                    hmac.new(
-                        self._bridge_token.encode("utf-8"),
-                        challenge.encode("ascii"),
-                        hashlib.sha256,
-                    ).digest()
-                )
-                .rstrip(b"=")
-                .decode("ascii")
-            )
-            return hmac.compare_digest(
-                response.headers.get("X-Helix-Bridge-Proof", ""),
-                expected,
-            )
-        except (httpx.RequestError, UnicodeDecodeError, ValueError):
-            return False
+        return (
+            await probe_bridge_health(self._base_url, self._bridge_token)
+            is not None
+        )
 
     @staticmethod
     def _required_file(path: Path | None, label: str) -> Path:
@@ -373,6 +391,51 @@ class ArapiBridgeProcess:
                 "ARAPI bridge working directory is unavailable"
             ) from None
         return working_directory
+
+
+async def probe_bridge_health(
+    base_url: str, bridge_token: str | None
+) -> httpx.Response | None:
+    """Read health from the existing bridge, verifying proof when configured."""
+    try:
+        challenge = secrets.token_urlsafe(24)
+        headers = (
+            {"X-Helix-Bridge-Challenge": challenge}
+            if bridge_token is not None
+            else None
+        )
+        async with httpx.AsyncClient(
+            timeout=1,
+            trust_env=False,
+        ) as client:
+            response = await client.get(
+                f"{base_url.rstrip('/')}/health",
+                headers=headers,
+            )
+        healthy = (
+            response.status_code == 200
+            and response.headers.get("content-type", "")
+            .lower()
+            .startswith("application/json")
+            and response.json() == {"status": "ok"}
+        )
+        if not healthy:
+            return None
+        if bridge_token is None:
+            return response
+        expected = base64.urlsafe_b64encode(
+            hmac.new(
+                bridge_token.encode("utf-8"),
+                challenge.encode("ascii"),
+                hashlib.sha256,
+            ).digest()
+        ).rstrip(b"=")
+        proof = response.headers.get("X-Helix-Bridge-Proof", "").encode(
+            "utf-8"
+        )
+        return response if hmac.compare_digest(proof, expected) else None
+    except (httpx.RequestError, UnicodeDecodeError, ValueError):
+        return None
 
 
 def validate_arapi_libraries(directory: Path) -> ArapiLibraries:

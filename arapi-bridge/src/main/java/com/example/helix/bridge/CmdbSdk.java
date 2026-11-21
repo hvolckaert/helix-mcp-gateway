@@ -15,6 +15,12 @@ import java.util.LinkedHashSet;
 
 /** Optional provider, compiled only when the operator supplies the CMDB SDK. */
 public final class CmdbSdk implements ArapiBridge.CmdbOperations {
+    public CmdbSdk() {
+        // Resolve SDK dependencies at provider load, before reporting support.
+        List.of(CMDBInstance.class, CMDBUtil.class, CMDBInteger.class,
+            CMDBClassNameKey.class, CMDBAttributeValue.class);
+    }
+
     @Override
     public String reserve(ARServerUser user) throws ARException {
         return CMDBUtil.CMDBCreateGuid(user);
