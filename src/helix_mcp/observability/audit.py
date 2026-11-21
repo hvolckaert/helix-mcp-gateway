@@ -67,7 +67,7 @@ class ToolAuditor:
                 environment.value if environment is not None else None
             ),
         }
-        with operation_context(operation_id):
+        with operation_context(operation_id) as identity_fields:
             try:
                 result = await operation()
             except asyncio.CancelledError:
@@ -76,6 +76,7 @@ class ToolAuditor:
                     "tool call cancelled",
                     extra={
                         **fields,
+                        **identity_fields,
                         "outcome": "cancelled",
                         "duration_ms": duration_ms,
                     },
@@ -95,6 +96,7 @@ class ToolAuditor:
                     "tool call failed",
                     extra={
                         **fields,
+                        **identity_fields,
                         "outcome": "error",
                         "duration_ms": duration_ms,
                         "error_code": error_code,
@@ -117,10 +119,15 @@ class ToolAuditor:
                 ) from None
 
             duration_ms = _duration_ms(started_at, self._clock())
+            if tool == "apply_create_entry":
+                identity_fields["result_has_entry_id"] = (
+                    getattr(result, "entry_id", None) is not None
+                )
             self._logger.info(
                 "tool call completed",
                 extra={
                     **fields,
+                    **identity_fields,
                     "outcome": "success",
                     "duration_ms": duration_ms,
                 },

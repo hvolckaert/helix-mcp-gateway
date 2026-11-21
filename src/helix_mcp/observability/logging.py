@@ -23,6 +23,10 @@ _EVENT_FIELDS = (
     "error_code",
     "error_category",
     "sqlstate",
+    "native_id_category",
+    "bridge_has_entry_id",
+    "client_has_entry_id",
+    "result_has_entry_id",
 )
 _NOISY_LOGGERS = ("httpx", "httpcore", "httpx2", "httpcore2")
 _AUDIT_LOGGER = "helix_mcp.audit"

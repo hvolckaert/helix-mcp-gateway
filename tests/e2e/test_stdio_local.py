@@ -23,7 +23,7 @@ LOCAL_E2E_ENABLED = os.environ.get("HELIX_LOCAL_E2E_TESTS") == "1"
 
 FORM = "Sample:Form"
 ENTRY_ID = "000000000000001"
-CREATED_ENTRY_ID = "000000000000999"
+CREATED_ENTRY_ID = "000000000000999|000000000000007"
 USERNAME = "java-bridge-user"
 PASSWORD = "java-bridge-password-never-expose"
 FIELDS = ("Request ID", "Name", "Count", "Enabled", "Description")
@@ -278,9 +278,27 @@ async def _reproducible_stdio_read_write_flow(
         "error",
         "success",
     }
-    assert any(
-        event["tool"] == "apply_create_entry" and event["outcome"] == "success"
+    original, replay = [
+        event
         for event in audit_events
+        if event["tool"] == "apply_create_entry"
+        and event["outcome"] == "success"
+    ]
+    assert original["native_id_category"] == "accepted"
+    assert original["bridge_has_entry_id"] is True
+    assert original["client_has_entry_id"] is True
+    assert (
+        original["result_has_entry_id"]
+        is replay["result_has_entry_id"]
+        is True
+    )
+    assert (
+        not {
+            "native_id_category",
+            "bridge_has_entry_id",
+            "client_has_entry_id",
+        }
+        & replay.keys()
     )
     _assert_no_business_data(captured)
     _assert_no_business_data(audit_text)

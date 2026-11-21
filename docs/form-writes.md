@@ -42,11 +42,57 @@ Deletion, attachments, and bulk writes are not exposed.
 at least ten characters. After policy validation, it stores a temporary plan
 and returns normalized values for review without calling Helix.
 
-After approval, `apply_create_entry` supplies the environment, plan ID, and
-digest. The Java bridge invokes `ARServerUser.createEntry()` with typed scalar
-values. A valid create on a display, join, or compound form may return
-`entry_id: null`; the gateway does not perform a potentially ambiguous lookup
-to infer an ID.
+On the first application of an approved plan,
+`apply_create_entry(environment, plan_id, plan_digest)` calls
+`ARServerUser.createEntry(form, values)` once. When that call returns a
+usable AR entry ID, the bridge preserves it, including compound IDs such as
+`0001|0002`. The gateway uses the ID for the verification read on the same
+target and form. Both the apply result and a subsequent `get_write_plan`
+report the ID stored for that plan. Two plans can request identical values
+and have the same digest. Their plan IDs and results remain independent.
+
+### CMDB join forms
+
+When a successful native return contains no usable ID, the result is
+`applied` with `entry_id: null`, `verification.status: unavailable`, reason
+`entry_id_unavailable`, and all requested fields in `unverified_fields`.
+The gateway performs no verification read in this case. A name, a CMDB
+`InstanceId` discovered later, or the newest row cannot identify the record
+created by the approved call. A lost create response is a distinct terminal
+outcome, `outcome_unknown`. Neither case permits a second create.
+
+BMC documents that a join request's ID can include its member request IDs
+and that creating records through a join depends on workflow. The cited
+interfaces supply no alternative that binds a later lookup to this particular
+create. [ARCreateEntry](https://docs.helixops.ai/bin/Service-Management/Innovation-Suite/BMC-Helix-Innovation-Suite/is252/Developing-an-API-program/AR-System-C-API-functions/Function-descriptions/ARCreateEntry/) · [Join forms](https://docs.helixops.ai/bin/Service-Management/Innovation-Suite/AR-System/ars2105/Developing-applications/Developing-the-application-interface/Defining-forms-to-hold-and-display-data/Join-forms/)
+
+On 2026-11-21, two separately approved synthetic plans in DEV
+(`BMC.SAMPLE`) each returned `applied` and `reused_result: false` after one
+attempt. For both calls the bridge classified the native return as `blank`
+(empty or whitespace-only). All three ID presence flags were false.
+Both MCP results had `entry_id: null` and `verification.status: unavailable`
+with reason `entry_id_unavailable`.
+
+| DEV join form | Requested fields left unverified |
+| --- | --- |
+| `BMC.CORE:BMC_ComputerSystem` | `DatasetId`, `Name` |
+| `BMC.CORE:BMC_Dependency` | `DatasetId`, `Name`, `Source.DatasetId`, `Source.ClassId`, `Source.InstanceId`, `Destination.DatasetId`, `Destination.ClassId`, `Destination.InstanceId` |
+
+**Live create verification remains open for both forms.** Each requires a record
+identity attributable to the create and an exact-ID read confirming its fields.
+For the dependency, the endpoint CIs were read before approval. Verifying the
+stored link requires reading the source and destination from the returned
+**relationship** entry ID and confirming each endpoint's dataset, class and
+instance identity. The missing ID prevented that read. The native returns for
+the earlier, uninstrumented attempts remain unknown. [DEV handoff](https://github.com/hvolckaert/helix-agent-skills/blob/5d4798f/docs/gateway-create-verification.md)
+
+The final create audit event records the native return category
+(`accepted`, `absent`, `blank`, `too_long`, or `control_character`) and
+three presence flags: `bridge_has_entry_id`, `client_has_entry_id` and
+`result_has_entry_id`. An older bridge yields `unreported` for the category.
+A replay emits only the result flag. If a response is lost, missing flags
+represent unobserved boundaries. No raw IDs, credentials or field values
+are written to the audit event.
 
 ## Update
 

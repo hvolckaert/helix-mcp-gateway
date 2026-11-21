@@ -260,7 +260,7 @@ def _public(plan: StoredWritePlan) -> WritePlanResult:
         operation=plan.operation,
         environment=plan.target.environment,
         form=plan.form,
-        entry_id=plan.entry_id,
+        entry_id=plan.result.entry_id if plan.result else plan.entry_id,
         current_values=(
             None if plan.current_values is None else dict(plan.current_values)
         ),

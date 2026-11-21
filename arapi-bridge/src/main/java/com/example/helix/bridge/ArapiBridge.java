@@ -710,8 +710,9 @@ public final class ArapiBridge {
             String form = requiredText(input, "form", MAX_NAME_LENGTH);
             List<Field> fields = loadFields(user, form);
             Entry values = parseWriteValues(input, fields);
+            boolean diagnoseId = "true".equals(input.get("diagnose_entry_id"));
             String entryId = user.createEntry(form, values);
-            return encodeCreateResult(entryId);
+            return encodeCreateResult(entryId, diagnoseId);
         }
     }
 
@@ -2526,22 +2527,29 @@ public final class ArapiBridge {
         return output.toString();
     }
 
-    private static String encodeCreateResult(String entryId) {
-        StringBuilder output = new StringBuilder();
-        output.append("{\"entry_id\":");
-        if (entryId == null) {
-            output.append("null");
+    private static String encodeCreateResult(String entryId, boolean diagnoseId) {
+        String stripped = entryId == null ? null : entryId.strip();
+        String category;
+        if (stripped == null) {
+            category = "absent";
+        } else if (stripped.isEmpty()) {
+            category = "blank";
+        } else if (stripped.length() > MAX_NAME_LENGTH) {
+            category = "too_long";
+        } else if (containsControlCharacters(stripped)) {
+            category = "control_character";
         } else {
-            String stripped = entryId.strip();
-            if (
-                stripped.isEmpty()
-                || stripped.length() > MAX_NAME_LENGTH
-                || containsControlCharacters(stripped)
-            ) {
-                output.append("null");
-            } else {
-                appendJsonString(output, stripped);
-            }
+            category = "accepted";
+        }
+        StringBuilder output = new StringBuilder("{\"entry_id\":");
+        if ("accepted".equals(category)) {
+            appendJsonString(output, stripped);
+        } else {
+            output.append("null");
+        }
+        if (diagnoseId) {
+            output.append(",\"native_id_category\":");
+            appendJsonString(output, category);
         }
         output.append('}');
         return output.toString();

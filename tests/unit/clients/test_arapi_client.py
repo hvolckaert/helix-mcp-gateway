@@ -1198,6 +1198,55 @@ def test_prepare_create_and_update_write_contracts() -> None:
     assert update_form["value_0"] == ["updated"]
 
 
+@pytest.mark.parametrize(
+    ("entry_id", "category", "recorded"),
+    [
+        ("0001|0002", "accepted", "accepted"),
+        (None, "absent", "absent"),
+        (None, "blank", "blank"),
+        (None, "too_long", "too_long"),
+        (None, "control_character", "control_character"),
+        ("0001", None, "unreported"),
+        (None, None, "unreported"),
+        ("0001", "private-untrusted-category", "unreported"),
+    ],
+)
+def test_create_identity_diagnostic_contains_only_categories_and_presence(
+    entry_id, category, recorded
+):
+    from helix_mcp.observability.context import operation_context
+
+    payload = {"entry_id": entry_id}
+    if category is not None:
+        payload["native_id_category"] = category
+
+    async def scenario():
+        async with httpx.AsyncClient(
+            base_url="http://127.0.0.1:8090",
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, json=payload)
+            ),
+        ) as transport:
+            client = ArapiBridgeClient(
+                target=TARGET,
+                config=config(),
+                secrets=secrets(),
+                http_client=transport,
+            )
+            with operation_context("fictional") as evidence:
+                result = await client.create_entry(
+                    form="Example:Join", values={"Name": "sample"}
+                )
+                assert result == entry_id
+                assert evidence == {
+                    "native_id_category": recorded,
+                    "bridge_has_entry_id": entry_id is not None,
+                    "client_has_entry_id": entry_id is not None,
+                }
+
+    run(scenario())
+
+
 def test_create_accepts_a_missing_entry_id_from_compound_form() -> None:
     async def scenario() -> str | None:
         transport = httpx.AsyncClient(

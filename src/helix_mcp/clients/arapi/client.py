@@ -48,6 +48,7 @@ from helix_mcp.clients.arapi.models import (
     ArapiWriteVerification,
 )
 from helix_mcp.config import ArapiBackendConfig, TargetKey
+from helix_mcp.observability.context import record_create_identity
 from helix_mcp.secrets import SecretResolver
 
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
@@ -323,7 +324,7 @@ class ArapiBridgeClient:
     ) -> str | None:
         """Create one entry and return its ID when AR System supplies one."""
 
-        data = {"form": form}
+        data = {"form": form, "diagnose_entry_id": "true"}
         data.update(_encode_write_values(values))
         payload, status_code = await self._post(
             "/v1/entries/create",
@@ -1138,14 +1139,21 @@ def _parse_create_result(
     payload: Any,
     status_code: int,
 ) -> str | None:
-    if not isinstance(payload, dict) or set(payload) != {"entry_id"}:
+    if not isinstance(payload, dict) or set(payload) not in (
+        {"entry_id"},
+        {"entry_id", "native_id_category"},
+    ):
         raise _protocol_error(target, status_code)
     entry_id = payload["entry_id"]
-    if entry_id is None:
-        return None
-    if not _is_safe_text(entry_id, 255):
+    safe_id = entry_id if _is_safe_text(entry_id, 255) else None
+    record_create_identity(
+        payload.get("native_id_category"),
+        bridge_has_id=entry_id is not None,
+        client_has_id=safe_id is not None,
+    )
+    if entry_id is not None and safe_id is None:
         raise _protocol_error(target, status_code)
-    return entry_id
+    return safe_id
 
 
 def _encode_write_values(

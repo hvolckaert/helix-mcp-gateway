@@ -77,18 +77,22 @@ public final class ArapiBridgeTest {
     }
 
     private static void testCreateResult() throws Exception {
-        assertEquals(
-            "{\"entry_id\":\"0001\"}",
-            invoke("encodeCreateResult", types(String.class), " 0001 ")
-        );
-        assertEquals(
-            "{\"entry_id\":null}",
-            invoke("encodeCreateResult", types(String.class), (Object) null)
-        );
-        assertEquals(
-            "{\"entry_id\":null}",
-            invoke("encodeCreateResult", types(String.class), "bad\nvalue")
-        );
+        String[][] cases = {
+            {"0001", "0001", "accepted"},
+            {"0001|0002", "0001|0002", "accepted"},
+            {" 0001|0002 ", "0001|0002", "accepted"},
+            {"x".repeat(255), "x".repeat(255), "accepted"},
+            {null, null, "absent"}, {"", null, "blank"}, {"  ", null, "blank"},
+            {"x".repeat(256), null, "too_long"}, {"bad\nvalue", null, "control_character"}
+        };
+        for (String[] item : cases) {
+            String idJson = item[1] == null ? "null" : "\"" + item[1] + "\"";
+            String prefix = "{\"entry_id\":" + idJson;
+            assertEquals(prefix + "}", invoke("encodeCreateResult",
+                types(String.class, boolean.class), item[0], false));
+            assertEquals(prefix + ",\"native_id_category\":\"" + item[2] + "\"}",
+                invoke("encodeCreateResult", types(String.class, boolean.class), item[0], true));
+        }
     }
 
     private static void testJsonEncoding() throws Exception {
