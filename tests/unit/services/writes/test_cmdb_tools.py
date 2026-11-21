@@ -55,6 +55,7 @@ def setup(**policy):
         client,
         allow_all_writable_forms=True,
         allow_all_creatable_fields=True,
+        allow_all_updatable_fields=True,
         **policy,
     )
     return client, svc
@@ -155,3 +156,30 @@ def test_lookup_returns_only_requested_attributes_and_checks_visible_role():
     del client.rows["LEFT"]
     with pytest.raises(WritePlanStateError):
         run(svc.get_cmdb_instance(Environment.DEV, rel, ["Source.InstanceId"]))
+
+
+def test_hidden_ar_request_id_preserves_native_identity_without_ar_query():
+    client, svc = setup(sensitive_fields=("RequestId",))
+    pending = run(
+        svc.plan_cmdb_create(
+            Environment.DEV,
+            "SAMPLE",
+            WriteValuesRequest(
+                values={"Name": "fictional"}, reason="native identity only"
+            ),
+        )
+    )
+    client.outcomes.append("NATIVE-CI-ID")
+    result = run(
+        svc.apply_create(
+            environment="dev",
+            request=ApplyWriteRequest(
+                plan_id=pending.plan_id, plan_digest=pending.plan_digest
+            ),
+        )
+    )
+    assert result.instance_id == "RESERVED" and result.entry_id is None
+    assert set(result.verification.unverified_fields) == set(
+        pending.proposed_values
+    )
+    assert [op for op, _ in client.calls] == ["reserve", "cmdb_create"]

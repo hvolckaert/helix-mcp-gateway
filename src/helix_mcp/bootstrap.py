@@ -178,6 +178,7 @@ class ApplicationContext:
             self.target_resolver,
             self.arapi_clients,
             self.write_plans,
+            read_limiter=form_limiter,
             rate_limit_database_path=write_plan_db,
         )
         self.metrics = MetricsRegistry(runtime.settings.metrics_path)
