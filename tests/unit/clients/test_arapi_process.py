@@ -23,6 +23,7 @@ from helix_mcp.clients.arapi import (
 )
 from helix_mcp.clients.arapi.process import inspect_cmdb_sdk
 from helix_mcp.config import RuntimeSettings
+from tests.support.java_bridge import write_bmc_jar
 
 
 def run(coroutine):
@@ -44,7 +45,7 @@ def settings(
         "arapiext2130_build007.jar",
         "arlogger-21.30.07-SNAPSHOT.jar",
     ):
-        _write_bmc_jar(
+        write_bmc_jar(
             libraries / name,
             version=arapi_version,
             vendor=arapi_vendor,
@@ -801,39 +802,6 @@ def test_arapi_without_required_classes_is_rejected(
 
     with pytest.raises(ArapiRuntimeInvalidError, match="required Java API"):
         run(manager.check_startup_requirements())
-
-
-def _write_bmc_jar(path: Path, *, version: str, vendor: str) -> None:
-    manifest = (
-        "Manifest-Version: 1.0\n"
-        f"Implementation-Vendor: {vendor}\n"
-        f"Implementation-Version: {version}\n"
-    )
-    with zipfile.ZipFile(path, mode="w") as archive:
-        archive.writestr("META-INF/MANIFEST.MF", manifest)
-        if path.name.startswith("arapi") and not path.name.startswith(
-            "arapiext"
-        ):
-            for name in (
-                "ARException",
-                "ARErrors",
-                "ARServerUser",
-                "Constants",
-                "DataType",
-                "DateInfo",
-                "Entry",
-                "Field",
-                "OutputInteger",
-                "QualifierInfo",
-                "SQLResult",
-                "ServerInfoMap",
-                "SortInfo",
-                "StatusInfo",
-                "Time",
-                "Timestamp",
-                "Value",
-            ):
-                archive.writestr(f"com/bmc/arsys/api/{name}.class", b"test")
 
 
 @pytest.mark.parametrize(

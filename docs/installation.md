@@ -81,19 +81,55 @@ C:\path\to\helix-mcp\venv\Scripts\python.exe -m pip check
 ## Guided setup
 
 ```text
-/path/to/helix-mcp/venv/bin/helix-mcp-setup \
-  --arapi-lib-dir "/authorized/path/to/DeveloperStudio/lib"
+/path/to/helix-mcp/venv/bin/helix-mcp-setup
 ```
 
 Use `Scripts\helix-mcp-setup.exe` on native Windows. Run
 `helix-mcp-setup --help` for every destination option and its default class.
 
-If the option is omitted, setup uses `HELIX_ARAPI_LIB_DIR` or accepts one
-unambiguous installation in a supported local location. It never chooses
-between multiple installations. If none is available, setup still creates the
-dashboard and reports `needs_attention` with `arapi` in `pending`. The dashboard
-folder explorer can then show local files and select the correct `lib` folder.
-Java is searched on `PATH`, through `JAVA_HOME` or `HELIX_JAVA_HOME`, and in
+On a fresh installation, preview the available combinations with
+`helix-mcp-setup --dry-run`. Setup reads the AR API manifest and the CMDB SDK
+artifact metadata, and reports versions and source paths in JSON. For AR API
+it checks `--arapi-lib-dir`, then `HELIX_ARAPI_LIB_DIR`, then the known BMC
+Developer Studio plugin directories on Windows and WSL. For CMDB it inspects
+the AR library folders and the Data Integration `data-integration/lib` folders
+under the BMC installation roots. Explicit paths work for custom installations.
+
+A single combination is selected automatically. Separate SDKs are paired
+automatically by exact reported version. A colocated SDK is also offered.
+An AR installation without a matching SDK is offered as AR API only. With
+multiple candidates the interactive installer lists the versions and paths
+and asks for a number. In unattended mode it returns `library_selection`
+and exit code 2 before installing anything. Rerun with an explicit choice,
+for example:
+
+```sh
+helix-mcp-setup --arapi-lib-dir "/vendor/DeveloperStudio/plugins/api/lib" \
+  --cmdb-sdk "/vendor/diserver/data-integration/lib/cmdbapi251.jar"
+```
+
+`--cmdb-sdk` accepts a JAR or a directory. Use the exact JAR to distinguish
+multiple SDKs in one folder. Specify both sources for a separately qualified
+combination with different version metadata. Use `--arapi-only` with the
+desired AR folder to omit CMDB.
+
+Setup creates a directory under `<data-dir>/vendor-lib/` with symbolic links
+to the AR folder's JARs and the selected SDK. Vendor files and their
+manifest-relative dependencies stay in their original locations. Keep the
+vendor installations available. For linked libraries, the bridge passes their
+original paths to Java so manifest entries resolve next to the vendor JARs.
+On native Windows, creating symbolic links
+requires Developer Mode or the corresponding account privilege. The compiler,
+Dashboard and stable launcher all use the library path saved in
+`HELIX_ARAPI_LIB_DIR`. The Dashboard shows each JAR and version and the
+running bridge's CMDB support.
+
+Existing installations and managed updates reuse their saved library folder.
+A successful setup can fill an empty library setting left by an earlier
+incomplete install. If AR API is missing, setup still creates the dashboard and
+reports `arapi` in `pending`. A manually maintained `.env` missing the library
+key reports `arapi_configuration` until the path is configured. Java is
+searched on `PATH`, through `JAVA_HOME` or `HELIX_JAVA_HOME`, and in
 common local JDK locations. When several candidates exist, the dashboard JDK
 folder explorer lets the user choose. Missing Java also leaves setup in
 `needs_attention`; Kaazing connectivity is checked later by the environment
@@ -191,14 +227,14 @@ broad permissions or symbolic links for sensitive local state.
 
 ```text
 /path/to/helix-mcp/venv/bin/helix-mcp-build-bridge \
-  --arapi-lib-dir "/authorized/path/to/DeveloperStudio/lib" \
+  --arapi-lib-dir "/path/returned/by/setup/vendor-lib/selection" \
   --output "/path/to/helix-arapi-bridge.jar"
 ```
 
-To enable the CMDB tools, include one matching vendor-supplied
-`cmdbapi*.jar` in this library directory and rebuild. Supply the
-runtime dependencies from the same authorized BMC installation. The compiler
-includes the optional provider when the CMDB library is present.
+Pass the library directory saved by setup in `HELIX_ARAPI_LIB_DIR`. When a
+CMDB SDK was selected, that directory already contains its link and the
+compiler includes the optional provider. Keep the original BMC directories
+available so Java can resolve their runtime dependencies.
 
 A failed build leaves the previous bridge untouched. The compiler receives a
 reduced environment without Helix credentials. The output manifest records the
@@ -328,8 +364,8 @@ the new runtime is used the next time that client starts the MCP server; the
 updater does not terminate client-owned processes.
 
 Manual upgrade remains possible by installing a newer wheel and running setup
-again. Setup rebuilds the bridge but does not overwrite existing `.env` or YAML
-policy files. A release that changes the configuration schema must provide a
+again. Setup rebuilds the bridge and preserves saved settings and YAML
+policy files. A successful setup can fill an empty library path in `.env`. A release that changes the configuration schema must provide a
 specific migration procedure.
 
 Never reuse an example encryption key or store the key in the repository.

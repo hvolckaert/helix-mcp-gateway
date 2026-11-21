@@ -44,7 +44,7 @@ from helix_mcp.installation.managed import (
     ManagedInstallation,
     activate_managed_installation,
 )
-from helix_mcp.installation.setup import SetupError, setup_installation
+from helix_mcp.installation.setup import setup_installation
 from helix_mcp.installation.updater import ReleaseStatus
 from helix_mcp.services.database import (
     DatabaseObjectKind,
@@ -185,8 +185,8 @@ def test_new_installation_opens_dashboard_with_missing_runtime_requirements(
 ) -> None:
     monkeypatch.setattr(
         installation_setup_module,
-        "discover_arapi_lib_dir",
-        lambda explicit: (_ for _ in ()).throw(SetupError("not found")),
+        "_KNOWN_ARAPI_ROOTS",
+        (),
     )
     monkeypatch.setattr(
         installation_setup_module, "jdk_executable", lambda home: None

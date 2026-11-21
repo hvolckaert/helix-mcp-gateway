@@ -80,7 +80,7 @@ def build_bridge(
     with ExitStack() as stack:
         source = stack.enter_context(bridge_source_path())
         sources = [source]
-        classpath = [libraries.arapi]
+        classpath = [libraries.arapi.resolve()]
         cmdb_jars = sorted(Path(arapi_lib_dir).glob("cmdbapi*.jar"))
         if len(cmdb_jars) > 1:
             raise BridgeBuildError(
@@ -88,7 +88,7 @@ def build_bridge(
             )
         if cmdb_jars:
             sources.append(stack.enter_context(cmdb_source_path()))
-            classpath.extend(cmdb_jars)
+            classpath.append(cmdb_jars[0].resolve())
         try:
             payload = b"".join(item.read_bytes() for item in sources)
         except OSError:

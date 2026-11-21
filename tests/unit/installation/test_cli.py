@@ -15,7 +15,6 @@ from helix_mcp.installation import InstallPaths, SetupResult
 from helix_mcp.installation.cli import _installed_server_command, setup_main
 from helix_mcp.installation.github_cli import GitHubCliError
 from helix_mcp.installation.managed import stable_launcher_path
-from helix_mcp.installation.setup import SetupError
 
 
 @pytest.fixture(autouse=True)
@@ -52,7 +51,9 @@ def _managed_github_cli(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_setup_dry_run_returns_machine_readable_codex_configuration(
     tmp_path,
     capsys,
+    monkeypatch,
 ) -> None:
+    monkeypatch.setattr("helix_mcp.installation.setup._KNOWN_ARAPI_ROOTS", ())
     result = setup_main(
         [
             "--dry-run",
@@ -93,12 +94,21 @@ def test_missing_managed_github_cli_is_reported_as_pending(
     monkeypatch,
     capsys,
 ) -> None:
+    monkeypatch.setattr("helix_mcp.installation.setup._KNOWN_ARAPI_ROOTS", ())
     monkeypatch.setattr(
         "helix_mcp.installation.cli.managed_github_cli_plan",
         lambda workspace: (_ for _ in ()).throw(GitHubCliError("offline")),
     )
 
-    result = setup_main(["--dry-run", "--data-dir", str(tmp_path / "data")])
+    result = setup_main(
+        [
+            "--dry-run",
+            "--data-dir",
+            str(tmp_path / "data"),
+            "--config-dir",
+            str(tmp_path / "config"),
+        ]
+    )
 
     payload = json.loads(capsys.readouterr().out)
     assert result == 0
@@ -120,8 +130,8 @@ def test_setup_starts_dashboard_when_arapi_is_pending(
     )
     monkeypatch.setattr(
         installation_setup_module,
-        "discover_arapi_lib_dir",
-        lambda explicit: (_ for _ in ()).throw(SetupError("missing AR API")),
+        "_KNOWN_ARAPI_ROOTS",
+        (),
     )
     server = tmp_path / "venv/bin/helix-mcp"
     server.parent.mkdir(parents=True)

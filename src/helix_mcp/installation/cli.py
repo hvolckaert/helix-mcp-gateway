@@ -24,6 +24,11 @@ from helix_mcp.installation.github_cli import (
     ensure_managed_github_cli,
     managed_github_cli_plan,
 )
+from helix_mcp.installation.libraries import (
+    LibraryChoice,
+    LibraryChoiceRequired,
+    LibrarySetupError,
+)
 from helix_mcp.installation.managed import (
     ManagedInstallation,
     activate_managed_installation,
@@ -52,8 +57,8 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
             "per-user Helix MCP Gateway configuration."
         ),
         epilog=(
-            "The command prints sanitized JSON. Existing .env and YAML "
-            "configuration files are never overwritten."
+            "The command prints sanitized JSON. Existing settings and YAML "
+            "configuration files are never overwritten. Setup can fill an empty library path."
         ),
     )
     parser.add_argument(
@@ -65,6 +70,18 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
             "arlogger JARs; otherwise use HELIX_ARAPI_LIB_DIR or "
             "unambiguous discovery"
         ),
+    )
+    sdk_options = parser.add_mutually_exclusive_group()
+    sdk_options.add_argument(
+        "--cmdb-sdk",
+        type=Path,
+        metavar="JAR_OR_DIR",
+        help="select an authorized cmdbapi JAR or its containing folder",
+    )
+    sdk_options.add_argument(
+        "--arapi-only",
+        action="store_true",
+        help="prepare AR API libraries without a CMDB SDK",
     )
     parser.add_argument(
         "--config-dir",
@@ -97,7 +114,7 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="validate packaged resources and show target paths only",
+        help="show detected libraries, versions and target paths without installing",
     )
     parser.add_argument(
         "--no-dashboard",
@@ -145,6 +162,18 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
             .expanduser()
             .absolute()
         )
+        result = setup_installation(
+            arapi_lib_dir=arguments.arapi_lib_dir,
+            cmdb_sdk=arguments.cmdb_sdk,
+            arapi_only=arguments.arapi_only,
+            choose_libraries=_prompt_library_choice
+            if sys.stdin.isatty() and not arguments.no_managed
+            else None,
+            config_dir=arguments.config_dir,
+            data_dir=arguments.data_dir,
+            state_dir=arguments.state_dir,
+            dry_run=arguments.dry_run,
+        )
         github_cli_pending = False
         try:
             github_cli = (
@@ -158,13 +187,6 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
                 "status": "pending",
                 "error_code": public_error_code(exc),
             }
-        result = setup_installation(
-            arapi_lib_dir=arguments.arapi_lib_dir,
-            config_dir=arguments.config_dir,
-            data_dir=arguments.data_dir,
-            state_dir=arguments.state_dir,
-            dry_run=arguments.dry_run,
-        )
         if not arguments.dry_run and not arguments.no_managed:
             server_command = _installed_server_command()
             previous = load_managed_installation(result.paths.data_dir)
@@ -253,6 +275,23 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
                 .start()
                 .to_dict()
             )
+    except LibraryChoiceRequired as exc:
+        _print_json(
+            {
+                "status": "needs_attention",
+                "pending": ["library_selection"],
+                "library_choices": _paths_to_strings(
+                    [asdict(choice) for choice in exc.choices]
+                ),
+                "message": "Rerun with --arapi-lib-dir and either --cmdb-sdk or --arapi-only.",
+            }
+        )
+        return 2
+    except LibrarySetupError as exc:
+        _print_json(
+            {"status": "failed", "error_code": exc.code, "message": str(exc)}
+        )
+        return 1
     except Exception as exc:
         _print_json({"status": "failed", "error_code": public_error_code(exc)})
         return 1
@@ -277,6 +316,38 @@ def setup_main(argv: Sequence[str] | None = None) -> int:
     payload["dashboard"] = dashboard
     _print_json(payload)
     return 0
+
+
+def _prompt_library_choice(
+    choices: tuple[LibraryChoice, ...],
+) -> LibraryChoice:
+    print("Select BMC libraries:", file=sys.stderr)
+    for number, choice in enumerate(choices, 1):
+        sdk = (
+            f"CMDB {choice.cmdb_version or '(unknown version)'} ({choice.cmdb_jar})"
+            if choice.cmdb_jar
+            else "AR API only"
+        )
+        print(
+            f"  {number}. AR API {choice.arapi_version} ({choice.arapi_dir}) / {sdk}",
+            file=sys.stderr,
+        )
+    while True:
+        print(
+            f"Selection [1-{len(choices)}, q to quit]: ",
+            end="",
+            file=sys.stderr,
+            flush=True,
+        )
+        answer = sys.stdin.readline()
+        if not answer or answer.strip().lower() == "q":
+            raise LibraryChoiceRequired(choices)
+        try:
+            index = int(answer)
+        except ValueError:
+            continue
+        if 1 <= index <= len(choices):
+            return choices[index - 1]
 
 
 def bridge_main(argv: Sequence[str] | None = None) -> int:

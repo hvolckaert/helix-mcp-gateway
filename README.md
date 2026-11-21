@@ -183,8 +183,7 @@ setup and preflight with explicit paths:
 ```text
 python3.12 -m venv /path/to/helix-mcp/venv
 /path/to/helix-mcp/venv/bin/python -m pip install /path/to/release.whl
-/path/to/helix-mcp/venv/bin/helix-mcp-setup \
-  --arapi-lib-dir "/authorized/path/to/DeveloperStudio/lib"
+/path/to/helix-mcp/venv/bin/helix-mcp-setup
 /path/to/helix-mcp/venv/bin/helix-mcp-check \
   --dotenv /path/returned/by/setup/.env \
   --live \
@@ -192,13 +191,15 @@ python3.12 -m venv /path/to/helix-mcp/venv
 ```
 
 The setup command generates local configuration and creates the encryption key.
-The `--arapi-lib-dir` option may be omitted; setup then attempts discovery and
-the dashboard folder explorer can resolve any ambiguous or missing path.
+On a fresh install, setup detects AR API and CMDB SDK folders, shows their
+versions and links the selected JARs into the Gateway data directory. A single
+combination is automatic. With several choices, select one in the terminal
+or specify `--arapi-lib-dir` and `--cmdb-sdk` for unattended setup.
 When Java and AR API are available, it compiles the Java bridge against the
 user's AR API installation. It also attempts to install the project-managed
 GitHub CLI used to verify release provenance. Missing runtime dependencies are
 reported as `needs_attention`; the dashboard still opens so their folders can
-be selected later. It never overwrites existing credentials or configuration.
+be selected later. Existing credentials and nonempty settings are preserved.
 After setup it installs a persistent
 per-user dashboard service,
 starts it, and opens it in the default browser. Setup also creates stable MCP
